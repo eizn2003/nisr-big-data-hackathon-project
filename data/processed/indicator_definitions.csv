@@ -1,0 +1,8 @@
+Indicator,Source variable,Definition,Interpretation
+Owns a bank account,k1,Weighted percentage of respondents who answered Yes.,Higher values indicate greater bank-account ownership.
+Registered mobile-money user,f5,Weighted percentage classified as a registered mobile-money user.,"Measures registration, not necessarily current activity."
+Borrowed in the past 12 months,h2_1,Weighted percentage who reported borrowing in the past 12 months.,"Measures recent borrowing activity, not formal credit access."
+Does not save,g3a_17,Weighted percentage who answered Yes to the do-not-save category.,"A financial vulnerability signal, not a savings-access gap."
+Bank-account ownership gap,k1,100 minus the weighted bank-account ownership estimate.,Percentage not reporting bank-account ownership.
+Mobile-money registration gap,f5,100 minus the weighted registered mobile-money estimate.,Percentage not classified as a registered mobile-money user.
+Borrowing activity gap,h2_1,100 minus the weighted recent-borrowing estimate.,Percentage not reporting borrowing in the past 12 months.
