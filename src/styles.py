@@ -15,7 +15,7 @@ PALETTE = {
     "line": "#E0E7EA",
     "grid": "#E9EFF1",
     "teal": "#1A8A7D",
-    "sun": "#F2B84B",      # "selected" colour everywhere
+    "sun": "#F2B84B",  # "selected" colour everywhere
     "coral": "#DB6A4E",
     "blue": "#2F6DB5",
     "amber": "#E0A12F",
@@ -57,6 +57,22 @@ INDICATOR_THEME = {
         "accent": "#DB6A4E",
         "text_accent": "#B04328",
         "scale": ["#FDEEE9", "#F7BFAE", "#EC8A70", "#C9533A", "#7A2616"],
+    },
+    "Has emergency funds (%)": {
+        "label": "Emergency-fund coverage",
+        "short": "Emergency funds",
+        "national": "Has emergency funds",
+        "accent": "#7B61A8",
+        "text_accent": "#62458D",
+        "scale": ["#F1ECF8", "#CDBDE5", "#A58ACD", "#7B61A8", "#3F2D5C"],
+    },
+    "Saves with a group (%)": {
+        "label": "Group-based saving",
+        "short": "Group saving",
+        "national": "Saves with a group",
+        "accent": "#3979A8",
+        "text_accent": "#285C82",
+        "scale": ["#EAF3F9", "#B5D5E8", "#79ADD0", "#3979A8", "#1F405A"],
     },
 }
 
@@ -514,8 +530,7 @@ def apply_global_styles():
 def page_header(title, subtitle, pill=None, size="tall", below_html=""):
     """Hero header. size: 'tall' (overlaps a KPI row) or 'compact'."""
     pill_html = f'<div class="pg-pill"><i></i>{esc(pill)}</div>' if pill else ""
-    render_html(
-        f"""
+    render_html(f"""
         <div class="pg-hero {size}">
           <div class="pg-text">
             <h1 class="pg-title">{esc(title)}</h1>
@@ -525,8 +540,7 @@ def page_header(title, subtitle, pill=None, size="tall", below_html=""):
           <div class="pg-art">{HERO_ART}</div>
         </div>
         {below_html}
-        """
-    )
+        """)
 
 
 def kpi_card(label, value, small="", fill=0, accent="#1A8A7D", src=""):
@@ -558,65 +572,53 @@ def section_title(title, subtitle=None):
 
 def note(title, body, tone=""):
     icon = "!" if tone == "warn" else "i"
-    render_html(
-        f"""
+    render_html(f"""
         <div class="note {tone}"><div class="note-ic">{icon}</div>
         <div><b>{esc(title)}</b><p>{esc(body)}</p></div></div>
-        """
-    )
+        """)
 
 
 def coming_soon(title, text, icon="✨"):
-    render_html(
-        f"""
+    render_html(f"""
         <div class="soon">
           <div class="soon-ic">{icon}</div>
           <h2 class="soon-t">{esc(title)}</h2>
           <p class="soon-p">{esc(text)}</p>
           <div class="pg-art">{HERO_ART}</div>
         </div>
-        """
-    )
+        """)
 
 
 def app_footer():
-    render_html(
-        """
+    render_html("""
         <div class="app-foot">
           <span>FinScope Rwanda 2024 · Survey-based financial inclusion estimates</span>
           <span>Rwanda Financial Inclusion Gap Explorer</span>
         </div>
-        """
-    )
+        """)
 
 
 def sidebar_brand():
-    render_html(
-        f"""
+    render_html(f"""
         <div class="sb-brand"><div class="sb-logo">{LOGO_SVG}</div>
         <div><div class="sb-name">Rwanda Financial Inclusion</div>
         <div class="sb-sub">Gap Explorer</div></div></div>
-        """
-    )
+        """)
 
 
 def sidebar_dataset_card():
-    render_html(
-        """
+    render_html("""
         <div class="sb-card"><b>FinScope Rwanda 2024</b>
         <span>Weighted survey estimates across 30 districts and four inclusion indicators.</span></div>
-        """
-    )
+        """)
 
 
 def sidebar_user(email):
     initial = esc((email or "?")[0].upper())
-    render_html(
-        f"""
+    render_html(f"""
         <div class="sb-user"><div class="sb-avatar">{initial}</div>
         <div><div class="sb-email">{esc(email)}</div><div class="sb-role">Signed in</div></div></div>
-        """
-    )
+        """)
 
 
 def show_district_table(df, sort_by, key, file_name, height=430):

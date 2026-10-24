@@ -51,6 +51,23 @@ INDICATORS["Doesn't save"]["description"] = "Percentage classified as not saving
 INDICATORS["Doesn't save"]["interpretation"] = (
     "A financial-vulnerability signal, not a direct measure of access to savings services."
 )
+INDICATORS["Emergency funds"][
+    "description"
+] = "Percentage of respondents who report setting aside emergency or rainy-day funds."
+INDICATORS["Emergency funds"]["interpretation"] = (
+    "A financial-resilience signal. It does not measure the amount saved "
+    "or whether funds would cover a major emergency."
+)
+
+INDICATORS["Group saving"]["description"] = (
+    "Percentage of respondents who report saving with a group, such as "
+    "a cooperative, VSLA, tontine, or ikibina."
+)
+INDICATORS["Group saving"]["interpretation"] = (
+    "Measures participation in group-based saving, not the adequacy "
+    "of savings or overall financial inclusion."
+)
+
 
 _ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services"
 BASEMAPS = {
