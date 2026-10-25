@@ -1,0 +1,113 @@
+{
+  "source": "NBR Financial Inclusion Dashboard",
+  "page": "credit",
+  "url": "https://fininclusion.bnr.rw/credit",
+  "extracted_at_utc": "2026-10-25T09:50:01.746200+00:00",
+  "disclaimer_dismissed": false,
+  "filters": {
+    "Gender": "All",
+    "Age Segment": "All",
+    "Institution Type": "All",
+    "Account Status": "Active",
+    "Credit Category": "All",
+    "Location": "All"
+  },
+  "kpi_count": 5,
+  "kpis": [
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "credit",
+      "url": "https://fininclusion.bnr.rw/credit",
+      "metric_type": "headline_kpi",
+      "metric_label": "Borrowed",
+      "metric_value": "16.9%",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Credit Category": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:00.087856+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "credit",
+      "url": "https://fininclusion.bnr.rw/credit",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Customers",
+      "metric_value": "1,511,290",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Credit Category": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:00.087856+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "credit",
+      "url": "https://fininclusion.bnr.rw/credit",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Accounts",
+      "metric_value": "2,407,559",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Credit Category": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:00.087856+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/credit",
+      "url": "https://fininclusion.bnr.rw/credit",
+      "metric_type": "gender_distribution",
+      "metric_label": "Female customers",
+      "metric_value": 39.8,
+      "gender": "Female",
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Credit Category": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:01.746137+00:00",
+      "extraction_method": "plotly_pie_trace"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/credit",
+      "url": "https://fininclusion.bnr.rw/credit",
+      "metric_type": "gender_distribution",
+      "metric_label": "Male customers",
+      "metric_value": 60.2,
+      "gender": "Male",
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Credit Category": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:01.746160+00:00",
+      "extraction_method": "plotly_pie_trace"
+    }
+  ]
+}

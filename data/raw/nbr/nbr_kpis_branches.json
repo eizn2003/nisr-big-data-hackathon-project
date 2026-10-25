@@ -1,0 +1,31 @@
+{
+  "source": "NBR Financial Inclusion Dashboard",
+  "page": "branches",
+  "url": "https://fininclusion.bnr.rw/touchpoints/branches",
+  "extracted_at_utc": "2026-10-25T09:55:25.785307+00:00",
+  "disclaimer_dismissed": false,
+  "filters": {
+    "Institution Type": "All",
+    "Branch Status": "Active",
+    "Location": "All"
+  },
+  "kpi_count": 1,
+  "kpis": [
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "branches",
+      "url": "https://fininclusion.bnr.rw/touchpoints/branches",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Branches",
+      "metric_value": "1,991",
+      "gender": null,
+      "filters": {
+        "Institution Type": "All",
+        "Branch Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:54:55.754102+00:00",
+      "extraction_method": "headline_card"
+    }
+  ]
+}

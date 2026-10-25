@@ -1,0 +1,113 @@
+{
+  "source": "NBR Financial Inclusion Dashboard",
+  "page": "savings",
+  "url": "https://fininclusion.bnr.rw/savings",
+  "extracted_at_utc": "2026-10-25T09:49:25.898816+00:00",
+  "disclaimer_dismissed": false,
+  "filters": {
+    "Gender": "All",
+    "Age Segment": "All",
+    "Institution Type": "All",
+    "Account Status": "Active",
+    "Account Type": "All",
+    "Location": "All"
+  },
+  "kpi_count": 5,
+  "kpis": [
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "savings",
+      "url": "https://fininclusion.bnr.rw/savings",
+      "metric_type": "headline_kpi",
+      "metric_label": "Saved",
+      "metric_value": "31.9%",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:49:22.573293+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "savings",
+      "url": "https://fininclusion.bnr.rw/savings",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Customers",
+      "metric_value": "2,845,248",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:49:22.573293+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "savings",
+      "url": "https://fininclusion.bnr.rw/savings",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Accounts",
+      "metric_value": "4,312,079",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:49:22.573293+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/savings",
+      "url": "https://fininclusion.bnr.rw/savings",
+      "metric_type": "gender_distribution",
+      "metric_label": "Female customers",
+      "metric_value": 45.4,
+      "gender": "Female",
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:49:25.898715+00:00",
+      "extraction_method": "plotly_pie_trace"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/savings",
+      "url": "https://fininclusion.bnr.rw/savings",
+      "metric_type": "gender_distribution",
+      "metric_label": "Male customers",
+      "metric_value": 54.6,
+      "gender": "Male",
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:49:25.898760+00:00",
+      "extraction_method": "plotly_pie_trace"
+    }
+  ]
+}

@@ -12,14 +12,15 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = PROJECT_ROOT / "data" / "raw" / "nbr"
 
-URL = "https://fininclusion.bnr.rw/transactional"
+URL = "https://fininclusion.bnr.rw/touchpoints/cards"
 
 FILTER_NAMES = [
     "Gender",
     "Age Segment",
     "Institution Type",
-    "Account Status",
-    "Account Type",
+    "Card Status",
+    "Credit Product",
+    "Card Type",
     "Location",
 ]
 

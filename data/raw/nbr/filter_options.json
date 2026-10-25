@@ -1,9 +1,5 @@
 {
-  "Gender": [
-    "All",
-    "Female",
-    "Male"
-  ],
+  "Gender": [],
   "Age Segment": [
     "All",
     "Youth",
@@ -13,19 +9,26 @@
     "All",
     "Banks",
     "Microfinance",
-    "E-money Issuers",
     "Sacco"
   ],
-  "Account Status": [
+  "Card Status": [
     "Active",
-    "Dormant",
-    "Inactive",
-    "Matured"
+    "Inactive"
   ],
-  "Account Type": [
+  "Credit Product": [
     "All",
-    "Current Account",
-    "Mobile Wallet"
+    "Local Card",
+    "Master Card",
+    "Others",
+    "Visa Card"
+  ],
+  "Card Type": [
+    "All",
+    "ATM Only",
+    "Debit",
+    "Credit",
+    "Prepaid",
+    "Smart"
   ],
   "Location": [
     "All",

@@ -1,0 +1,2 @@
+source,page,url,metric_type,metric_label,metric_value,gender,filters,extracted_at_utc,extraction_method
+NBR Financial Inclusion Dashboard,pos,https://fininclusion.bnr.rw/touchpoints/pos,headline_kpi,Total POS,"6,471",,"{""Institution Type"": ""All"", ""Terminal Status"": ""Active"", ""Location"": ""All""}",2026-10-25T09:59:48.075033+00:00,headline_card

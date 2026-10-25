@@ -1,0 +1,120 @@
+{
+	"_comment": [
+		"Source of truth for NBR dashboard pages. The scraper never hardcodes URLs or filter labels in Python.",
+		"A filter is either a plain label string (read-only: the scraper records whatever value the dashboard shows)",
+		"or an object: {\"label\": ..., \"options\": [...]} to iterate every option, or {\"label\": ..., \"fixed\": \"All\"} to force one value.",
+		"If a page has no \"filters\" key, its filter list is UNVERIFIED: the scraper records the labels/values it actually finds",
+		"and warns. Run `--discover --page <id>` to list the real labels/options, then paste them here.",
+		"known_not_applicable / known_no_data: lists of partial filter matches that are recorded without scraping."
+	],
+	"defaults": {
+		"gender_distribution": true,
+		"date_selector": "#date"
+	},
+	"pages": {
+		"cards": {
+			"title": "Cards",
+			"url": "https://fininclusion.bnr.rw/touchpoints/cards",
+			"filters": [
+				"Gender",
+				"Age Segment",
+				"Institution Type",
+				"Card Status",
+				"Card Product",
+				"Card Type",
+				"Location"
+			]
+		},
+		"branches": {
+			"title": "Branches",
+			"url": "https://fininclusion.bnr.rw/touchpoints/branches",
+			"filters": ["Institution Type", "Branch Status", "Location"]
+		},
+		"agents": {
+			"title": "Agents",
+			"url": "https://fininclusion.bnr.rw/touchpoints/agents",
+			"filters": ["Gender", "Institution Type", "Agent Status"]
+		},
+		"internet_banking": {
+			"title": "Internet Banking",
+			"url": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
+			"filters": [
+				"Gender",
+				"Age Segment",
+				"Institution Type",
+				"Account Status",
+				"Account Type"
+			]
+		},
+		"merchants": {
+			"title": "Merchants",
+			"url": "https://fininclusion.bnr.rw/touchpoints/merchants",
+			"filters": ["Gender", "Institution Type", "Merchant Status"]
+		},
+		"mobile_banking": {
+			"title": "Mobile Banking",
+			"url": "https://fininclusion.bnr.rw/touchpoints/mobile_banking",
+			"filters": [
+				"Gender",
+				"Age Segment",
+				"Institution Type",
+				"Account Status",
+				"Account Type"
+			]
+		},
+		"pos": {
+			"title": "POS",
+			"url": "https://fininclusion.bnr.rw/touchpoints/pos",
+			"filters": ["Institution Type", "Terminal Status"]
+		},
+		"transactional": {
+			"title": "Transactional",
+			"url": "https://fininclusion.bnr.rw/transactional",
+			"filters": [
+				"Gender",
+				"Age Segment",
+				"Institution Type",
+				"Account Status",
+				"Account Type"
+			]
+		},
+		"depositors": {
+			"title": "Depositors",
+			"url": "https://fininclusion.bnr.rw/depositors",
+			"filters": [
+				"Gender",
+				"Age Segment",
+				"Institution Type",
+				"Account Status",
+				"Account Type"
+			]
+		},
+		"savings": {
+			"title": "Savings",
+			"url": "https://fininclusion.bnr.rw/savings",
+			"filters": [
+				"Gender",
+				"Age Segment",
+				"Institution Type",
+				"Account Status",
+				"Account Type"
+			]
+		},
+		"credit": {
+			"title": "Credit",
+			"url": "https://fininclusion.bnr.rw/credit",
+			"filters": [
+				"Gender",
+				"Age Segment",
+				"Institution Type",
+				"Account Status",
+				"Credit Category"
+			]
+		},
+		"insurance": {
+			"title": "Insurance",
+			"url": "https://fininclusion.bnr.rw/insurance",
+			"filters": ["Gender", "Age Segment", "Insurance Type", "Policy Status"]
+		}
+	}
+}
