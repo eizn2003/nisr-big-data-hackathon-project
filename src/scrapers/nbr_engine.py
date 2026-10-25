@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from functools import lru_cache
 import hashlib
 import itertools
 import json
@@ -92,6 +93,25 @@ MODAL_CSS = """
 body { overflow: auto !important; }
 """
 
+FILTER_LAYOUT_CSS = """
+.dropdown-grid-container { column-gap: 12px !important; row-gap: 14px !important; }
+.dropdown-grid-container > .col-auto {
+    flex: 1 1 145px !important;
+    max-width: 175px !important;
+    min-width: 145px !important;
+}
+.dropdown-grid-container > .col-auto:has(.location-dropdown-card) {
+    flex-basis: 190px !important;
+    max-width: 210px !important;
+}
+.dropdown-grid-container .dropdown-card {
+    width: 100% !important;
+    min-width: 145px !important;
+}
+.dropdown-grid-container .location-dropdown-card { min-width: 180px !important; }
+.dropdown-grid-container .Select-control { width: 100% !important; }
+"""
+
 # Nearest filter "card" around a dropdown (same classes test_nbr_kpi_discovery.py reads).
 FILTER_CARD_XPATH = (
     "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' dropdown-card ') "
@@ -113,6 +133,10 @@ class OptionNotAvailableError(RuntimeError):
 
 class EmptyDashboardTableError(RuntimeError):
     """The table is visible but contains no data rows."""
+
+
+class DashboardNoDataError(RuntimeError):
+    """The dashboard explicitly reports that the selected combination has no data."""
 
 
 class PageAborted(RuntimeError):
@@ -138,6 +162,49 @@ def now_local() -> datetime:
 
 def norm_label(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().rstrip(":").strip()).casefold()
+
+
+@lru_cache(maxsize=None)
+def expected_kpi_profile(page_id: str) -> dict[str, frozenset[str]] | None:
+    path = OUTPUT_DIR / f"nbr_kpis_{page_id}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConfigError(f"Could not read KPI reference file {path}: {exc}") from exc
+    records = data.get("kpis", [])
+    headlines = frozenset(
+        norm_label(record["metric_label"])
+        for record in records
+        if record.get("metric_type") == "headline_kpi" and record.get("metric_label")
+    )
+    genders = frozenset(
+        str(record["gender"]).strip().casefold()
+        for record in records
+        if record.get("metric_type") == "gender_distribution" and record.get("gender")
+    )
+    return {"headlines": headlines, "genders": genders} if headlines else None
+
+
+def kpi_records_complete(
+    records: list[dict], profile: dict[str, frozenset[str]] | None
+) -> bool:
+    if profile is None:
+        return True
+    headlines = {
+        norm_label(record.get("metric_label", ""))
+        for record in records
+        if record.get("metric_type") == "headline_kpi"
+    }
+    genders = {
+        str(record.get("gender", "")).strip().casefold()
+        for record in records
+        if record.get("metric_type") == "gender_distribution"
+    }
+    return profile["headlines"].issubset(headlines) and profile["genders"].issubset(
+        genders
+    )
 
 
 def ignore_filter_label(label: str | None) -> bool:
@@ -335,18 +402,17 @@ def discover_filter_options(page, cfg: PageConfig) -> dict[str, list[str]]:
     bar = read_filter_bar(page)
     found = validate_filter_bar(cfg, bar)
     live_options: dict[str, list[str]] = {}
-    for spec in [s for s in (cfg.filters or []) if not ignore_filter_label(s.label)]:
+    missing_options = []
+    for spec in [
+        s for s in (cfg.filters or [])
+        if not ignore_filter_label(s.label) and not s.fixed and not s.options
+    ]:
         entry = found.get(norm_label(spec.label))
         if entry is None:
+            missing_options.append(spec.label)
             continue
-        control = (
-            combobox_locators(page)
-            .nth(entry["index"])
-            .locator("xpath=ancestor::div[contains(@class, 'Select-control')]")
-        )
         try:
-            control.click(timeout=5000)
-            page.wait_for_timeout(300)
+            open_filter_dropdown(page, entry["index"], spec.label)
             visible = page.locator(".VirtualizedSelectOption")
             options: list[str] = []
             for i in range(visible.count()):
@@ -356,16 +422,23 @@ def discover_filter_options(page, cfg: PageConfig) -> dict[str, list[str]]:
                     options.append(text)
             if options:
                 live_options[spec.label] = options
-        except (
-            Exception
-        ):  # noqa: BLE001 - no hard failure when a control is temporarily unavailable
-            pass
+            else:
+                missing_options.append(spec.label)
+        except Exception as exc:  # noqa: BLE001 - report missing options instead of undercounting
+            log(f"  Could not discover {spec.label!r}: {type(exc).__name__}: {exc}")
+            missing_options.append(spec.label)
         finally:
             try:
                 page.keyboard.press("Escape")
             except Exception:
                 pass
             page.wait_for_timeout(200)
+    if missing_options:
+        raise FilterConfigError(
+            f"[{cfg.page_id}] Could not discover options for configured filter(s): "
+            + ", ".join(missing_options)
+            + ". Refusing to generate an incomplete combination product."
+        )
     return live_options
 
 
@@ -470,17 +543,36 @@ def load_dashboard(page, url: str):
     page.wait_for_timeout(2500)
     dismiss_disclaimer(page)
     page.add_style_tag(content=MODAL_CSS)
+    page.add_style_tag(content=FILTER_LAYOUT_CSS)
     page.wait_for_timeout(1200)
+    combobox_locators(page).first.wait_for(state="visible", timeout=PAGE_TIMEOUT_MS)
 
 
 def wait_for_dashboard_update(page):
-    updating = page.get_by_text("Updating...", exact=False)
     try:
-        if updating.count() and updating.first.is_visible():
-            updating.first.wait_for(state="hidden", timeout=PAGE_TIMEOUT_MS)
+        page.wait_for_function(
+            """() => {
+                const body = document.body.innerText.toLowerCase();
+                if (body.includes('data incomplete or missing')) return true;
+                const updating = Array.from(document.querySelectorAll('body *')).some(element => {
+                    if (element.children.length) return false;
+                    const rect = element.getBoundingClientRect();
+                    const style = getComputedStyle(element);
+                    return (element.innerText || '').trim().includes('Updating...') &&
+                        rect.width > 0 && rect.height > 0 && style.display !== 'none' &&
+                        style.visibility !== 'hidden';
+                });
+                return !updating;
+            }""",
+            timeout=PAGE_TIMEOUT_MS,
+        )
     except PlaywrightTimeoutError as exc:
         raise RuntimeError("Dashboard did not finish updating.") from exc
     page.wait_for_timeout(FILTER_SETTLE_MS)
+
+
+def dashboard_has_no_data(page) -> bool:
+    return "data incomplete or missing" in page.locator("body").inner_text().casefold()
 
 
 # ============================================================
@@ -690,10 +782,17 @@ def select_filter_option(page, index: int, label: str, option_text: str):
     comboboxes = combobox_locators(page)
     if comboboxes.count() <= index:
         raise RuntimeError(f"Dropdown not found: {label}")
-    control = comboboxes.nth(index).locator(
-        "xpath=ancestor::div[contains(@class, 'Select-control')]"
-    )
-    control.click(timeout=5000)
+    card = comboboxes.nth(index).locator(FILTER_CARD_XPATH)
+    current_value = card.locator(
+        ".Select-value-label, [class*='singleValue']"
+    ).first
+    if current_value.count() and norm_label(current_value.inner_text()) == norm_label(
+        option_text
+    ):
+        return
+    open_filter_dropdown(page, index, label)
+    combobox = comboboxes.nth(index)
+    combobox.fill(option_text)
     page.wait_for_timeout(200)
     options = page.locator(".VirtualizedSelectOption")
     for i in range(options.count()):
@@ -702,11 +801,24 @@ def select_filter_option(page, index: int, label: str, option_text: str):
             option.is_visible()
             and option.inner_text().strip().casefold() == option_text.casefold()
         ):
-            option.click()
+            combobox.press("Enter")
             wait_for_dashboard_update(page)
             return
     page.keyboard.press("Escape")
     raise OptionNotAvailableError(f"Option {option_text!r} not found for {label!r}")
+
+
+def open_filter_dropdown(page, index: int, label: str):
+    comboboxes = combobox_locators(page)
+    if comboboxes.count() <= index:
+        raise RuntimeError(f"Dropdown not found: {label}")
+    combobox = comboboxes.nth(index)
+    combobox.scroll_into_view_if_needed()
+    combobox.focus()
+    combobox.press("ArrowDown")
+    page.locator(".VirtualizedSelectOption").first.wait_for(
+        state="visible", timeout=5000
+    )
 
 
 def apply_filters(page, cfg: PageConfig, assignments: dict[str, str]):
@@ -718,6 +830,8 @@ def apply_filters(page, cfg: PageConfig, assignments: dict[str, str]):
             continue
         entry = found[norm_label(label)]  # present: validated above
         select_filter_option(page, entry["index"], label, value)
+        if dashboard_has_no_data(page):
+            raise DashboardNoDataError("Dashboard reports: Data incomplete or missing.")
 
 
 def verify_assignments(state: dict[str, str], assignments: dict[str, str]):
@@ -763,18 +877,24 @@ _PIE_READ_JS = """
 """
 
 _KPI_READY_JS = """
-(args) => Array.from(document.querySelectorAll(args.card)).some(card => {
-    const style = getComputedStyle(card);
-    const rect = card.getBoundingClientRect();
-    const value = card.querySelector(args.value);
-    const label = card.querySelector(args.label);
-    return rect.width > 0 && rect.height > 0 && style.display !== "none" &&
-           style.visibility !== "hidden" && value?.innerText.trim() && label?.innerText.trim();
-})
+(args) => {
+    const labels = Array.from(document.querySelectorAll(args.card)).filter(card => {
+        const style = getComputedStyle(card);
+        const rect = card.getBoundingClientRect();
+        const value = card.querySelector(args.value);
+        const label = card.querySelector(args.label);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" &&
+               style.visibility !== "hidden" && value?.innerText.trim() && label?.innerText.trim();
+    }).map(card => card.querySelector(args.label).innerText.trim().toLowerCase());
+    return labels.length > 0 && (args.expected.length === 0 ||
+        args.expected.every(label => labels.includes(label.toLowerCase())));
+}
 """
 
 
-def wait_for_kpi_cards(page, timeout_ms: int) -> bool:
+def wait_for_kpi_cards(
+    page, timeout_ms: int, expected_labels: frozenset[str] = frozenset()
+) -> bool:
     try:
         page.wait_for_function(
             _KPI_READY_JS,
@@ -782,10 +902,11 @@ def wait_for_kpi_cards(page, timeout_ms: int) -> bool:
                 "card": KPI_CARD_SELECTOR,
                 "value": KPI_VALUE_SELECTOR,
                 "label": KPI_LABEL_SELECTOR,
+                "expected": sorted(expected_labels),
             },
             timeout=timeout_ms,
         )
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(1500)
         return True
     except PlaywrightTimeoutError:
         return False
@@ -1055,10 +1176,54 @@ def run_key(page_id: str, snapshot_date: str, combo_key: str) -> dict:
 
 
 def is_combination_terminal(
-    store: Store, page_id: str, snapshot_date: str, combo_key: str
+    store: Store,
+    page_id: str,
+    snapshot_date: str,
+    combo_key: str,
+    gender_distribution: bool = True,
 ) -> bool:
     run = store.runs.find_one(run_key(page_id, snapshot_date, combo_key))
-    return bool(run and run.get("status") in TERMINAL_STATUSES)
+    return _is_terminal_run(run, expected_kpi_profile(page_id), gender_distribution)
+
+
+def _is_terminal_run(run, profile, gender_distribution: bool) -> bool:
+    if not run or run.get("status") not in TERMINAL_STATUSES:
+        return False
+    if run.get("status") in {"completed_no_data", "not_applicable"}:
+        return True
+    if profile is None:
+        return True
+    return run.get("headline_kpi_count", 0) >= len(profile["headlines"]) and run.get(
+        "gender_count", 0
+    ) >= (len(profile["genders"]) if gender_distribution else 0)
+
+
+def terminal_combination_keys(
+    store: Store,
+    page_id: str,
+    snapshot_date: str,
+    combo_keys: list[str],
+    gender_distribution: bool = True,
+) -> set[str]:
+    if not combo_keys:
+        return set()
+    profile = expected_kpi_profile(page_id)
+    query = {
+        "page": page_id,
+        "snapshot_date": snapshot_date,
+        "combo_key": {"$in": combo_keys},
+    }
+    projection = {
+        "combo_key": 1,
+        "status": 1,
+        "headline_kpi_count": 1,
+        "gender_count": 1,
+    }
+    return {
+        run["combo_key"]
+        for run in store.runs.find(query, projection)
+        if _is_terminal_run(run, profile, gender_distribution)
+    }
 
 
 def previous_snapshot_matches(
@@ -1167,6 +1332,12 @@ def save_observations(
                 )
             )
         store.tables.bulk_write(ops, ordered=False)
+        store.tables.delete_many(
+            {
+                **run_key(cfg.page_id, snapshot_date, combo_key),
+                "row_index": {"$gte": len(table["rows"])},
+            }
+        )
 
     ordinals: dict[str, int] = {}
     kpi_ops = []
@@ -1390,21 +1561,62 @@ def scrape_combination(
             if not live:
                 select_date(page, selector, snapshot_date)  # no-op when already correct
             apply_filters(page, cfg, assignments)
+            if dashboard_has_no_data(page):
+                raise DashboardNoDataError(
+                    "Dashboard reports: Data incomplete or missing."
+                )
             state = read_filter_state(page, cfg)
             verify_assignments(state, assignments)
             if not live:
                 assert_date_selected(page, selector, snapshot_date)
 
-            kpi_ready = wait_for_kpi_cards(page, runtime.kpi_wait_ms)
-            runtime.kpi_wait_ms = PAGE_TIMEOUT_MS if kpi_ready else SHORT_WAIT_MS
+            profile = expected_kpi_profile(cfg.page_id)
+            expected_headlines = profile["headlines"] if profile else frozenset()
+            expected_genders = (
+                profile["genders"]
+                if profile and cfg.gender_distribution
+                else frozenset()
+            )
+            kpi_ready = wait_for_kpi_cards(
+                page, runtime.kpi_wait_ms, expected_headlines
+            )
+            runtime.kpi_wait_ms = (
+                PAGE_TIMEOUT_MS if expected_headlines or kpi_ready else SHORT_WAIT_MS
+            )
             records = extract_headline_kpis(page) if kpi_ready else []
+            if expected_headlines and not kpi_ready:
+                raise RuntimeError(
+                    f"Timed out waiting for all reference headline KPIs: {sorted(expected_headlines)}."
+                )
 
             gender_status = "disabled"
             if cfg.gender_distribution:
-                gender = extract_gender_percentages(page, runtime.gender_wait_ms)
-                gender_status = "extracted" if gender else "absent"
-                runtime.gender_wait_ms = GENDER_WAIT_MS if gender else SHORT_WAIT_MS
+                if profile is not None and not expected_genders:
+                    gender = []
+                    gender_status = "not_expected"
+                else:
+                    gender = extract_gender_percentages(
+                        page,
+                        GENDER_WAIT_MS if expected_genders else runtime.gender_wait_ms,
+                    )
+                    gender_status = "extracted" if gender else "absent"
+                    runtime.gender_wait_ms = GENDER_WAIT_MS if gender else SHORT_WAIT_MS
                 records.extend(gender)
+
+            if not kpi_records_complete(
+                records,
+                (
+                    {
+                        "headlines": expected_headlines,
+                        "genders": expected_genders,
+                    }
+                    if profile
+                    else None
+                ),
+            ):
+                raise RuntimeError(
+                    "Extracted KPI records do not match the page's reference KPI profile."
+                )
 
             table = None
             if open_table_view(page):
@@ -1449,8 +1661,8 @@ def scrape_combination(
                     prefix,
                 )
             return result
-        except FilterConfigError:
-            raise  # deterministic: retrying cannot fix a config/dashboard mismatch
+        except (FilterConfigError, DashboardNoDataError):
+            raise  # deterministic outcomes should not be retried
         except OptionNotAvailableError as exc:
             last_error = exc
             log(f"  FILTER ERROR: {exc}", prefix)
@@ -1533,14 +1745,20 @@ def collect_page(page, store, cfg, schedule, mode, run_id, limit=None) -> PageOu
         date_source = "live_run_date" if live else "selected"
         meta = {"mode": mode, "run_id": run_id, "date_source": date_source}
 
-        pending = []
-        for assignments in combos:
-            if is_combination_terminal(
-                store, cfg.page_id, snapshot_date, filters_key(assignments)
-            ):
-                entry.skipped += 1
-            else:
-                pending.append(assignments)
+        combo_keys = [filters_key(assignments) for assignments in combos]
+        terminal_keys = terminal_combination_keys(
+            store,
+            cfg.page_id,
+            snapshot_date,
+            combo_keys,
+            cfg.gender_distribution,
+        )
+        entry.skipped += len(terminal_keys)
+        pending = [
+            assignments
+            for assignments, combo_key in zip(combos, combo_keys)
+            if combo_key not in terminal_keys
+        ]
         if not pending:
             log("All combinations already have terminal results; skipping.", prefix)
             continue
@@ -1614,6 +1832,19 @@ def collect_page(page, store, cfg, schedule, mode, run_id, limit=None) -> PageOu
                 outcome.page_error = str(exc)
                 log(f"  PAGE ABORTED: {exc}", prefix)
                 return outcome  # nothing else on this page can be trusted
+            except DashboardNoDataError as exc:
+                mark_run(
+                    store,
+                    cfg,
+                    snapshot_date,
+                    ck,
+                    "completed_no_data",
+                    meta,
+                    filters_requested=assignments,
+                    reason=str(exc),
+                )
+                entry.no_data += 1
+                log(f"  No data for this combination; recorded without retrying: {exc}", prefix)
             except Exception as exc:  # noqa: BLE001
                 mark_failed(store, cfg, snapshot_date, ck, meta, exc, MAX_RETRIES)
                 entry.failed += 1
