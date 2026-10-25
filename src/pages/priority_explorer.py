@@ -1,12 +1,17 @@
-from pathlib import Path
+import itertools
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src import data
+from src.briefs import district_brief
+from src.indicators import BY_COLUMN, BY_NATIONAL, PRIORITY_CANDIDATES
+from src.pages.national_overview import _district_family_figure
 from src.styles import (
-    INDICATOR_THEME,
     PALETTE,
+    badge,
     card_title,
     esc,
     kpi_card,
@@ -17,147 +22,75 @@ from src.styles import (
     style_chart,
 )
 
-
-ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data" / "processed"
-
-DISTRICT_PATH = DATA_DIR / "district_financial_inclusion.csv"
-NATIONAL_PATH = DATA_DIR / "national_financial_inclusion.csv"
-
-
-INDICATORS = {
-    "Bank-account ownership": {
-        "column": "Owns a bank account (%)",
-        "national_name": "Own bank account",
-        "direction": "lower",
-        "explanation": "Lower ownership than the national estimate",
-    },
-    "Mobile-money registration": {
-        "column": "Registered mobile-money user (%)",
-        "national_name": "Registered mobile-money user",
-        "direction": "lower",
-        "explanation": "Lower registration than the national estimate",
-    },
-    "Savings vulnerability": {
-        "column": "Does not save (%)",
-        "national_name": "Does not save",
-        "direction": "higher",
-        "explanation": "Higher share reporting that they do not save",
-    },
-}
-
 KEY_DISTRICT = "priority_explorer_district"
 KEY_SHOW = "priority_explorer_show"
+KEY_COMPS = "priority_explorer_components"
+KEY_DEFF = "priority_explorer_deff"
 SHOW_OPTIONS = ["Top 10", "Top 15", "All districts"]
+DEFF_OPTIONS = {
+    "Simple random sample (×1.0)": 1.0,
+    "Moderate clustering (×1.5)": 1.5,
+    "Strong clustering (×2.0)": 2.0,
+}
+CANDIDATES = {it["short"]: it for it in PRIORITY_CANDIDATES}
+DEFAULT_COMPONENTS = [it["short"] for it in PRIORITY_CANDIDATES if it["priority_default"]]
+TOP_N_STABILITY = 10
 
 
-def _accent(item):
-    return INDICATOR_THEME[item["column"]]["accent"]
+# --------------------------------------------------------------------------
+# Scoring (same method as before, generalised to user-selected components)
+# --------------------------------------------------------------------------
+def build_scores(districts, nat, components, deff):
+    """Score districts on the chosen components.
+
+    For each candidate indicator the gap is measured in the direction that
+    signals a need (below national for positive indicators, above national for
+    vulnerability indicators), floored at zero, and scaled by the largest gap
+    among districts. The score is the equal-weight mean of the chosen components.
+    """
+    df = districts.copy()
+    for item in PRIORITY_CANDIDATES:
+        col = item["column"]
+        national_value = float(nat[item["national"]])
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+        raw = national_value - df[col] if item["polarity"] == "positive" else df[col] - national_value
+        gap = raw.clip(lower=0)
+        top = gap.max()
+        df[f"gap::{col}"] = gap
+        df[f"norm::{col}"] = gap / top * 100 if top and top > 0 else 0.0
+        margin = pd.Series([data.moe_pp(v, n, deff) for v, n in zip(df[col], df["Valid respondents"])],
+                           index=df.index)
+        df[f"moe::{col}"] = margin
+        df[f"signal::{col}"] = (gap > margin) & gap.notna()
+
+    chosen = [CANDIDATES[s]["column"] for s in components]
+    norm_cols = [f"norm::{c}" for c in chosen]
+    df["Priority score"] = df[norm_cols].mean(axis=1, skipna=False)
+    for item_col in chosen:
+        df[f"contrib::{item_col}"] = df[f"norm::{item_col}"] / len(chosen)
+    df["Indicators available"] = df[[f"gap::{c}" for c in chosen]].notna().sum(axis=1)
+    df["Screening status"] = np.where(df["Indicators available"] == len(chosen), "Complete", "Incomplete evidence")
+    df["Gaps beyond margin"] = df[[f"signal::{c}" for c in chosen]].sum(axis=1).astype(int)
+
+    # robustness: rank under every combination of 2+ candidate indicators
+    all_cols = [it["column"] for it in PRIORITY_CANDIDATES]
+    combos = [c for r in range(2, len(all_cols) + 1) for c in itertools.combinations(all_cols, r)]
+    ranks = pd.DataFrame(index=df.index)
+    for i, combo in enumerate(combos):
+        score = df[[f"norm::{c}" for c in combo]].mean(axis=1, skipna=False)
+        ranks[i] = score.rank(ascending=False, method="min")
+    df["Best rank"] = ranks.min(axis=1)
+    df["Worst rank"] = ranks.max(axis=1)
+    df["Top-10 combos"] = (ranks <= TOP_N_STABILITY).sum(axis=1)
+    return df, len(combos)
 
 
-@st.cache_data
-def load_priority_data():
-    districts = pd.read_csv(DISTRICT_PATH)
-    national = pd.read_csv(NATIONAL_PATH)
-
-    required_district = {
-        "District",
-        "Valid respondents",
-        *[item["column"] for item in INDICATORS.values()],
-    }
-    missing = required_district.difference(districts.columns)
-
-    if missing:
-        raise ValueError(
-            "District dataset is missing: " + ", ".join(sorted(missing))
-        )
-
-    required_national = {"Indicator", "Estimate (%)"}
-    if not required_national.issubset(national.columns):
-        raise ValueError("National indicator dataset has unexpected columns.")
-
-    for item in INDICATORS.values():
-        name = item["national_name"]
-        match = national.loc[national["Indicator"].eq(name), "Estimate (%)"]
-
-        if match.empty:
-            raise ValueError(f"National estimate not found for {name}.")
-
-        item_value = pd.to_numeric(match.iloc[0], errors="coerce")
-        if pd.isna(item_value):
-            raise ValueError(f"National estimate is invalid for {name}.")
-
-    return districts, national
-
-
-def build_priority_scores(districts, national):
-    result = districts.copy()
-
-    # Positive gaps indicate a result that warrants closer attention.
-    gap_columns = []
-
-    for label, item in INDICATORS.items():
-        column = item["column"]
-        national_value = float(
-            national.loc[
-                national["Indicator"].eq(item["national_name"]),
-                "Estimate (%)",
-            ].iloc[0]
-        )
-
-        result[column] = pd.to_numeric(result[column], errors="coerce")
-
-        gap_column = f"{label} priority gap (pp)"
-
-        if item["direction"] == "lower":
-            result[gap_column] = (
-                national_value - result[column]
-            ).clip(lower=0)
-        else:
-            result[gap_column] = (
-                result[column] - national_value
-            ).clip(lower=0)
-
-        gap_columns.append(gap_column)
-
-    # Scale each gap by its largest observed positive gap.
-    # This gives the three components equal weight.
-    normalized_columns = []
-
-    for gap_column in gap_columns:
-        max_gap = result[gap_column].max()
-        normalized_column = f"{gap_column} normalized"
-
-        if pd.isna(max_gap) or max_gap == 0:
-            result[normalized_column] = 0.0
-        else:
-            result[normalized_column] = (
-                result[gap_column] / max_gap
-            ) * 100
-
-        normalized_columns.append(normalized_column)
-
-    result["Priority score"] = (
-        result[normalized_columns].mean(axis=1)
-    )
-
-    result["Indicators available"] = (
-        result[gap_columns].notna().sum(axis=1)
-    )
-
-    result["Screening status"] = result["Indicators available"].map(
-        lambda count: (
-            "Complete" if count == len(gap_columns)
-            else "Incomplete evidence"
-        )
-    )
-
-    # UI only: keep each indicator's share of the score for the charts.
-    for label, norm_col in zip(INDICATORS, normalized_columns):
-        result[f"{label} contribution"] = result[norm_col] / len(INDICATORS)
-
-    result = result.drop(columns=normalized_columns)
-    return result, gap_columns
+def _stability_label(k, m):
+    if k >= round(0.8 * m):
+        return "Consistently high"
+    if k == 0:
+        return "Not in the top 10"
+    return "Sensitive to indicator choice"
 
 
 # --------------------------------------------------------------------------
@@ -173,138 +106,109 @@ def _jump_to(name):
     st.session_state[KEY_DISTRICT] = name
 
 
-def _evidence_html(selected, national, ranked, label, item):
-    column = item["column"]
-    national_value = float(
-        national.loc[
-            national["Indicator"].eq(item["national_name"]), "Estimate (%)"
-        ].iloc[0]
-    )
-    value = selected[column]
-    lo, hi = float(ranked[column].min()), float(ranked[column].max())
-    accent = _accent(item)
-
+def _evidence_html(row, nat, frame, item, deff):
+    col = item["column"]
+    national_value = float(nat[item["national"]])
+    value = row[col]
+    lo, hi = float(frame[col].min()), float(frame[col].max())
+    explanation = ("Lower than the national estimate signals a gap" if item["polarity"] == "positive"
+                   else "Higher than the national estimate signals a gap")
     if pd.isna(value):
-        chip = '<span class="ev-chip na">Estimate unavailable</span>'
-        nums = f"""
-        <div class="ev-nums"><div><b>n/a</b><span>District</span></div>
-        <div><b>{national_value:.1f}%</b><span>National</span></div>
-        <div><b>n/a</b><span>Gap</span></div></div>
-        """
-        meter = ""
+        return (f'<div class="ev" style="--accent:{item["accent"]}"><div class="ev-top">'
+                f'<div class="ev-name"><i></i>{esc(item["label"])}</div><span class="ev-chip na">Estimate unavailable</span>'
+                f"</div></div>")
+    value = float(value)
+    gap = float(row[f"gap::{col}"])
+    margin = float(row[f"moe::{col}"])
+    if gap <= 0:
+        chip = '<span class="ev-chip ok">At or better than national</span>'
+    elif gap > margin:
+        chip = '<span class="ev-chip flag">Gap larger than the sampling margin</span>'
     else:
-        value = float(value)
-        gap = (
-            national_value - value if item["direction"] == "lower"
-            else value - national_value
-        )
-        if item["direction"] == "lower":
-            text = "Below national estimate" if gap > 0 else "At or above national estimate"
-        else:
-            text = "Above national estimate" if gap > 0 else "At or below national estimate"
-        chip = f'<span class="ev-chip {"flag" if gap > 0 else "ok"}">{text}</span>'
-        nums = f"""
-        <div class="ev-nums">
-          <div><b>{value:.1f}%</b><span>{esc(selected['District'])}</span></div>
-          <div><b>{national_value:.1f}%</b><span>National</span></div>
-          <div><b>{max(gap, 0):.1f} pp</b><span>Gap toward priority</span></div>
-        </div>
-        """
-        meter = f"""
-        <div class="meter">
-          <div class="meter-track"></div>
-          <div class="meter-mark" style="left:{_meter_pos(national_value, lo, hi):.1f}%">National</div>
-          <div class="meter-dot" style="left:{_meter_pos(value, lo, hi):.1f}%"></div>
-        </div>
-        <div class="meter-ends"><span>Lowest district {lo:.1f}%</span><span>Highest {hi:.1f}%</span></div>
-        """
-
+        chip = '<span class="ev-chip na">Gap within the sampling margin</span>'
     return f"""
-    <div class="ev" style="--accent:{accent}">
-      <div class="ev-top"><div class="ev-name"><i></i>{esc(label)}</div>{chip}</div>
-      <div class="ev-why">{esc(item['explanation'])}</div>
-      {nums}
-      {meter}
+    <div class="ev" style="--accent:{item['accent']}">
+      <div class="ev-top"><div class="ev-name"><i></i>{esc(item['label'])}</div>{chip}</div>
+      <div class="ev-why">{explanation}</div>
+      <div class="ev-nums">
+        <div><b>{value:.1f}%</b><span>{esc(row['District'])} · ±{margin:.1f} pp</span></div>
+        <div><b>{national_value:.1f}%</b><span>National</span></div>
+        <div><b>{gap:.1f} pp</b><span>Gap toward priority</span></div>
+      </div>
+      <div class="meter"><div class="meter-track"></div>
+        <div class="meter-mark" style="left:{_meter_pos(national_value, lo, hi):.1f}%">National</div>
+        <div class="meter-dot" style="left:{_meter_pos(value, lo, hi):.1f}%"></div></div>
+      <div class="meter-ends"><span>Lowest district {lo:.1f}%</span><span>Highest {hi:.1f}%</span></div>
     </div>
     """
 
 
-def _donut(selected):
-    labels = list(INDICATORS.keys())
-    values = [float(selected[f"{label} contribution"]) for label in labels]
-    colors = [_accent(item) for item in INDICATORS.values()]
-    score = float(selected["Priority score"])
-
+def _donut(row, components):
+    items = [CANDIDATES[s] for s in components]
+    values = [float(row[f"contrib::{it['column']}"]) for it in items]
+    score = float(row["Priority score"])
     if sum(values) <= 0:
-        pie = go.Pie(
-            labels=["No gap above national"], values=[1], hole=0.7,
-            marker=dict(colors=["#E4EBEE"]), textinfo="none",
-            hoverinfo="skip", showlegend=False,
-        )
+        pie = go.Pie(labels=["No gap above national"], values=[1], hole=0.7, marker=dict(colors=["#E4EBEE"]),
+                     textinfo="none", hoverinfo="skip", showlegend=False)
     else:
-        pie = go.Pie(
-            labels=labels, values=values, hole=0.7, sort=False,
-            marker=dict(colors=colors, line=dict(color="#FFFFFF", width=3)),
-            textinfo="none", direction="clockwise",
-            hovertemplate="<b>%{label}</b><br>%{value:.1f} of 100 points<extra></extra>",
-            showlegend=False,
-        )
+        pie = go.Pie(labels=[it["label"] for it in items], values=values, hole=0.7, sort=False,
+                     marker=dict(colors=[it["accent"] for it in items], line=dict(color="#FFFFFF", width=3)),
+                     textinfo="none", direction="clockwise", showlegend=False,
+                     hovertemplate="<b>%{label}</b><br>%{value:.1f} of 100 points<extra></extra>")
     fig = go.Figure(pie)
-    fig.add_annotation(
-        text=f"<b style='font-size:34px'>{score:.1f}</b><br>"
-             f"<span style='font-size:12px;color:{PALETTE['muted']}'>out of 100</span>",
-        showarrow=False, font=dict(color=PALETTE["ink"], size=16),
-    )
+    fig.add_annotation(text=f"<b style='font-size:34px'>{score:.1f}</b><br>"
+                            f"<span style='font-size:12px;color:{PALETTE['muted']}'>out of 100</span>",
+                       showarrow=False, font=dict(color=PALETTE["ink"], size=16))
     return style_chart(fig, 280, margin=dict(l=4, r=4, t=4, b=4))
 
 
-def _ranking_figure(ranked, selected_district, show):
-    if show == "Top 10":
-        pool = ranked.head(10)
-    elif show == "Top 15":
-        pool = ranked.head(15)
-    else:
-        pool = ranked
+def _ranking_figure(ranked, selected_district, show, components):
+    pool = ranked.head(10) if show == "Top 10" else ranked.head(15) if show == "Top 15" else ranked
     if selected_district not in pool["District"].values:
         pool = pd.concat([pool, ranked.loc[ranked["District"].eq(selected_district)]])
     chart = pool.sort_values("Priority score", ascending=True)
-
     is_sel = chart["District"].eq(selected_district)
-    line_colors = [PALETTE["sun"] if v else "#FFFFFF" for v in is_sel]
-    line_widths = [3 if v else 0.6 for v in is_sel]
-
     fig = go.Figure()
-    for label, item in INDICATORS.items():
-        fig.add_bar(
-            y=chart["District"],
-            x=chart[f"{label} contribution"],
-            orientation="h",
-            name=label,
-            marker=dict(
-                color=_accent(item),
-                line=dict(color=line_colors, width=line_widths),
-            ),
-            hovertemplate=(
-                "<b>%{y}</b><br>" + label
-                + ": %{x:.1f} points<extra></extra>"
-            ),
-        )
-    fig.add_trace(
-        go.Scatter(
-            x=chart["Priority score"], y=chart["District"],
-            mode="text", text=[f"{v:.1f}" for v in chart["Priority score"]],
-            textposition="middle right", textfont=dict(size=12, color=PALETTE["ink"]),
-            hoverinfo="skip", showlegend=False, cliponaxis=False,
-        )
-    )
+    for short in components:
+        it = CANDIDATES[short]
+        fig.add_bar(y=chart["District"], x=chart[f"contrib::{it['column']}"], orientation="h", name=it["label"],
+                    marker=dict(color=it["accent"],
+                                line=dict(color=[PALETTE["sun"] if v else "#FFFFFF" for v in is_sel],
+                                          width=[3 if v else 0.6 for v in is_sel])),
+                    hovertemplate="<b>%{y}</b><br>" + it["label"] + ": %{x:.1f} points<extra></extra>")
+    fig.add_trace(go.Scatter(x=chart["Priority score"], y=chart["District"], mode="text",
+                             text=[f"{v:.1f}" for v in chart["Priority score"]], textposition="middle right",
+                             textfont=dict(size=12, color=PALETTE["ink"]), hoverinfo="skip",
+                             showlegend=False, cliponaxis=False))
     fig.update_layout(barmode="stack", bargap=0.3)
-    fig.update_xaxes(
-        title=None, range=[0, min(100, float(chart["Priority score"].max()) + 10)],
-        gridcolor=PALETTE["grid"], zeroline=False,
-    )
+    fig.update_xaxes(title=None, range=[0, min(100, float(chart["Priority score"].max()) + 10)],
+                     gridcolor=PALETTE["grid"], zeroline=False)
     fig.update_yaxes(title=None, showgrid=False, tickfont=dict(size=11.5))
-    height = max(380, 34 * len(chart) + 70)
-    return style_chart(fig, height, margin=dict(l=4, r=24, t=34, b=4)), height
+    return style_chart(fig, max(380, 34 * len(chart) + 70), margin=dict(l=4, r=24, t=34, b=4))
+
+
+def _stability_figure(ranked, selected_district, combos):
+    top = ranked.head(15)
+    if selected_district not in top["District"].values:
+        top = pd.concat([top, ranked.loc[ranked["District"].eq(selected_district)]])
+    top = top.sort_values("Rank")
+    fig = go.Figure()
+    for _, r in top.iterrows():
+        fig.add_trace(go.Scatter(x=[r["Best rank"], r["Worst rank"]], y=[r["District"]] * 2, mode="lines",
+                                 line=dict(color="#CBD8DD", width=7), hoverinfo="skip", showlegend=False))
+    is_sel = top["District"].eq(selected_district)
+    fig.add_trace(go.Scatter(
+        x=top["Rank"], y=top["District"], mode="markers", showlegend=False,
+        marker=dict(size=15, color=[PALETTE["sun"] if v else PALETTE["ink2"] for v in is_sel],
+                    line=dict(color="#FFFFFF", width=2.5)),
+        customdata=np.stack([top["Best rank"], top["Worst rank"], top["Top-10 combos"]], axis=-1),
+        hovertemplate=f"<b>%{{y}}</b><br>Rank with chosen indicators: %{{x:.0f}}<br>"
+                      f"Range across {combos} combinations: %{{customdata[0]:.0f}} to %{{customdata[1]:.0f}}<br>"
+                      f"Top 10 in %{{customdata[2]:.0f}} of {combos}<extra></extra>"))
+    fig.update_xaxes(title="Rank (1 = largest relative gaps)", range=[0, max(31, float(top["Worst rank"].max()) + 2)],
+                     gridcolor=PALETTE["grid"], zeroline=False, dtick=5)
+    fig.update_yaxes(title=None, showgrid=False, autorange="reversed", tickfont=dict(size=11.5))
+    return style_chart(fig, max(380, 30 * len(top) + 80), margin=dict(l=4, r=20, t=10, b=4))
 
 
 # --------------------------------------------------------------------------
@@ -312,252 +216,217 @@ def _ranking_figure(ranked, selected_district, show):
 # --------------------------------------------------------------------------
 def render_priority_explorer():
     try:
-        districts, national = load_priority_data()
-        scored, gap_columns = build_priority_scores(districts, national)
+        districts = data.load_district()
+        national = data.load_national()
+        nat = dict(zip(national["Indicator"], national["Estimate (%)"].astype(float)))
+        missing = [it["national"] for it in PRIORITY_CANDIDATES if it["national"] not in nat
+                   or it["column"] not in districts.columns]
+        if missing:
+            raise ValueError("Missing data for: " + ", ".join(missing))
     except (FileNotFoundError, ValueError, KeyError) as error:
         st.error("Could not load the priority analysis data.")
         st.caption(str(error))
         return
 
-    # Exclude districts with incomplete component data from the ranking.
-    ranked = scored.loc[
-        scored["Screening status"].eq("Complete")
-    ].copy()
+    chosen = st.session_state.get(KEY_COMPS) or DEFAULT_COMPONENTS
+    too_few = len(chosen) < 2
+    components = DEFAULT_COMPONENTS if too_few else [s for s in CANDIDATES if s in chosen]
+    deff = DEFF_OPTIONS.get(st.session_state.get(KEY_DEFF), 1.0)
 
+    scored, combos = build_scores(districts, nat, components, deff)
+    ranked = scored.loc[scored["Screening status"].eq("Complete")].copy()
     if ranked.empty:
         st.warning("There are no districts with complete indicator data.")
         return
-
-    ranked = ranked.sort_values(
-        "Priority score", ascending=False
-    ).reset_index(drop=True)
-    ranked["Rank"] = ranked.index + 1
+    ranked = ranked.sort_values("Priority score", ascending=False).reset_index(drop=True)
+    ranked["Rank"] = ranked["Priority score"].rank(ascending=False, method="min").astype(int)
     total = len(ranked)
 
     names = ranked["District"].tolist()
     st.session_state.setdefault(KEY_DISTRICT, names[0])
     if st.session_state[KEY_DISTRICT] not in names:
         st.session_state[KEY_DISTRICT] = names[0]
-
     selected_district = st.session_state[KEY_DISTRICT]
-    selected = ranked.loc[ranked["District"].eq(selected_district)].iloc[0]
-    score = float(selected["Priority score"])
+    sel = ranked.loc[ranked["District"].eq(selected_district)].iloc[0]
+    score = float(sel["Priority score"])
+    k = int(sel["Top-10 combos"])
 
-    # Largest single driver of the selected district's score
-    contribs = {
-        label: float(selected[f"{label} contribution"]) for label in INDICATORS
-    }
-    driver_label = max(contribs, key=contribs.get)
-    driver_item = INDICATORS[driver_label]
+    contribs = {s: float(sel[f"contrib::{CANDIDATES[s]['column']}"]) for s in components}
+    driver = max(contribs, key=contribs.get)
     if score > 0:
-        driver_html = (
-            f'<span style="font-size:25px">'
-            f'{esc(INDICATOR_THEME[driver_item["column"]]["short"])}</span>'
-        )
-        driver_fill = contribs[driver_label] / score * 100
-        driver_src = f"<b>{driver_fill:.0f}%</b> of the score"
+        driver_html = f'<span style="font-size:25px">{esc(driver)}</span>'
+        driver_fill, driver_src = contribs[driver] / score * 100, f"<b>{contribs[driver] / score * 100:.0f}%</b> of the score"
     else:
-        driver_html = '<span style="font-size:25px">None</span>'
-        driver_fill = 0
-        driver_src = "No gap above national"
+        driver_html, driver_fill, driver_src = '<span style="font-size:25px">None</span>', 0, "No gap above national"
 
-    max_n = float(ranked["Valid respondents"].max())
-
-    # ---- Hero + headline cards -------------------------------------------
+    # ---- Hero ---------------------------------------------------------------
     page_header(
         "Priority explorer",
-        "Screen districts whose bank, mobile-money and savings results fall "
-        "behind national estimates, and see what drives each score.",
+        "Screen districts whose results fall behind national estimates, see what drives each score, "
+        "and check whether the ranking holds up.",
         pill="Exploratory screening",
         size="tall",
-        below_html=kpi_grid(
-            [
-                kpi_card("Relative priority score", f"{score:.1f}", "/100", score,
-                         PALETTE["sun"], f"<b>{esc(selected_district)}</b>"),
-                kpi_card("Screening rank", f"#{int(selected['Rank'])}", f" of {total}",
-                         (total - int(selected["Rank"]) + 1) / total * 100,
-                         PALETTE["ink2"], "Rank 1 = largest relative gaps"),
-                kpi_card("Largest driver", driver_html, "", driver_fill,
-                         _accent(driver_item), driver_src),
-                kpi_card("Valid respondents", f"{int(selected['Valid respondents']):,}", "",
-                         float(selected["Valid respondents"]) / max_n * 100,
-                         "#5FB8AB",
-                         f"{int(selected['Indicators available'])}/3 indicators available"),
-            ]
-        ),
+        below_html=kpi_grid([
+            kpi_card("Relative priority score", f"{score:.1f}", "/100", score, PALETTE["sun"],
+                     f"<b>{esc(selected_district)}</b> · rank {int(sel['Rank'])} of {total}"),
+            kpi_card("Screening rank", f"#{int(sel['Rank'])}", f" of {total}",
+                     (total - int(sel["Rank"]) + 1) / total * 100, PALETTE["ink2"], "Rank 1 = largest relative gaps"),
+            kpi_card("Largest driver", driver_html, "", driver_fill, CANDIDATES[driver]["accent"], driver_src),
+            kpi_card("Rank stability", f"{k}/{combos}", "", k / combos * 100, "#5FB8AB",
+                     f"Top 10 in {k} of {combos} indicator combinations"),
+        ]),
     )
-
+    st.markdown("")
+    note("An exploratory screening score",
+         "This is not an official poverty ranking. It compares FinScope Rwanda 2024 estimates with national "
+         "estimates and does not establish causation or current conditions.", tone="warn")
     st.markdown("")
 
-    note(
-        "An exploratory screening score",
-        "This is not an official poverty ranking. It compares FinScope Rwanda "
-        "2024 estimates with national estimates and does not establish "
-        "causation or current conditions.",
-        tone="warn",
-    )
-
-    st.markdown("")
-
-    # ---- Controls ----------------------------------------------------------
+    # ---- Controls -----------------------------------------------------------------
     with st.container(key="card_controls"):
-        c_dist, c_show = st.columns([1.3, 2], gap="large", vertical_alignment="bottom")
-        with c_dist:
+        c1, c2 = st.columns([1.2, 2.2], gap="large", vertical_alignment="bottom")
+        with c1:
             st.selectbox("Explore a district", names, key=KEY_DISTRICT)
-        with c_show:
-            show = st.segmented_control(
-                "Districts shown in the ranking",
-                SHOW_OPTIONS,
-                default=SHOW_OPTIONS[1],
-                key=KEY_SHOW,
-            ) or SHOW_OPTIONS[1]
-
+        with c2:
+            st.pills("Indicators in the score (choose at least two)", list(CANDIDATES.keys()),
+                     selection_mode="multi", default=DEFAULT_COMPONENTS, key=KEY_COMPS)
+        c3, c4 = st.columns([1.2, 2.2], gap="large", vertical_alignment="bottom")
+        with c3:
+            show = st.segmented_control("Districts shown in the ranking", SHOW_OPTIONS,
+                                        default=SHOW_OPTIONS[1], key=KEY_SHOW) or SHOW_OPTIONS[1]
+        with c4:
+            st.segmented_control("Sampling assumption for margins", list(DEFF_OPTIONS.keys()),
+                                 default=list(DEFF_OPTIONS.keys())[0], key=KEY_DEFF)
+    if too_few:
+        st.warning("Choose at least two indicators; showing the three documented components instead.")
     st.markdown("")
 
-    # ---- Evidence + score composition --------------------------------------
+    # ---- Evidence + composition ---------------------------------------------------------
     left, right = st.columns([1.45, 1], gap="medium")
-
     with left:
         with st.container(key="card_priority_evidence"):
-            card_title(
-                f"Why {selected_district} appears on the screen",
-                "Each indicator compared with the national estimate. The "
-                "yellow dot is this district, the tick is the national level.",
-            )
-            for label, item in INDICATORS.items():
-                render_html(_evidence_html(selected, national, ranked, label, item))
-
+            card_title(f"Why {selected_district} appears on the screen",
+                       "Each chosen indicator against the national estimate. The yellow dot is this district; "
+                       "the tick is the national level.")
+            for s in components:
+                render_html(_evidence_html(sel, nat, ranked, CANDIDATES[s], deff))
+            borrow = BY_COLUMN["Borrowed in the past 12 months (%)"]
+            if borrow["column"] in ranked.columns and borrow["national"] in nat:
+                render_html(
+                    f'<div class="micro">Supporting evidence, not scored: {esc(selected_district)} borrowing '
+                    f"{float(sel[borrow['column']]):.1f}% vs {nat[borrow['national']]:.1f}% nationally. "
+                    "Borrowing is not treated as inherently good or bad.</div>")
     with right:
         with st.container(key="card_priority_drivers"):
-            card_title(
-                "What drives the score",
-                "Each indicator contributes up to a third of the 100 points.",
-            )
-            st.plotly_chart(
-                _donut(selected),
-                use_container_width=True,
-                key="priority_donut",
-                config={"displayModeBar": False},
-            )
+            card_title("What drives the score", "Each chosen indicator contributes an equal share of the 100 points.")
+            st.plotly_chart(_donut(sel, components), use_container_width=True, key="priority_donut",
+                            config={"displayModeBar": False})
             legend = "".join(
-                f'<div class="gap" style="margin-bottom:8px"><span>'
-                f'<i style="display:inline-block;width:9px;height:9px;border-radius:50%;'
-                f'background:{_accent(item)};margin-right:7px"></i>{esc(label)}</span>'
-                f'<b>{contribs[label]:.1f} pts</b></div>'
-                for label, item in INDICATORS.items()
-            )
+                f'<div class="gap" style="margin-bottom:8px"><span><i style="display:inline-block;width:9px;'
+                f'height:9px;border-radius:50%;background:{CANDIDATES[s]["accent"]};margin-right:7px"></i>'
+                f'{esc(CANDIDATES[s]["label"])}</span><b>{contribs[s]:.1f} pts</b></div>' for s in components)
             render_html(legend)
-            render_html(
-                '<div class="rank-hint">Higher scores mean larger relative gaps '
-                "across the three indicators. Scores are comparative within this "
-                "dataset, not probabilities or percentages of people in need.</div>"
-            )
-
+            beyond = int(sel["Gaps beyond margin"])
+            render_html(f'<div class="rank-hint">{beyond} of {len(components)} gaps are larger than the indicative '
+                        "sampling margin. Scores are comparative within this dataset, not probabilities or "
+                        "percentages of people in need.</div>")
     st.markdown("")
 
-    # ---- Ranking + top five ------------------------------------------------
-    rank_col, top_col = st.columns([1.6, 1], gap="medium")
+    # ---- Barriers for this district --------------------------------------------------------
+    barriers = data.load_barriers_district()
+    if barriers is not None and selected_district in set(barriers["District"]):
+        rows = barriers.loc[barriers["District"].eq(selected_district)]
+        base = int(rows["District non-account respondents"].iloc[0])
+        fam = data.barrier_family_shares(rows).set_index("Barrier family")["Weighted share (%)"]
+        need = fam.get("No need or too little income", 0.0)
+        other = fam.drop(labels=["No need or too little income", "Other"], errors="ignore").sort_values(ascending=False)
+        with st.container(key="card_priority_barriers"):
+            b1, b2 = st.columns([1.1, 1], gap="large")
+            with b1:
+                card_title(f"What people without an account say in {selected_district}",
+                           f"Reasons given by {base:,} respondents without a bank account (weighted shares).")
+                render_html(
+                    f'<p class="mc-p" style="font-size:14.5px"><b>{need:.1f}%</b> say they do not need an account or '
+                    f"that their income is too limited to justify one. Among the other reasons, "
+                    f"<b>{other.index[0].lower()} ({other.iloc[0]:.1f}%)</b> is the largest"
+                    + (f", followed by <b>{other.index[1].lower()} ({other.iloc[1]:.1f}%)</b>" if len(other) > 1 else "")
+                    + ".</p>"
+                    '<div class="micro">This helps match the response to the barrier: where income is the main '
+                    "constraint, product design and livelihoods may matter more than branch coverage. Read as an "
+                    "indication, not a causal diagnosis.</div>")
+            with b2:
+                st.plotly_chart(_district_family_figure(rows), use_container_width=True,
+                                key="priority_barrier_chart", config={"displayModeBar": False})
+        st.markdown("")
 
+    # ---- Ranking + top five ---------------------------------------------------------------------
+    rank_col, top_col = st.columns([1.6, 1], gap="medium")
     with rank_col:
         with st.container(key="card_priority_ranking"):
-            card_title(
-                "Screening ranking",
-                "Bars are split by indicator so you can see what builds each "
-                "score. The selected district has a yellow outline.",
-            )
-            fig, _ = _ranking_figure(ranked, selected_district, show)
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-                key="priority_explorer_ranking",
-                config={"displayModeBar": False},
-            )
-
+            card_title("Screening ranking", "Bars are split by indicator so you can see what builds each score. "
+                                            "The selected district has a yellow outline.")
+            st.plotly_chart(_ranking_figure(ranked, selected_district, show, components), use_container_width=True,
+                            key="priority_explorer_ranking", config={"displayModeBar": False})
     with top_col:
         with st.container(key="card_priority_top"):
-            card_title(
-                "Highest screening scores",
-                "Jump straight to the districts with the largest relative gaps.",
-            )
-            for _, row in ranked.head(5).iterrows():
-                st.button(
-                    f"{int(row['Rank'])}  ·  {row['District']}  ·  {row['Priority score']:.1f}",
-                    key=f"pe_jump_{row['District']}",
-                    on_click=_jump_to,
-                    args=(row["District"],),
-                    use_container_width=True,
-                )
+            card_title("Highest screening scores", "Jump straight to the districts with the largest relative gaps.")
+            for _, r in ranked.head(5).iterrows():
+                st.button(f"{int(r['Rank'])}  ·  {r['District']}  ·  {r['Priority score']:.1f}",
+                          key=f"pe_jump_{r['District']}", on_click=_jump_to, args=(r["District"],),
+                          use_container_width=True)
             render_html(
-                f"""
-                <div class="build"><b>How the score is built.</b><br>
-                For each of three indicators, the gap to the national estimate is
-                measured in the direction that signals a need (below national for
-                banking and mobile money, above national for not saving).
-                Each gap is scaled by the largest gap among districts, and the
-                three scaled gaps are averaged with equal weight.</div>
-                """
-            )
-
+                '<div class="build"><b>How the score is built.</b><br>For each chosen indicator, the gap to the '
+                "national estimate is measured in the direction that signals a need (below national for banking, "
+                "mobile money and emergency funds; above national for not saving). Each gap is scaled by the "
+                "largest gap among districts, and the scaled gaps are averaged with equal weight.</div>")
+            st.download_button(
+                "Download district profile",
+                data=district_brief(
+                    selected_district, districts, nat, barriers=barriers,
+                    priority=dict(score=score, rank=int(sel["Rank"]), total=total,
+                                  robust_text=f"Top 10 in {k} of {combos} indicator combinations "
+                                              f"({_stability_label(k, combos).lower()}).",
+                                  drivers=", ".join(f"{s} {v:.1f} pts" for s, v in
+                                                    sorted(contribs.items(), key=lambda x: -x[1])))),
+                file_name=f"{selected_district.lower().replace(' ', '_')}_priority_profile.md",
+                mime="text/markdown", key="pe_brief", use_container_width=True, icon=":material/description:")
     st.markdown("")
 
-    # ---- Ranked table --------------------------------------------------------
+    # ---- Stability ----------------------------------------------------------------------------------
+    with st.container(key="card_priority_stability"):
+        card_title("How stable is each district's rank?",
+                   f"The bar spans the best and worst rank a district gets across {combos} combinations of the "
+                   "four candidate indicators. The dot is its rank with your current choice.")
+        st.plotly_chart(_stability_figure(ranked, selected_district, combos), use_container_width=True,
+                        key="priority_stability", config={"displayModeBar": False})
+        render_html('<div class="micro">A short bar means the district is a priority however the score is built. '
+                    "A long bar means the conclusion depends on which indicators you include.</div>")
+    st.markdown("")
+
+    # ---- Table -----------------------------------------------------------------------------------------
     with st.container(key="card_priority_table"):
-        card_title(
-            "Ranked results",
-            "All districts with complete indicator data, from the largest to "
-            "the smallest relative gap.",
-        )
+        card_title("Ranked results", "All districts with complete indicator data, from the largest to the smallest relative gap.")
+        table = ranked[["Rank", "District", "Priority score", "Top-10 combos", "Valid respondents"]].copy()
+        table["Stability"] = [_stability_label(v, combos) for v in table["Top-10 combos"]]
+        table["Gaps beyond margin"] = ranked["Gaps beyond margin"].astype(int)
+        for short, it in CANDIDATES.items():
+            table[short] = ranked[it["column"]].round(2)
+        table["Priority score"] = table["Priority score"].round(1)
+        table = table.drop(columns=["Top-10 combos"])
+        cfg = {
+            "Priority score": st.column_config.ProgressColumn("Priority score", format="%.1f", min_value=0, max_value=100),
+            "Valid respondents": st.column_config.NumberColumn("Respondents", format="%d"),
+            "Gaps beyond margin": st.column_config.NumberColumn(f"Gaps > margin (of {len(components)})", format="%d"),
+        }
+        for short in CANDIDATES:
+            cfg[short] = st.column_config.ProgressColumn(short, format="%.1f%%", min_value=0, max_value=100)
+        st.dataframe(table, hide_index=True, use_container_width=True, height=440, column_config=cfg)
+        st.download_button("Download priority screening results (CSV)",
+                           data=table.to_csv(index=False).encode("utf-8"),
+                           file_name="district_priority_screening.csv", mime="text/csv",
+                           key="priority_explorer_download", icon=":material/download:")
 
-        display_columns = [
-            "District",
-            "Priority score",
-            "Valid respondents",
-            "Owns a bank account (%)",
-            "Registered mobile-money user (%)",
-            "Does not save (%)",
-            "Screening status",
-        ]
-        display = ranked[display_columns].copy()
-        display["Priority score"] = display["Priority score"].round(1)
-        for column in display_columns[3:6]:
-            display[column] = display[column].round(2)
-
-        st.dataframe(
-            display,
-            hide_index=True,
-            use_container_width=True,
-            height=440,
-            column_config={
-                "Priority score": st.column_config.ProgressColumn(
-                    "Priority score", format="%.1f", min_value=0, max_value=100
-                ),
-                "Valid respondents": st.column_config.NumberColumn(
-                    "Respondents", format="%d"
-                ),
-                "Owns a bank account (%)": st.column_config.ProgressColumn(
-                    "Bank account", format="%.1f%%", min_value=0, max_value=100
-                ),
-                "Registered mobile-money user (%)": st.column_config.ProgressColumn(
-                    "Mobile money", format="%.1f%%", min_value=0, max_value=100
-                ),
-                "Does not save (%)": st.column_config.ProgressColumn(
-                    "Doesn't save", format="%.1f%%", min_value=0, max_value=100
-                ),
-            },
-        )
-
-        st.download_button(
-            "Download priority screening results (CSV)",
-            data=display.to_csv(index=False).encode("utf-8"),
-            file_name="district_priority_screening.csv",
-            mime="text/csv",
-            key="priority_explorer_download",
-            icon=":material/download:",
-        )
-
-    render_html(
-        '<div class="src-note">Source: FinScope Rwanda 2024. Respondent counts '
-        "are unweighted sample sizes; indicator percentages are weighted "
-        "estimates. The score uses equal weighting of three normalized gaps. "
-        "No confidence intervals or statistical-significance claims are made.</div>"
-    )
+    render_html('<div class="src-note">Source: FinScope Rwanda 2024. Respondent counts are unweighted sample sizes; '
+                "indicator percentages are weighted estimates. The score uses equal weighting of the chosen "
+                "normalized gaps. Margins are indicative (binomial, optional design-effect multiplier) because the "
+                "survey's design information is not available; no formal significance claims are made.</div>")

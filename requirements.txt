@@ -1,8 +1,5 @@
-streamlit
-pandas
-numpy
-plotly
-openpyxl
-seaborn
-pymupdf
-Authlib
+streamlit>=1.42
+plotly>=5.24
+pandas>=2.0
+numpy>=1.26
+pytest>=8.0

@@ -123,7 +123,7 @@ def render_access_gate() -> bool:
                   </div>
                   <div class="lg-stats">
                     <div class="lg-stat"><b>30</b><span>districts mapped</span></div>
-                    <div class="lg-stat"><b>4</b><span>inclusion indicators</span></div>
+                    <div class="lg-stat"><b>8</b><span>inclusion indicators</span></div>
                     <div class="lg-stat"><b>2024</b><span>FinScope survey</span></div>
                   </div>
                 </section>

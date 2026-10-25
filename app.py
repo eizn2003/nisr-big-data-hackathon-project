@@ -4,11 +4,10 @@ from src.auth import render_access_gate
 from src.styles import (
     app_footer,
     apply_global_styles,
-    coming_soon,
+    render_html,
     sidebar_brand,
     sidebar_dataset_card,
     sidebar_user,
-    render_html,
 )
 
 
@@ -30,6 +29,7 @@ NAV = {
     "District explorer": ":material/map:",
     "Population groups": ":material/groups:",
     "Priority explorer": ":material/flag:",
+    "Policy alignment": ":material/account_balance:",
     "Methodology & sources": ":material/menu_book:",
 }
 
@@ -80,6 +80,11 @@ elif selected_page == "Priority explorer":
     from src.pages.priority_explorer import render_priority_explorer
 
     render_priority_explorer()
+
+elif selected_page == "Policy alignment":
+    from src.pages.policy_alignment import render_policy_alignment
+
+    render_policy_alignment()
 
 elif selected_page == "Methodology & sources":
     from src.pages.methodology import render_methodology

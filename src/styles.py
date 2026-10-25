@@ -15,7 +15,7 @@ PALETTE = {
     "line": "#E0E7EA",
     "grid": "#E9EFF1",
     "teal": "#1A8A7D",
-    "sun": "#F2B84B",  # "selected" colour everywhere
+    "sun": "#F2B84B",      # "selected" colour everywhere
     "coral": "#DB6A4E",
     "blue": "#2F6DB5",
     "amber": "#E0A12F",
@@ -24,57 +24,8 @@ PALETTE = {
 
 FONT_STACK = "Plus Jakarta Sans, Segoe UI, Arial, sans-serif"
 
-# One hue per indicator, reused by KPI cards, charts and the map.
-INDICATOR_THEME = {
-    "Owns a bank account (%)": {
-        "label": "Bank-account ownership",
-        "short": "Bank account",
-        "national": "Own bank account",
-        "accent": "#1A8A7D",
-        "text_accent": "#126B61",
-        "scale": ["#EAF6F3", "#A6D8CF", "#4BAE9F", "#1A7F73", "#0E3F46"],
-    },
-    "Registered mobile-money user (%)": {
-        "label": "Mobile-money registration",
-        "short": "Mobile money",
-        "national": "Registered mobile-money user",
-        "accent": "#2F6DB5",
-        "text_accent": "#245A99",
-        "scale": ["#EAF1FA", "#A9C6EA", "#5B93D3", "#2F6DB5", "#14315F"],
-    },
-    "Borrowed in the past 12 months (%)": {
-        "label": "Borrowing in the past 12 months",
-        "short": "Borrowing",
-        "national": "Borrowed in the past 12 months",
-        "accent": "#E0A12F",
-        "text_accent": "#8F6209",
-        "scale": ["#FFF7E0", "#FBE19B", "#F2BE4A", "#C98F16", "#6F4B07"],
-    },
-    "Does not save (%)": {
-        "label": "Does not save",
-        "short": "Doesn't save",
-        "national": "Does not save",
-        "accent": "#DB6A4E",
-        "text_accent": "#B04328",
-        "scale": ["#FDEEE9", "#F7BFAE", "#EC8A70", "#C9533A", "#7A2616"],
-    },
-    "Has emergency funds (%)": {
-        "label": "Emergency-fund coverage",
-        "short": "Emergency funds",
-        "national": "Has emergency funds",
-        "accent": "#7B61A8",
-        "text_accent": "#62458D",
-        "scale": ["#F1ECF8", "#CDBDE5", "#A58ACD", "#7B61A8", "#3F2D5C"],
-    },
-    "Saves with a group (%)": {
-        "label": "Group-based saving",
-        "short": "Group saving",
-        "national": "Saves with a group",
-        "accent": "#3979A8",
-        "text_accent": "#285C82",
-        "scale": ["#EAF3F9", "#B5D5E8", "#79ADD0", "#3979A8", "#1F405A"],
-    },
-}
+# Indicator colours, labels and wording live in src/indicators.py
+from src.indicators import INDICATOR_THEME  # noqa: E402,F401
 
 HERO_ART = (
     '<svg viewBox="0 0 600 240" preserveAspectRatio="xMaxYMax slice" '
@@ -473,7 +424,7 @@ div[data-baseweb="select"] > div:hover{border-color:var(--teal);}
 
 
 /* ---------- overview body ---------- */
-.ins-grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px;}
+.ins-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px;}
 .ins{position:relative; overflow:hidden; background:#fff; border:1px solid var(--line); border-radius:20px; padding:22px 24px 20px; box-shadow:var(--shadow);}
 .ins::after{content:""; position:absolute; right:-34px; top:-34px; width:120px; height:120px; border-radius:50%; background:var(--accent); opacity:.10;}
 .ins-k{position:relative; z-index:1; font-size:12.5px; font-weight:700; color:var(--accent-text,var(--accent));}
@@ -489,6 +440,69 @@ div[data-baseweb="select"] > div:hover{border-color:var(--teal);}
 .rk-name{font-weight:600; color:var(--ink);}
 .rk-v{font-weight:700; color:var(--ink);}
 @media (max-width:900px){ .ins-grid{grid-template-columns:1fr;} }
+
+
+/* ---------- pills (indicator pickers) ---------- */
+[data-testid="stButtonGroup"] button[data-testid="stBaseButton-pillsActive"]{
+  background:var(--ink) !important; border-color:var(--ink) !important;
+}
+[data-testid="stButtonGroup"] button[data-testid="stBaseButton-pillsActive"] p{color:#fff !important;}
+[data-testid="stButtonGroup"]{gap:6px;}
+
+/* ---------- badges ---------- */
+.badge{display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:99px; white-space:nowrap;}
+.badge.ok{background:#DCF0EC; color:#0F5A52; border:1px solid #B9DFD8;}
+.badge.warn{background:#FFF3D6; color:#7A5410; border:1px solid #F5DDA0;}
+.badge.flag{background:#FDEEE9; color:#8A2F18; border:1px solid #F4C9BC;}
+.badge.info{background:#E9F0F3; color:#33505D; border:1px solid #D3DFE5;}
+.moe{font-size:12px; color:var(--muted); font-weight:600;}
+.gc-rel{margin-top:8px;}
+
+/* ---------- data-health checks ---------- */
+.chk-sum{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:14px;}
+.chk-sum div{border:1px solid var(--line); border-radius:14px; padding:12px 14px; background:#fff;}
+.chk-sum b{display:block; font-family:'Fraunces',Georgia,serif; font-size:28px; color:var(--ink);}
+.chk-sum span{font-size:12.5px; color:var(--muted); font-weight:600;}
+.chk-row{display:grid; grid-template-columns:28px 1fr; gap:12px; padding:11px 4px; border-top:1px solid var(--line);}
+.chk-ic{width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:13px; font-weight:800; margin-top:1px;}
+.chk-ic.pass{background:#DCF0EC; color:#0F5A52;}
+.chk-ic.warn{background:#FFF3D6; color:#7A5410;}
+.chk-ic.fail{background:#FDEEE9; color:#8A2F18;}
+.chk-t{font-weight:700; color:var(--ink); font-size:14px;}
+.chk-d{font-size:13px; color:#3F5560; line-height:1.55; margin-top:2px;}
+.chk-g{font-size:11.5px; color:var(--muted); font-weight:700; margin-left:8px;}
+
+/* ---------- policy alignment ---------- */
+.al-row{display:grid; grid-template-columns:1.1fr 1.4fr 1fr; gap:18px; padding:18px 4px; border-top:1px solid var(--line); align-items:start;}
+.al-row:first-child{border-top:0;}
+.al-h{font-size:11.5px; font-weight:700; color:var(--muted); margin-bottom:4px;}
+.al-t{font-weight:700; color:var(--ink); font-size:15px; line-height:1.4;}
+.al-p{font-size:13.5px; color:#3F5560; line-height:1.6; margin:0;}
+.al-src{font-size:12px; color:var(--muted); margin-top:6px;}
+.stat-grid{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px;}
+.stat{background:#fff; border:1px solid var(--line); border-radius:18px; padding:18px 20px; box-shadow:var(--shadow);}
+.stat b{display:block; font-family:'Fraunces',Georgia,serif; font-size:40px; font-weight:600; line-height:1.05; color:var(--ink); letter-spacing:-.02em;}
+.stat b small{font-size:20px; color:var(--muted);}
+.stat span{display:block; font-size:13px; color:#3F5560; margin-top:6px; line-height:1.5;}
+.stat em{display:block; font-style:normal; font-size:11.5px; font-weight:700; color:var(--muted); margin-top:8px;}
+.sh-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px;}
+.sh{background:#fff; border:1px solid var(--line); border-radius:18px; padding:20px 22px; box-shadow:var(--shadow);}
+.sh-t{font-weight:700; font-size:16px; color:var(--ink);}
+.sh-q{margin:8px 0 0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3F5560;}
+.sh-q li{margin-bottom:4px;}
+.sh-go{margin-top:10px; font-size:12.5px; font-weight:700; color:var(--teal-d);}
+.act{display:grid; grid-template-columns:44px 1fr; gap:16px; padding:18px 4px; border-top:1px solid var(--line);}
+.act:first-child{border-top:0;}
+.act-n{width:44px; height:44px; border-radius:14px; background:var(--ink); color:#fff; display:grid; place-items:center; font-family:'Fraunces',Georgia,serif; font-size:19px; font-weight:600;}
+.act-t{font-weight:700; color:var(--ink); font-size:15.5px;}
+.act-p{font-size:13.5px; color:#3F5560; line-height:1.65; margin:4px 0 0;}
+.act-e{font-size:12.5px; color:var(--teal-d); font-weight:700; margin-top:6px;}
+.cmp{width:100%; border-collapse:collapse; font-size:13.5px;}
+.cmp th{text-align:left; font-size:11.5px; color:var(--muted); font-weight:700; padding:8px 10px; border-bottom:1px solid var(--line);}
+.cmp td{padding:11px 10px; border-bottom:1px solid var(--line); vertical-align:top; color:#3F5560; line-height:1.55;}
+.cmp td b{color:var(--ink);}
+@media (max-width:1100px){ .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));} .al-row{grid-template-columns:1fr;} }
+@media (max-width:640px){ .stat-grid{grid-template-columns:1fr;} .chk-sum{grid-template-columns:1fr;} }
 
 /* ---------- placeholder pages & footer ---------- */
 .soon{position:relative; overflow:hidden; border-radius:22px; padding:44px 44px 150px; background:#fff; border:1px solid var(--line); box-shadow:var(--shadow);}
@@ -530,7 +544,8 @@ def apply_global_styles():
 def page_header(title, subtitle, pill=None, size="tall", below_html=""):
     """Hero header. size: 'tall' (overlaps a KPI row) or 'compact'."""
     pill_html = f'<div class="pg-pill"><i></i>{esc(pill)}</div>' if pill else ""
-    render_html(f"""
+    render_html(
+        f"""
         <div class="pg-hero {size}">
           <div class="pg-text">
             <h1 class="pg-title">{esc(title)}</h1>
@@ -540,7 +555,8 @@ def page_header(title, subtitle, pill=None, size="tall", below_html=""):
           <div class="pg-art">{HERO_ART}</div>
         </div>
         {below_html}
-        """)
+        """
+    )
 
 
 def kpi_card(label, value, small="", fill=0, accent="#1A8A7D", src=""):
@@ -560,6 +576,10 @@ def kpi_grid(cards):
     return f'<div class="kpi-grid">{"".join(cards)}</div>'
 
 
+def badge(text, tone="info"):
+    return f'<span class="badge {tone}">{esc(text)}</span>'
+
+
 def card_title(title, subtitle=None):
     sub = f'<div class="cs">{esc(subtitle)}</div>' if subtitle else ""
     render_html(f'<div class="ct">{esc(title)}</div>{sub}')
@@ -572,53 +592,65 @@ def section_title(title, subtitle=None):
 
 def note(title, body, tone=""):
     icon = "!" if tone == "warn" else "i"
-    render_html(f"""
+    render_html(
+        f"""
         <div class="note {tone}"><div class="note-ic">{icon}</div>
         <div><b>{esc(title)}</b><p>{esc(body)}</p></div></div>
-        """)
+        """
+    )
 
 
 def coming_soon(title, text, icon="✨"):
-    render_html(f"""
+    render_html(
+        f"""
         <div class="soon">
           <div class="soon-ic">{icon}</div>
           <h2 class="soon-t">{esc(title)}</h2>
           <p class="soon-p">{esc(text)}</p>
           <div class="pg-art">{HERO_ART}</div>
         </div>
-        """)
+        """
+    )
 
 
 def app_footer():
-    render_html("""
+    render_html(
+        """
         <div class="app-foot">
           <span>FinScope Rwanda 2024 · Survey-based financial inclusion estimates</span>
           <span>Rwanda Financial Inclusion Gap Explorer</span>
         </div>
-        """)
+        """
+    )
 
 
 def sidebar_brand():
-    render_html(f"""
+    render_html(
+        f"""
         <div class="sb-brand"><div class="sb-logo">{LOGO_SVG}</div>
         <div><div class="sb-name">Rwanda Financial Inclusion</div>
         <div class="sb-sub">Gap Explorer</div></div></div>
-        """)
+        """
+    )
 
 
 def sidebar_dataset_card():
-    render_html("""
+    render_html(
+        """
         <div class="sb-card"><b>FinScope Rwanda 2024</b>
-        <span>Weighted survey estimates across 30 districts and four inclusion indicators.</span></div>
-        """)
+        <span>Weighted survey estimates across 30 districts and eight inclusion indicators.</span></div>
+        """
+    )
 
 
 def sidebar_user(email):
     initial = esc((email or "?")[0].upper())
-    render_html(f"""
+    render_html(
+        f"""
         <div class="sb-user"><div class="sb-avatar">{initial}</div>
         <div><div class="sb-email">{esc(email)}</div><div class="sb-role">Signed in</div></div></div>
-        """)
+        """
+    )
 
 
 def show_district_table(df, sort_by, key, file_name, height=430):

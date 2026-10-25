@@ -1,14 +1,15 @@
-from pathlib import Path
-import json
-
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 import streamlit as st
 
+from src import data
+from src.briefs import district_brief
+from src.indicators import REGISTRY, available
 from src.styles import (
     INDICATOR_THEME,
     PALETTE,
+    badge,
     card_title,
     esc,
     kpi_card,
@@ -19,55 +20,24 @@ from src.styles import (
     style_chart,
 )
 
-
-ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data" / "processed"
-GEOJSON_PATH = ROOT / "geoBoundaries-RWA-ADM2.geojson"
 FEATURE_KEY = "properties.shapeName"
 
-# Same indicators and wording as before, with UI-only extras.
+# Registry-driven: every indicator in the district table appears automatically.
 INDICATORS = {
-    theme["short"]: {
-        "column": column,
-        "title": theme["label"],
-        "national_label": theme["national"],
-        "accent": theme["accent"],
-        "text_accent": theme["text_accent"],
-        "scale": theme["scale"],
+    item["short"]: {
+        "column": item["column"],
+        "title": item["label"],
+        "national_label": item["national"],
+        "accent": item["accent"],
+        "text_accent": item["text_accent"],
+        "scale": item["scale"],
+        "description": item["description"],
+        "interpretation": item["interpretation"],
+        "polarity": item["polarity"],
+        "variable": item["variable"],
     }
-    for column, theme in INDICATOR_THEME.items()
+    for item in REGISTRY
 }
-INDICATORS["Bank account"]["description"] = "Percentage of respondents who own a bank account."
-INDICATORS["Bank account"]["interpretation"] = "Higher values indicate greater reported bank-account ownership."
-INDICATORS["Mobile money"]["description"] = "Percentage classified as registered mobile-money users."
-INDICATORS["Mobile money"]["interpretation"] = (
-    "Registration does not necessarily mean the person currently uses mobile money."
-)
-INDICATORS["Borrowing"]["description"] = "Percentage who reported borrowing in the past 12 months."
-INDICATORS["Borrowing"]["interpretation"] = (
-    "Measures recent borrowing activity, not all access to formal credit."
-)
-INDICATORS["Doesn't save"]["description"] = "Percentage classified as not saving."
-INDICATORS["Doesn't save"]["interpretation"] = (
-    "A financial-vulnerability signal, not a direct measure of access to savings services."
-)
-INDICATORS["Emergency funds"][
-    "description"
-] = "Percentage of respondents who report setting aside emergency or rainy-day funds."
-INDICATORS["Emergency funds"]["interpretation"] = (
-    "A financial-resilience signal. It does not measure the amount saved "
-    "or whether funds would cover a major emergency."
-)
-
-INDICATORS["Group saving"]["description"] = (
-    "Percentage of respondents who report saving with a group, such as "
-    "a cooperative, VSLA, tontine, or ikibina."
-)
-INDICATORS["Group saving"]["interpretation"] = (
-    "Measures participation in group-based saving, not the adequacy "
-    "of savings or overall financial inclusion."
-)
-
 
 _ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services"
 BASEMAPS = {
@@ -91,45 +61,6 @@ SPOTLIGHTS = ["Off", "Top 5", "Bottom 5", "Both"]
 
 # --------------------------------------------------------------------------
 # Data
-# --------------------------------------------------------------------------
-def _largest_ring(geometry):
-    if geometry["type"] == "Polygon":
-        rings = [geometry["coordinates"][0]]
-    else:
-        rings = [polygon[0] for polygon in geometry["coordinates"]]
-    return max(rings, key=len)
-
-
-def _geo_summary(geojson):
-    centers, lons, lats = {}, [], []
-    for feature in geojson["features"]:
-        ring = _largest_ring(feature["geometry"])
-        name = feature["properties"].get("shapeName")
-        centers[name] = (
-            sum(p[1] for p in ring) / len(ring),
-            sum(p[0] for p in ring) / len(ring),
-        )
-        lons += [p[0] for p in ring]
-        lats += [p[1] for p in ring]
-    center = ((min(lats) + max(lats)) / 2, (min(lons) + max(lons)) / 2)
-    return centers, center
-
-
-@st.cache_data
-def load_district_data():
-    district = pd.read_csv(DATA_DIR / "district_financial_inclusion.csv")
-    national = pd.read_csv(DATA_DIR / "national_financial_inclusion.csv")
-
-    with GEOJSON_PATH.open(encoding="utf-8") as file:
-        geojson = json.load(file)
-
-    district["District"] = district["District"].astype(str).str.strip()
-    centers, center = _geo_summary(geojson)
-    return district, national, geojson, centers, center
-
-
-# --------------------------------------------------------------------------
-# Map
 # --------------------------------------------------------------------------
 def _to_rgb(color):
     color = color.strip()
@@ -310,6 +241,12 @@ def _inspector_html(row, cfg, metric, national_est, lo, hi, n):
     est = float(row[metric])
     diff = est - national_est
     arrow = "▲" if diff >= 0 else "▼"
+    margin = data.moe_pp(est, row["Valid respondents"])
+    verdict = (
+        badge("Difference larger than the sampling margin", "ok")
+        if abs(diff) > margin else
+        badge("Difference within the sampling margin", "warn")
+    )
     return f"""
     <div style="--accent:{cfg['accent']};--accent-text:{cfg['text_accent']}">
       <div class="insp-top">
@@ -317,7 +254,7 @@ def _inspector_html(row, cfg, metric, national_est, lo, hi, n):
         <div class="insp-rank">#{int(row['rank'])} of {n}</div>
       </div>
       <div class="insp-value">{est:.1f}<span>%</span></div>
-      <div class="insp-sub">{esc(cfg['title'])}</div>
+      <div class="insp-sub">{esc(cfg['title'])} · <span class="moe">±{margin:.1f} pp indicative margin</span></div>
       <div class="meter">
         <div class="meter-track"></div>
         <div class="meter-mark" style="left:{_meter_pos(national_est, lo, hi):.1f}%">National</div>
@@ -329,6 +266,7 @@ def _inspector_html(row, cfg, metric, national_est, lo, hi, n):
         <div><b>{arrow} {abs(diff):.1f} pp</b><span>{'Above' if diff >= 0 else 'Below'} national</span></div>
         <div><b>{int(row['Valid respondents']):,}</b><span>Respondents</span></div>
       </div>
+      <div style="margin-top:12px">{verdict}</div>
     </div>
     """
 
@@ -357,7 +295,10 @@ def _clicked_district(event, names):
 # --------------------------------------------------------------------------
 def render_district_explorer():
     try:
-        district, national, geojson, centers, center = load_district_data()
+        district = data.load_district()
+        national = data.load_national()
+        geojson = data.load_geojson()
+        centers, center = data.geo_summary(geojson)
     except (FileNotFoundError, ValueError, KeyError) as error:
         st.error(
             "The district data or boundary file could not be loaded. "
@@ -365,6 +306,15 @@ def render_district_explorer():
         )
         st.caption(str(error))
         return
+
+    present = {k: v for k, v in INDICATORS.items() if v["column"] in district.columns}
+
+    only_data, only_geo = data.geo_name_mismatch(district["District"], geojson)
+    if only_data or only_geo:
+        st.warning(
+            "Some district names in the data do not match the map boundaries and will not be coloured: "
+            f"{', '.join(only_data) or 'none'} (data) · {', '.join(only_geo) or 'none'} (map)."
+        )
 
     names = sorted(district["District"].unique())
     st.session_state.setdefault("dx_district", names[0])
@@ -376,8 +326,10 @@ def render_district_explorer():
 
     # Widget values are already in session_state before the widgets render,
     # so the hero can reflect the current selection while controls sit below it.
-    indicator_name = st.session_state.get("dx_indicator") or list(INDICATORS.keys())[0]
-    cfg = INDICATORS[indicator_name]
+    indicator_name = st.session_state.get("dx_indicator")
+    if indicator_name not in present:
+        indicator_name = list(present.keys())[0]
+    cfg = present[indicator_name]
     metric = cfg["column"]
     selected_district = st.session_state["dx_district"]
 
@@ -399,6 +351,8 @@ def render_district_explorer():
     lowest = df.loc[df[metric].idxmin()]
     est = float(sel[metric])
     diff = est - national_est
+    margin = data.moe_pp(est, sel["Valid respondents"])
+    clear = abs(diff) > margin
 
     page_header(
         "District explorer",
@@ -409,12 +363,13 @@ def render_district_explorer():
         below_html=kpi_grid(
             [
                 kpi_card("Selected district", f"{est:.1f}", "%", est, cfg["accent"],
-                         f"<b>{esc(selected_district)}</b>"),
+                         f"<b>{esc(selected_district)}</b> · ±{margin:.1f} pp indicative"),
                 kpi_card("National estimate", f"{national_est:.1f}", "%", national_est,
                          PALETTE["ink2"], "Weighted national level"),
                 kpi_card("Difference from national", f"{diff:+.1f}", " pp",
                          abs(diff) / max(hi - lo, 1e-9) * 100, PALETTE["sun"],
-                         "Above national" if diff >= 0 else "Below national"),
+                         ("Above" if diff >= 0 else "Below") + " national · "
+                         + ("larger than margin" if clear else "within margin")),
                 kpi_card("Rank among districts", f"#{int(sel['rank'])}", f" of {n}",
                          (n - int(sel["rank"]) + 1) / n * 100, "#5FB8AB",
                          f"Highest <b>{esc(highest['District'])}</b> · "
@@ -427,20 +382,16 @@ def render_district_explorer():
 
     # ---- Controls -------------------------------------------------------
     with st.container(key="card_controls"):
-        c_ind, c_dist, c_set = st.columns(
-            [2.8, 1.3, 0.8], gap="medium", vertical_alignment="bottom"
+        st.pills(
+            "Indicator",
+            list(present.keys()),
+            selection_mode="single",
+            default=list(present.keys())[0],
+            key="dx_indicator",
         )
-        with c_ind:
-            st.segmented_control(
-                "Indicator",
-                list(INDICATORS.keys()),
-                default=list(INDICATORS.keys())[0],
-                key="dx_indicator",
-            )
+        c_dist, c_set = st.columns([2.2, 1], gap="medium", vertical_alignment="bottom")
         with c_dist:
-            st.selectbox(
-                "District", names, key="dx_district"
-            )
+            st.selectbox("District", names, key="dx_district")
         with c_set:
             with st.popover(
                 "Map settings",
@@ -542,8 +493,22 @@ def render_district_explorer():
                 <div class="insp-note"><b>{esc(cfg['description'])}</b><br>
                 {esc(cfg['interpretation'])}<br>
                 The gap between extremes is {hi - lo:.1f} pp. It is a
-                description, not a causal explanation.</div>
+                description, not a causal explanation. The margin assumes simple
+                random sampling, so the true uncertainty is larger.</div>
                 """
+            )
+            nat_lookup = dict(zip(national["Indicator"], national["Estimate (%)"].astype(float)))
+            st.download_button(
+                "Download district profile",
+                data=district_brief(
+                    selected_district, df, nat_lookup,
+                    barriers=data.load_barriers_district(),
+                ),
+                file_name=f"{selected_district.lower().replace(' ', '_')}_financial_inclusion_profile.md",
+                mime="text/markdown",
+                key="dx_brief",
+                use_container_width=True,
+                icon=":material/description:",
             )
 
     st.markdown("")
@@ -607,7 +572,7 @@ def render_district_explorer():
             nat_map = dict(zip(national["Indicator"], national["Estimate (%)"]))
             shorts, d_vals, n_vals = [], [], []
             for column, theme in INDICATOR_THEME.items():
-                if column in df.columns:
+                if column in df.columns and theme["national"] in nat_map:
                     shorts.append(theme["short"])
                     d_vals.append(float(sel[column]))
                     n_vals.append(float(nat_map.get(theme["national"], float("nan"))))
@@ -631,7 +596,7 @@ def render_district_explorer():
             )
             prof.update_yaxes(title=None, autorange="reversed", showgrid=False)
             st.plotly_chart(
-                style_chart(prof, 330, margin=dict(l=4, r=26, t=10, b=4)),
+                style_chart(prof, max(330, 46 * len(shorts) + 40), margin=dict(l=4, r=26, t=10, b=4)),
                 use_container_width=True,
                 key="dx_profile",
                 config={"displayModeBar": False},
@@ -642,7 +607,7 @@ def render_district_explorer():
         with st.container(key="card_distribution"):
             card_title(
                 "Where districts cluster",
-                f"How the 30 districts spread on {cfg['title'].lower()}.",
+                f"How the {n} districts spread on {cfg['title'].lower()}.",
             )
             dist = go.Figure(
                 go.Histogram(
@@ -677,7 +642,7 @@ def render_district_explorer():
     with st.container(key="card_table"):
         card_title(
             "District data",
-            "All four indicators for every district, sorted by the indicator above. "
+            "Every indicator for every district, sorted by the indicator above. "
             "Use the search icon in the table to find a district.",
         )
         show_district_table(

@@ -1,0 +1,35 @@
+{
+  "Gender": [
+    "All",
+    "Female",
+    "Male"
+  ],
+  "Age Segment": [
+    "All",
+    "Youth",
+    "Non-Youth"
+  ],
+  "Institution Type": [
+    "All",
+    "Banks",
+    "Microfinance",
+    "E-money Issuers",
+    "Sacco"
+  ],
+  "Account Status": [
+    "Active",
+    "Dormant",
+    "Inactive",
+    "Matured"
+  ],
+  "Account Type": [
+    "All",
+    "Current Account",
+    "Mobile Wallet"
+  ],
+  "Location": [
+    "All",
+    "Province",
+    "District"
+  ]
+}
