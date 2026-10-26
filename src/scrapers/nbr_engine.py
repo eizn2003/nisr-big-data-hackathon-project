@@ -889,7 +889,8 @@ def select_filter_option(page, index: int, label: str, option_text: str):
         option_index
         for option_index in range(options.count())
         if options.nth(option_index).is_visible()
-        and norm_label(options.nth(option_index).inner_text()) == norm_label(option_text)
+        and norm_label(options.nth(option_index).inner_text())
+        == norm_label(option_text)
     )
     focused_index = next(
         (
@@ -1302,9 +1303,7 @@ def _merge_kpi_documents(documents: list[dict]) -> dict:
             records[identity] = dict(record)
         if document.get("metric_type"):
             record = {
-                key: document[key]
-                for key in KPI_RECORD_FIELDS
-                if key in document
+                key: document[key] for key in KPI_RECORD_FIELDS if key in document
             }
             identity = (record.get("metric_type", ""), record.get("ordinal", 0))
             records[identity] = record

@@ -389,8 +389,7 @@ def test_gender_male_selection_does_not_match_female_substring():
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page()
-        page.set_content(
-            """<div class="dropdown-card">
+        page.set_content("""<div class="dropdown-card">
                 <label>Gender</label>
                 <div class="Select-control">
                     <span class="Select-value-label">All</span>
@@ -399,10 +398,8 @@ def test_gender_male_selection_does_not_match_female_substring():
                 <div class="VirtualizedSelectOption VirtualizedSelectFocusedOption" onclick="this.parentElement.querySelector('.Select-value-label').innerText=this.innerText">All</div>
                 <div class="VirtualizedSelectOption" onclick="this.parentElement.querySelector('.Select-value-label').innerText=this.innerText">Female</div>
                 <div class="VirtualizedSelectOption" onclick="this.parentElement.querySelector('.Select-value-label').innerText=this.innerText">Male</div>
-            </div>"""
-        )
-        page.evaluate(
-            """() => {
+            </div>""")
+        page.evaluate("""() => {
                 const input = document.querySelector('#gender-combobox');
                 const options = Array.from(document.querySelectorAll('.VirtualizedSelectOption'));
                 let focused = 0;
@@ -417,8 +414,7 @@ def test_gender_male_selection_does_not_match_female_substring():
                         options[focused].click();
                     }
                 });
-            }"""
-        )
+            }""")
 
         select_filter_option(page, 0, "Gender", "Male")
 

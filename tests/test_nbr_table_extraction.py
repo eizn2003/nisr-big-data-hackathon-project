@@ -117,10 +117,28 @@ def test_save_observations_stores_all_kpis_in_one_combination_document():
         filters=[],
     )
     kpis = [
-        {"metric_type": "headline_kpi", "metric_label": "Total Customers", "metric_value": "100"},
-        {"metric_type": "headline_kpi", "metric_label": "Total Cards", "metric_value": "120"},
-        {"metric_type": "gender_distribution", "metric_label": "Female customers", "metric_value": 40, "gender": "Female"},
-        {"metric_type": "gender_distribution", "metric_label": "Male customers", "metric_value": 60, "gender": "Male"},
+        {
+            "metric_type": "headline_kpi",
+            "metric_label": "Total Customers",
+            "metric_value": "100",
+        },
+        {
+            "metric_type": "headline_kpi",
+            "metric_label": "Total Cards",
+            "metric_value": "120",
+        },
+        {
+            "metric_type": "gender_distribution",
+            "metric_label": "Female customers",
+            "metric_value": 40,
+            "gender": "Female",
+        },
+        {
+            "metric_type": "gender_distribution",
+            "metric_label": "Male customers",
+            "metric_value": 60,
+            "gender": "Male",
+        },
     ]
 
     save_observations(
@@ -167,12 +185,36 @@ def test_legacy_metric_documents_merge_without_losing_kpis():
         "filters": {"Gender": "All"},
     }
     records = [
-        {"metric_type": "headline_kpi", "metric_label": "Total Customers", "metric_value": "100", "ordinal": 0},
-        {"metric_type": "headline_kpi", "metric_label": "Total Cards", "metric_value": "120", "ordinal": 1},
-        {"metric_type": "gender_distribution", "metric_label": "Female customers", "metric_value": 40, "gender": "Female", "ordinal": 0},
-        {"metric_type": "gender_distribution", "metric_label": "Male customers", "metric_value": 60, "gender": "Male", "ordinal": 1},
+        {
+            "metric_type": "headline_kpi",
+            "metric_label": "Total Customers",
+            "metric_value": "100",
+            "ordinal": 0,
+        },
+        {
+            "metric_type": "headline_kpi",
+            "metric_label": "Total Cards",
+            "metric_value": "120",
+            "ordinal": 1,
+        },
+        {
+            "metric_type": "gender_distribution",
+            "metric_label": "Female customers",
+            "metric_value": 40,
+            "gender": "Female",
+            "ordinal": 0,
+        },
+        {
+            "metric_type": "gender_distribution",
+            "metric_label": "Male customers",
+            "metric_value": 60,
+            "gender": "Male",
+            "ordinal": 1,
+        },
     ]
-    documents = [{**base, "_id": index, **record} for index, record in enumerate(records)]
+    documents = [
+        {**base, "_id": index, **record} for index, record in enumerate(records)
+    ]
 
     merged = _merge_kpi_documents(documents)
 
@@ -203,10 +245,32 @@ def test_startup_migration_consolidates_legacy_documents_before_index_change():
         }
         for index, record in enumerate(
             [
-                {"metric_type": "headline_kpi", "metric_label": "Total Customers", "metric_value": "100", "ordinal": 0},
-                {"metric_type": "headline_kpi", "metric_label": "Total Cards", "metric_value": "120", "ordinal": 1},
-                {"metric_type": "gender_distribution", "metric_label": "Female customers", "metric_value": 40, "gender": "Female", "ordinal": 0},
-                {"metric_type": "gender_distribution", "metric_label": "Male customers", "metric_value": 60, "gender": "Male", "ordinal": 1},
+                {
+                    "metric_type": "headline_kpi",
+                    "metric_label": "Total Customers",
+                    "metric_value": "100",
+                    "ordinal": 0,
+                },
+                {
+                    "metric_type": "headline_kpi",
+                    "metric_label": "Total Cards",
+                    "metric_value": "120",
+                    "ordinal": 1,
+                },
+                {
+                    "metric_type": "gender_distribution",
+                    "metric_label": "Female customers",
+                    "metric_value": 40,
+                    "gender": "Female",
+                    "ordinal": 0,
+                },
+                {
+                    "metric_type": "gender_distribution",
+                    "metric_label": "Male customers",
+                    "metric_value": 60,
+                    "gender": "Male",
+                    "ordinal": 1,
+                },
             ]
         )
     ]
