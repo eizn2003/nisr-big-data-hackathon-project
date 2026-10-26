@@ -1,10 +1,7 @@
 {
 	"_comment": [
-		"Source of truth for NBR dashboard pages. The scraper never hardcodes URLs or filter labels in Python.",
-		"A filter is either a plain label string (read-only: the scraper records whatever value the dashboard shows)",
-		"or an object: {\"label\": ..., \"options\": [...]} to iterate every option, or {\"label\": ..., \"fixed\": \"All\"} to force one value.",
-		"If a page has no \"filters\" key, its filter list is UNVERIFIED: the scraper records the labels/values it actually finds",
-		"and warns. Run `--discover --page <id>` to list the real labels/options, then paste them here.",
+		"Source of truth for all 13 NBR dashboard pages.",
+		"Dynamic filters use expected_count to validate live option discovery; fixed filters use fixed; ignored filters are recorded as All without multiplying combinations.",
 		"known_not_applicable / known_no_data: lists of partial filter matches that are recorded without scraping."
 	],
 	"defaults": {
@@ -16,105 +13,149 @@
 			"title": "Cards",
 			"url": "https://fininclusion.bnr.rw/touchpoints/cards",
 			"filters": [
-				"Gender",
-				"Age Segment",
-				"Institution Type",
-				"Card Status",
-				"Card Product",
-				"Card Type",
-				"Location"
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Institution Type", "expected_count": 4 },
+				{ "label": "Card Status", "fixed": "Active" },
+				{ "label": "Card Product", "ignore": true },
+				{ "label": "Card Type", "ignore": true },
+				{ "label": "Location", "ignore": true }
 			]
 		},
 		"branches": {
 			"title": "Branches",
 			"url": "https://fininclusion.bnr.rw/touchpoints/branches",
-			"filters": ["Institution Type", "Branch Status", "Location"]
+			"filters": [
+				{ "label": "Institution Type", "expected_count": 5 },
+				{ "label": "Branch Status", "fixed": "Active" },
+				{ "label": "Location", "ignore": true }
+			]
 		},
 		"agents": {
 			"title": "Agents",
 			"url": "https://fininclusion.bnr.rw/touchpoints/agents",
-			"filters": ["Gender", "Institution Type", "Agent Status"]
+			"filters": [
+				{ "label": "Gender", "ignore": true },
+				{ "label": "Institution Type", "expected_count": 5 },
+				{ "label": "Agent Status", "fixed": "Active" },
+				{ "label": "Location", "ignore": true }
+			]
 		},
 		"internet_banking": {
 			"title": "Internet Banking",
 			"url": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
 			"filters": [
-				"Gender",
-				"Age Segment",
-				"Institution Type",
-				"Account Status",
-				"Account Type"
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Institution Type", "expected_count": 4 },
+				{ "label": "Account Status", "fixed": "Active" },
+				{ "label": "Account Type", "ignore": true },
+				{ "label": "Location", "ignore": true }
 			]
 		},
 		"merchants": {
 			"title": "Merchants",
 			"url": "https://fininclusion.bnr.rw/touchpoints/merchants",
-			"filters": ["Gender", "Institution Type", "Merchant Status"]
+			"filters": [
+				{ "label": "Gender", "ignore": true },
+				{ "label": "Institution Type", "expected_count": 5 },
+				{ "label": "Merchant Status", "fixed": "Active" },
+				{ "label": "Location", "ignore": true }
+			]
 		},
 		"mobile_banking": {
 			"title": "Mobile Banking",
 			"url": "https://fininclusion.bnr.rw/touchpoints/mobile_banking",
 			"filters": [
-				"Gender",
-				"Age Segment",
-				"Institution Type",
-				"Account Status",
-				"Account Type"
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Institution Type", "expected_count": 4 },
+				{ "label": "Account Status", "fixed": "Active" },
+				{ "label": "Account Type", "ignore": true },
+				{ "label": "Location", "ignore": true }
 			]
 		},
 		"pos": {
 			"title": "POS",
 			"url": "https://fininclusion.bnr.rw/touchpoints/pos",
-			"filters": ["Institution Type", "Terminal Status"]
+			"filters": [
+				{ "label": "Institution Type", "expected_count": 2 },
+				{ "label": "Terminal Status", "expected_count": 3 },
+				{ "label": "Location", "ignore": true }
+			]
 		},
 		"transactional": {
 			"title": "Transactional",
 			"url": "https://fininclusion.bnr.rw/transactional",
 			"filters": [
-				"Gender",
-				"Age Segment",
-				"Institution Type",
-				"Account Status",
-				"Account Type"
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Institution Type", "expected_count": 5 },
+				{ "label": "Account Status", "fixed": "Active" },
+				{ "label": "Account Type", "ignore": true },
+				{ "label": "Location", "ignore": true }
 			]
 		},
 		"depositors": {
 			"title": "Depositors",
 			"url": "https://fininclusion.bnr.rw/depositors",
 			"filters": [
-				"Gender",
-				"Age Segment",
-				"Institution Type",
-				"Account Status",
-				"Account Type"
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Institution Type", "expected_count": 4 },
+				{ "label": "Account Status", "fixed": "Active" },
+				{ "label": "Account Type", "ignore": true },
+				{ "label": "Location", "ignore": true }
 			]
 		},
 		"savings": {
 			"title": "Savings",
 			"url": "https://fininclusion.bnr.rw/savings",
 			"filters": [
-				"Gender",
-				"Age Segment",
-				"Institution Type",
-				"Account Status",
-				"Account Type"
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Institution Type", "expected_count": 4 },
+				{ "label": "Account Status", "fixed": "Active" },
+				{ "label": "Account Type", "ignore": true },
+				{ "label": "Location", "ignore": true }
 			]
 		},
 		"credit": {
 			"title": "Credit",
 			"url": "https://fininclusion.bnr.rw/credit",
 			"filters": [
-				"Gender",
-				"Age Segment",
-				"Institution Type",
-				"Account Status",
-				"Credit Category"
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Institution Type", "expected_count": 4 },
+				{ "label": "Account Status", "fixed": "Active" },
+				{ "label": "Credit Category", "ignore": true },
+				{ "label": "Location", "ignore": true }
 			]
 		},
 		"insurance": {
 			"title": "Insurance",
 			"url": "https://fininclusion.bnr.rw/insurance",
-			"filters": ["Gender", "Age Segment", "Insurance Type", "Policy Status"]
+			"filters": [
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Insurance Type", "ignore": true },
+				{ "label": "Policy Status", "fixed": "Active" },
+				{ "label": "Location", "ignore": true }
+			]
+		},
+		"inclusion": {
+			"title": "Inclusion",
+			"url": "https://fininclusion.bnr.rw/inclusion",
+			"kpi_card_selector": "#inclusion-content .card",
+			"kpi_value_selector": ".card-body p.large-data",
+			"kpi_label_selector": ".card-body h4.card-title",
+			"filters": [
+				{ "label": "Gender", "expected_count": 3 },
+				{ "label": "Age Segment", "expected_count": 3 },
+				{ "label": "Institution Type", "expected_count": 6 },
+				{ "label": "Account/Policy Status", "fixed": "Active" },
+				{ "label": "Location", "ignore": true }
+			]
 		}
 	}
 }

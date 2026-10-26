@@ -64,6 +64,19 @@ TABLE_COLLECTION = "page_table_observations"
 KPI_COLLECTION = "page_kpi_observations"
 RUN_COLLECTION = "page_scrape_runs"
 TERMINAL_STATUSES = {"complete", "completed_no_data", "not_applicable"}
+KPI_SCHEMA_VERSION = 2
+LEGACY_KPI_INDEX = "uniq_page_snapshot_combo_metric"
+COMBO_KPI_INDEX = "uniq_page_snapshot_combo_kpis"
+KPI_RECORD_FIELDS = (
+    "metric_type",
+    "metric_label",
+    "metric_value",
+    "metric_value_numeric",
+    "gender",
+    "extraction_method",
+    "ordinal",
+    "content_hash",
+)
 
 SOURCE_NAME = "NBR Financial Inclusion Dashboard"
 TABLE_SELECTOR = "table.cell-table"
@@ -190,6 +203,7 @@ def expected_kpi_profile(page_id: str) -> dict[str, frozenset[str]] | None:
 def kpi_records_complete(
     records: list[dict], profile: dict[str, frozenset[str]] | None
 ) -> bool:
+    """Require every known headline card; gender charts are optional per filter state."""
     if profile is None:
         return True
     headlines = {
@@ -197,14 +211,7 @@ def kpi_records_complete(
         for record in records
         if record.get("metric_type") == "headline_kpi"
     }
-    genders = {
-        str(record.get("gender", "")).strip().casefold()
-        for record in records
-        if record.get("metric_type") == "gender_distribution"
-    }
-    return profile["headlines"].issubset(headlines) and profile["genders"].issubset(
-        genders
-    )
+    return profile["headlines"].issubset(headlines)
 
 
 def ignore_filter_label(label: str | None) -> bool:
@@ -244,6 +251,8 @@ class FilterSpec:
     label: str
     options: tuple | None = None  # iterate every option
     fixed: str | None = None  # force this value
+    ignored: bool = False  # record as All without iterating
+    expected_count: int | None = None  # expected live option count
 
 
 @dataclass
@@ -257,6 +266,9 @@ class PageConfig:
     gender_distribution: bool = True
     date_selector: str = "#date"
     handled_by: str | None = None
+    kpi_card_selector: str = KPI_CARD_SELECTOR
+    kpi_value_selector: str = KPI_VALUE_SELECTOR
+    kpi_label_selector: str = KPI_LABEL_SELECTOR
 
     @property
     def filters_verified(self) -> bool:
@@ -265,10 +277,30 @@ class PageConfig:
 
 def _parse_filter(page_id: str, raw) -> FilterSpec:
     if isinstance(raw, str):
-        label, options, fixed = raw.strip(), None, None
+        label, options, fixed, ignored, expected_count = (
+            raw.strip(),
+            None,
+            None,
+            False,
+            None,
+        )
     elif isinstance(raw, dict) and isinstance(raw.get("label"), str):
         label = raw["label"].strip()
         options, fixed = raw.get("options"), raw.get("fixed")
+        ignored = raw.get("ignore", False)
+        expected_count = raw.get("expected_count")
+        if not isinstance(ignored, bool):
+            raise ConfigError(
+                f"Page {page_id!r}, filter {label!r}: 'ignore' must be a boolean."
+            )
+        if expected_count is not None and (
+            not isinstance(expected_count, int)
+            or isinstance(expected_count, bool)
+            or expected_count < 1
+        ):
+            raise ConfigError(
+                f"Page {page_id!r}, filter {label!r}: 'expected_count' must be a positive integer."
+            )
         if options is not None:
             if not (
                 isinstance(options, list)
@@ -287,6 +319,12 @@ def _parse_filter(page_id: str, raw) -> FilterSpec:
             raise ConfigError(
                 f"Page {page_id!r}, filter {label!r}: use either 'options' or 'fixed', not both."
             )
+        if ignored and (
+            options is not None or fixed is not None or expected_count is not None
+        ):
+            raise ConfigError(
+                f"Page {page_id!r}, filter {label!r}: ignored filters cannot define options, fixed values, or expected counts."
+            )
     else:
         raise ConfigError(
             f"Page {page_id!r}: each filter must be a label string or an object with a 'label'."
@@ -294,7 +332,11 @@ def _parse_filter(page_id: str, raw) -> FilterSpec:
     if not label:
         raise ConfigError(f"Page {page_id!r}: a filter has an empty label.")
     return FilterSpec(
-        label=label, options=options, fixed=fixed.strip() if fixed else None
+        label=label,
+        options=options,
+        fixed=fixed.strip() if fixed else None,
+        ignored=ignored,
+        expected_count=expected_count,
     )
 
 
@@ -357,6 +399,9 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict[str, PageConfig]:
                 "date_selector", defaults.get("date_selector", "#date")
             ),
             handled_by=raw.get("handled_by"),
+            kpi_card_selector=raw.get("kpi_card_selector", KPI_CARD_SELECTOR),
+            kpi_value_selector=raw.get("kpi_value_selector", KPI_VALUE_SELECTOR),
+            kpi_label_selector=raw.get("kpi_label_selector", KPI_LABEL_SELECTOR),
         )
     return configs
 
@@ -404,8 +449,12 @@ def discover_filter_options(page, cfg: PageConfig) -> dict[str, list[str]]:
     live_options: dict[str, list[str]] = {}
     missing_options = []
     for spec in [
-        s for s in (cfg.filters or [])
-        if not ignore_filter_label(s.label) and not s.fixed and not s.options
+        s
+        for s in (cfg.filters or [])
+        if not s.ignored
+        and not ignore_filter_label(s.label)
+        and not s.fixed
+        and not s.options
     ]:
         entry = found.get(norm_label(spec.label))
         if entry is None:
@@ -420,11 +469,21 @@ def discover_filter_options(page, cfg: PageConfig) -> dict[str, list[str]]:
                 text = option.inner_text().strip() if option.is_visible() else ""
                 if text and text not in options:
                     options.append(text)
-            if options:
+            if (
+                options
+                and spec.expected_count is not None
+                and len(options) != spec.expected_count
+            ):
+                missing_options.append(
+                    f"{spec.label} (expected {spec.expected_count}, found {len(options)})"
+                )
+            elif options:
                 live_options[spec.label] = options
             else:
                 missing_options.append(spec.label)
-        except Exception as exc:  # noqa: BLE001 - report missing options instead of undercounting
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - report missing options instead of undercounting
             log(f"  Could not discover {spec.label!r}: {type(exc).__name__}: {exc}")
             missing_options.append(spec.label)
         finally:
@@ -452,17 +511,22 @@ def build_combinations(
     single static default assignment is only valid when no dynamic data can be discovered.
     `Location` is intentionally excluded because the district table already exposes those rows.
     """
-    specs = [s for s in (cfg.filters or []) if not ignore_filter_label(s.label)]
+    specs = list(cfg.filters or [])
     if page is not None and not cfg.filters:
         found = validate_filter_bar(cfg, read_filter_bar(page))
         specs = [
-            FilterSpec(label=entry["label"])
+            FilterSpec(
+                label=entry["label"], ignored=ignore_filter_label(entry["label"])
+            )
             for entry in found.values()
-            if not ignore_filter_label(entry["label"])
         ]
 
     needs_dynamic_discovery = page is not None and any(
-        spec.fixed is None and spec.options is None for spec in specs
+        not spec.ignored
+        and not ignore_filter_label(spec.label)
+        and spec.fixed is None
+        and spec.options is None
+        for spec in specs
     )
     if discovered_options is None and needs_dynamic_discovery:
         discovered_options = discover_filter_options(page, cfg)
@@ -470,12 +534,18 @@ def build_combinations(
     iterated: list[tuple[str, tuple[str, ...]]] = []
     fixed: dict[str, str] = {}
     for spec in specs:
-        if spec.fixed:
+        if spec.ignored or ignore_filter_label(spec.label):
+            fixed[spec.label] = "All"
+        elif spec.fixed:
             fixed[spec.label] = spec.fixed
         elif spec.options:
             iterated.append((spec.label, tuple(spec.options)))
         elif discovered_options and spec.label in discovered_options:
             iterated.append((spec.label, tuple(discovered_options[spec.label])))
+        elif spec.expected_count is not None:
+            raise ConfigError(
+                f"Page {cfg.page_id!r}, filter {spec.label!r}: live options are required to build combinations."
+            )
         elif page is not None and cfg.filters is not None:
             state = read_filter_state(page, cfg)
             value = state.get(spec.label)
@@ -571,8 +641,35 @@ def wait_for_dashboard_update(page):
     page.wait_for_timeout(FILTER_SETTLE_MS)
 
 
-def dashboard_has_no_data(page) -> bool:
-    return "data incomplete or missing" in page.locator("body").inner_text().casefold()
+def dashboard_has_no_data(page, cfg: PageConfig | None = None) -> bool:
+    marker = "data incomplete or missing"
+    if marker not in page.locator("body").inner_text().casefold():
+        return False
+    page.wait_for_timeout(300)
+    if marker not in page.locator("body").inner_text().casefold():
+        return False
+
+    card_selector = cfg.kpi_card_selector if cfg else KPI_CARD_SELECTOR
+    value_selector = cfg.kpi_value_selector if cfg else KPI_VALUE_SELECTOR
+    label_selector = cfg.kpi_label_selector if cfg else KPI_LABEL_SELECTOR
+    cards = page.locator(card_selector)
+    for index in range(cards.count()):
+        card = cards.nth(index)
+        value = card.locator(value_selector).first
+        label = card.locator(label_selector).first
+        if (
+            card.is_visible()
+            and value.count()
+            and label.count()
+            and value.inner_text().strip()
+            and label.inner_text().strip()
+        ):
+            return False
+
+    table = page.locator(TABLE_SELECTOR).first
+    if table.count() and table.is_visible() and table.locator("tr").count() > 1:
+        return False
+    return True
 
 
 # ============================================================
@@ -722,11 +819,7 @@ def read_filter_bar(page) -> list[dict]:
 
 
 def validate_filter_bar(cfg: PageConfig, bar: list[dict]) -> dict[str, dict]:
-    """Match configured labels to dropdowns. Returns {normalized label: bar entry}.
-
-    `Location` is intentionally ignored because the district table already contains the district rows,
-    and this scraper does not iterate by district as a filter dimension.
-    """
+    """Match configured labels to dropdowns. Returns {normalized label: bar entry}."""
     unlabeled = [b["index"] for b in bar if not b["label"]]
     if unlabeled:
         raise FilterConfigError(
@@ -736,8 +829,6 @@ def validate_filter_bar(cfg: PageConfig, bar: list[dict]) -> dict[str, dict]:
     found: dict[str, dict] = {}
     for entry in bar:
         key = norm_label(entry["label"])
-        if ignore_filter_label(entry["label"]):
-            continue
         if key in found:
             raise FilterConfigError(
                 f"[{cfg.page_id}] The dashboard shows the filter {entry['label']!r} more than once."
@@ -745,11 +836,7 @@ def validate_filter_bar(cfg: PageConfig, bar: list[dict]) -> dict[str, dict]:
         found[key] = entry
     if cfg.filters is None:
         return found  # unverified page: accept whatever is really there
-    expected = {
-        norm_label(s.label): s.label
-        for s in cfg.filters
-        if not ignore_filter_label(s.label)
-    }
+    expected = {norm_label(s.label): s.label for s in cfg.filters}
     missing = [label for key, label in expected.items() if key not in found]
     unexpected = [e["label"] for key, e in found.items() if key not in expected]
     if missing or unexpected:
@@ -761,7 +848,7 @@ def validate_filter_bar(cfg: PageConfig, bar: list[dict]) -> dict[str, dict]:
         raise FilterConfigError(
             f"[{cfg.page_id}] Filter mismatch - "
             + "; ".join(parts)
-            + f". Dashboard filters found: {[b['label'] for b in bar if not ignore_filter_label(b['label'])]}"
+            + f". Dashboard filters found: {[b['label'] for b in bar]}"
         )
     return found
 
@@ -771,11 +858,7 @@ def read_filter_state(page, cfg: PageConfig) -> dict[str, str]:
     found = validate_filter_bar(cfg, read_filter_bar(page))
     if cfg.filters is None:
         return {entry["label"]: entry["value"] for entry in found.values()}
-    return {
-        spec.label: found[norm_label(spec.label)]["value"]
-        for spec in cfg.filters
-        if not ignore_filter_label(spec.label)
-    }
+    return {spec.label: found[norm_label(spec.label)]["value"] for spec in cfg.filters}
 
 
 def select_filter_option(page, index: int, label: str, option_text: str):
@@ -783,29 +866,66 @@ def select_filter_option(page, index: int, label: str, option_text: str):
     if comboboxes.count() <= index:
         raise RuntimeError(f"Dropdown not found: {label}")
     card = comboboxes.nth(index).locator(FILTER_CARD_XPATH)
-    current_value = card.locator(
-        ".Select-value-label, [class*='singleValue']"
-    ).first
+    current_value = card.locator(".Select-value-label, [class*='singleValue']").first
     if current_value.count() and norm_label(current_value.inner_text()) == norm_label(
         option_text
     ):
         return
     open_filter_dropdown(page, index, label)
     combobox = comboboxes.nth(index)
-    combobox.fill(option_text)
-    page.wait_for_timeout(200)
     options = page.locator(".VirtualizedSelectOption")
-    for i in range(options.count()):
-        option = options.nth(i)
-        if (
-            option.is_visible()
-            and option.inner_text().strip().casefold() == option_text.casefold()
+    target = None
+    for option_index in range(options.count()):
+        option = options.nth(option_index)
+        if option.is_visible() and norm_label(option.inner_text()) == norm_label(
+            option_text
         ):
-            combobox.press("Enter")
-            wait_for_dashboard_update(page)
-            return
-    page.keyboard.press("Escape")
-    raise OptionNotAvailableError(f"Option {option_text!r} not found for {label!r}")
+            target = option
+            break
+    if target is None:
+        page.keyboard.press("Escape")
+        raise OptionNotAvailableError(f"Option {option_text!r} not found for {label!r}")
+    target_index = next(
+        option_index
+        for option_index in range(options.count())
+        if options.nth(option_index).is_visible()
+        and norm_label(options.nth(option_index).inner_text()) == norm_label(option_text)
+    )
+    focused_index = next(
+        (
+            option_index
+            for option_index in range(options.count())
+            if options.nth(option_index).is_visible()
+            and "VirtualizedSelectFocusedOption"
+            in (options.nth(option_index).get_attribute("class") or "")
+        ),
+        None,
+    )
+    if focused_index is None:
+        combobox.press("Home")
+        focused_index = next(
+            (
+                option_index
+                for option_index in range(options.count())
+                if options.nth(option_index).is_visible()
+                and "VirtualizedSelectFocusedOption"
+                in (options.nth(option_index).get_attribute("class") or "")
+            ),
+            0,
+        )
+    direction = "ArrowDown" if target_index > focused_index else "ArrowUp"
+    for _ in range(abs(target_index - focused_index)):
+        combobox.press(direction)
+    combobox.press("Enter")
+    wait_for_dashboard_update(page)
+    selected = read_filter_bar(page)
+    actual = next(
+        (entry["value"] for entry in selected if entry["index"] == index), None
+    )
+    if actual is None or norm_label(actual) != norm_label(option_text):
+        raise RuntimeError(
+            f"Filter {label!r} was asked to select {option_text!r}, but now shows {actual!r}."
+        )
 
 
 def open_filter_dropdown(page, index: int, label: str):
@@ -826,12 +946,10 @@ def apply_filters(page, cfg: PageConfig, assignments: dict[str, str]):
         return
     found = validate_filter_bar(cfg, read_filter_bar(page))
     for label, value in list(assignments.items()):
-        if ignore_filter_label(label):
-            continue
         entry = found[norm_label(label)]  # present: validated above
         select_filter_option(page, entry["index"], label, value)
-        if dashboard_has_no_data(page):
-            raise DashboardNoDataError("Dashboard reports: Data incomplete or missing.")
+    if dashboard_has_no_data(page, cfg):
+        raise DashboardNoDataError("Dashboard reports: Data incomplete or missing.")
 
 
 def verify_assignments(state: dict[str, str], assignments: dict[str, str]):
@@ -893,15 +1011,18 @@ _KPI_READY_JS = """
 
 
 def wait_for_kpi_cards(
-    page, timeout_ms: int, expected_labels: frozenset[str] = frozenset()
+    page,
+    timeout_ms: int,
+    expected_labels: frozenset[str] = frozenset(),
+    cfg: PageConfig | None = None,
 ) -> bool:
     try:
         page.wait_for_function(
             _KPI_READY_JS,
             arg={
-                "card": KPI_CARD_SELECTOR,
-                "value": KPI_VALUE_SELECTOR,
-                "label": KPI_LABEL_SELECTOR,
+                "card": cfg.kpi_card_selector if cfg else KPI_CARD_SELECTOR,
+                "value": cfg.kpi_value_selector if cfg else KPI_VALUE_SELECTOR,
+                "label": cfg.kpi_label_selector if cfg else KPI_LABEL_SELECTOR,
                 "expected": sorted(expected_labels),
             },
             timeout=timeout_ms,
@@ -912,16 +1033,20 @@ def wait_for_kpi_cards(
         return False
 
 
-def extract_headline_kpis(page) -> list[dict]:
+def extract_headline_kpis(page, cfg: PageConfig | None = None) -> list[dict]:
     records = []
-    cards = page.locator(KPI_CARD_SELECTOR)
+    cards = page.locator(cfg.kpi_card_selector if cfg else KPI_CARD_SELECTOR)
     for index in range(cards.count()):
         card = cards.nth(index)
         try:
             if not card.is_visible():
                 continue
-            value_loc = card.locator(KPI_VALUE_SELECTOR).first
-            label_loc = card.locator(KPI_LABEL_SELECTOR).first
+            value_loc = card.locator(
+                cfg.kpi_value_selector if cfg else KPI_VALUE_SELECTOR
+            ).first
+            label_loc = card.locator(
+                cfg.kpi_label_selector if cfg else KPI_LABEL_SELECTOR
+            ).first
             if not value_loc.count() or not label_loc.count():
                 continue
             value, label = (
@@ -1160,15 +1285,85 @@ def connect_mongodb() -> Store:
 
 def ensure_indexes(store: Store):
     base = [("page", 1), ("snapshot_date", 1), ("combo_key", 1)]
+    migrate_kpi_observations(store)
     store.tables.create_index(
         base + [("row_index", 1)], unique=True, name="uniq_page_snapshot_combo_row"
     )
-    store.kpis.create_index(
-        base + [("metric_type", 1), ("ordinal", 1)],
-        unique=True,
-        name="uniq_page_snapshot_combo_metric",
-    )
+    store.kpis.create_index(base, unique=True, name=COMBO_KPI_INDEX)
     store.runs.create_index(base, unique=True, name="uniq_page_snapshot_combo_run")
+
+
+def _merge_kpi_documents(documents: list[dict]) -> dict:
+    latest = documents[-1]
+    records = {}
+    for document in documents:
+        for record in document.get("kpis", []):
+            identity = (record.get("metric_type", ""), record.get("ordinal", 0))
+            records[identity] = dict(record)
+        if document.get("metric_type"):
+            record = {
+                key: document[key]
+                for key in KPI_RECORD_FIELDS
+                if key in document
+            }
+            identity = (record.get("metric_type", ""), record.get("ordinal", 0))
+            records[identity] = record
+
+    kpis = [records[key] for key in sorted(records)]
+    consolidated = {
+        key: value
+        for key, value in latest.items()
+        if key not in {*KPI_RECORD_FIELDS, "kpis", "kpi_count", "kpi_schema_version"}
+    }
+    consolidated.update(
+        {
+            "kpis": kpis,
+            "kpi_count": len(kpis),
+            "kpi_schema_version": KPI_SCHEMA_VERSION,
+            "content_hash": stable_hash(kpis),
+        }
+    )
+    return consolidated
+
+
+def migrate_kpi_observations(store: Store):
+    """Merge legacy per-metric KPI documents into one document per combination."""
+    indexes = store.kpis.index_information()
+    if indexes.get(COMBO_KPI_INDEX) and not indexes.get(LEGACY_KPI_INDEX):
+        return
+
+    groups = store.kpis.aggregate(
+        [
+            {
+                "$group": {
+                    "_id": {
+                        "page": "$page",
+                        "snapshot_date": "$snapshot_date",
+                        "combo_key": "$combo_key",
+                    }
+                }
+            }
+        ]
+    )
+    for group in groups:
+        key = group["_id"]
+        query = {
+            "page": key["page"],
+            "snapshot_date": key["snapshot_date"],
+            "combo_key": key["combo_key"],
+        }
+        documents = list(store.kpis.find(query).sort([("collected_at", 1), ("_id", 1)]))
+        if not documents:
+            continue
+        consolidated = _merge_kpi_documents(documents)
+        target_id = documents[-1]["_id"]
+        consolidated["_id"] = target_id
+        store.kpis.replace_one({"_id": target_id}, consolidated, upsert=True)
+        store.kpis.delete_many({**query, "_id": {"$ne": target_id}})
+
+    indexes = store.kpis.index_information()
+    if LEGACY_KPI_INDEX in indexes:
+        store.kpis.drop_index(LEGACY_KPI_INDEX)
 
 
 def run_key(page_id: str, snapshot_date: str, combo_key: str) -> dict:
@@ -1183,19 +1378,22 @@ def is_combination_terminal(
     gender_distribution: bool = True,
 ) -> bool:
     run = store.runs.find_one(run_key(page_id, snapshot_date, combo_key))
-    return _is_terminal_run(run, expected_kpi_profile(page_id), gender_distribution)
+    return _is_terminal_run(run, expected_kpi_profile(page_id))
 
 
-def _is_terminal_run(run, profile, gender_distribution: bool) -> bool:
+def _is_terminal_run(run, profile) -> bool:
     if not run or run.get("status") not in TERMINAL_STATUSES:
         return False
-    if run.get("status") in {"completed_no_data", "not_applicable"}:
+    if run.get("status") == "not_applicable":
         return True
+    if run.get("status") == "completed_no_data":
+        reason = str(run.get("reason", "")).casefold()
+        return not run.get("retryable", False) and not reason.startswith(
+            "dashboard reports: data incomplete or missing"
+        )
     if profile is None:
         return True
-    return run.get("headline_kpi_count", 0) >= len(profile["headlines"]) and run.get(
-        "gender_count", 0
-    ) >= (len(profile["genders"]) if gender_distribution else 0)
+    return run.get("headline_kpi_count", 0) >= len(profile["headlines"])
 
 
 def terminal_combination_keys(
@@ -1217,12 +1415,11 @@ def terminal_combination_keys(
         "combo_key": 1,
         "status": 1,
         "headline_kpi_count": 1,
-        "gender_count": 1,
     }
     return {
         run["combo_key"]
         for run in store.runs.find(query, projection)
-        if _is_terminal_run(run, profile, gender_distribution)
+        if _is_terminal_run(run, profile)
     }
 
 
@@ -1340,13 +1537,12 @@ def save_observations(
         )
 
     ordinals: dict[str, int] = {}
-    kpi_ops = []
+    kpis = []
     for record in kpi_records:
         ordinal = ordinals.get(record["metric_type"], 0)
         ordinals[record["metric_type"]] = ordinal + 1
-        doc = dict(base)
-        doc.update(record)
-        doc.update(
+        kpi = dict(record)
+        kpi.update(
             {
                 "ordinal": ordinal,
                 "metric_value_numeric": parse_number(record["metric_value"]),
@@ -1354,19 +1550,21 @@ def save_observations(
                 "combination_content_hash": content_hash,
             }
         )
-        kpi_ops.append(
-            UpdateOne(
-                {
-                    **run_key(cfg.page_id, snapshot_date, combo_key),
-                    "metric_type": record["metric_type"],
-                    "ordinal": ordinal,
-                },
-                {"$set": doc},
-                upsert=True,
-            )
-        )
-    if kpi_ops:
-        store.kpis.bulk_write(kpi_ops, ordered=False)
+        kpis.append(kpi)
+    store.kpis.replace_one(
+        run_key(cfg.page_id, snapshot_date, combo_key),
+        {
+            **base,
+            "filters": filters_actual,
+            "filters_requested": assignments,
+            "kpis": kpis,
+            "kpi_count": len(kpis),
+            "kpi_schema_version": KPI_SCHEMA_VERSION,
+            "content_hash": stable_hash(kpis),
+            "combination_content_hash": content_hash,
+        },
+        upsert=True,
+    )
 
     run_doc = dict(base)
     run_doc.update(
@@ -1501,12 +1699,22 @@ def export_page_csv(store: Store, page_id: str):
             writer.writeheader()
             for document in cursor:
                 row = dict(document)
-                for key in ("filters", "values"):
-                    if isinstance(row.get(key), dict):
-                        row[key] = json.dumps(
-                            row[key], ensure_ascii=False, sort_keys=True
-                        )
-                writer.writerow(row)
+                if collection is store.kpis and isinstance(row.get("kpis"), list):
+                    kpi_records = row.pop("kpis")
+                    for kpi in kpi_records:
+                        kpi_row = {**row, **kpi}
+                        if isinstance(kpi_row.get("filters"), dict):
+                            kpi_row["filters"] = json.dumps(
+                                kpi_row["filters"], ensure_ascii=False, sort_keys=True
+                            )
+                        writer.writerow(kpi_row)
+                else:
+                    for key in ("filters", "values"):
+                        if isinstance(row.get(key), dict):
+                            row[key] = json.dumps(
+                                row[key], ensure_ascii=False, sort_keys=True
+                            )
+                    writer.writerow(row)
         log(f"Exported: {path}")
 
 
@@ -1561,7 +1769,7 @@ def scrape_combination(
             if not live:
                 select_date(page, selector, snapshot_date)  # no-op when already correct
             apply_filters(page, cfg, assignments)
-            if dashboard_has_no_data(page):
+            if dashboard_has_no_data(page, cfg):
                 raise DashboardNoDataError(
                     "Dashboard reports: Data incomplete or missing."
                 )
@@ -1572,18 +1780,19 @@ def scrape_combination(
 
             profile = expected_kpi_profile(cfg.page_id)
             expected_headlines = profile["headlines"] if profile else frozenset()
-            expected_genders = (
-                profile["genders"]
-                if profile and cfg.gender_distribution
-                else frozenset()
-            )
+            expected_genders = profile["genders"] if profile else frozenset()
+            selected_gender = state.get("Gender")
+            if selected_gender and norm_label(selected_gender) != "all":
+                expected_genders = frozenset()
+            if not cfg.gender_distribution:
+                expected_genders = frozenset()
             kpi_ready = wait_for_kpi_cards(
-                page, runtime.kpi_wait_ms, expected_headlines
+                page, runtime.kpi_wait_ms, expected_headlines, cfg
             )
             runtime.kpi_wait_ms = (
                 PAGE_TIMEOUT_MS if expected_headlines or kpi_ready else SHORT_WAIT_MS
             )
-            records = extract_headline_kpis(page) if kpi_ready else []
+            records = extract_headline_kpis(page, cfg) if kpi_ready else []
             if expected_headlines and not kpi_ready:
                 raise RuntimeError(
                     f"Timed out waiting for all reference headline KPIs: {sorted(expected_headlines)}."
@@ -1591,13 +1800,13 @@ def scrape_combination(
 
             gender_status = "disabled"
             if cfg.gender_distribution:
-                if profile is not None and not expected_genders:
+                if profile is not None and not profile["genders"]:
                     gender = []
                     gender_status = "not_expected"
                 else:
                     gender = extract_gender_percentages(
                         page,
-                        GENDER_WAIT_MS if expected_genders else runtime.gender_wait_ms,
+                        GENDER_WAIT_MS if expected_genders else SHORT_WAIT_MS,
                     )
                     gender_status = "extracted" if gender else "absent"
                     runtime.gender_wait_ms = GENDER_WAIT_MS if gender else SHORT_WAIT_MS
@@ -1651,7 +1860,8 @@ def scrape_combination(
                 store, cfg, snapshot_date, assignments, state, records, table, meta
             )
             log(
-                f"  Saved {len(records)} KPI/gender records and {len(table['rows']) if table else 0} table rows "
+                f"  Saved 1 KPI document containing {len(records)} KPI/gender records and "
+                f"{len(table['rows']) if table else 0} table rows "
                 f"(gender chart: {gender_status}).",
                 prefix,
             )
@@ -1842,9 +2052,13 @@ def collect_page(page, store, cfg, schedule, mode, run_id, limit=None) -> PageOu
                     meta,
                     filters_requested=assignments,
                     reason=str(exc),
+                    retryable=True,
                 )
                 entry.no_data += 1
-                log(f"  No data for this combination; recorded without retrying: {exc}", prefix)
+                log(
+                    f"  No data for this combination; recorded without retrying: {exc}",
+                    prefix,
+                )
             except Exception as exc:  # noqa: BLE001
                 mark_failed(store, cfg, snapshot_date, ck, meta, exc, MAX_RETRIES)
                 entry.failed += 1
