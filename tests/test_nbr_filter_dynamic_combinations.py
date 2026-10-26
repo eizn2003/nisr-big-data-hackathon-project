@@ -192,7 +192,20 @@ def test_kpi_records_complete_rejects_missing_reference_metrics():
     ]
 
     assert not kpi_records_complete(records, profile)
-    records.append({"metric_type": "headline_kpi", "metric_label": "Total Cards"})
+    records.append({"metric_type": "headline_kpi", "metric_label": "Banked"})
+    assert kpi_records_complete(records, profile)
+
+
+def test_kpi_completeness_accepts_filter_specific_headline_labels():
+    profile = {
+        "headlines": frozenset({"financially included", "total customers"}),
+        "genders": frozenset(),
+    }
+    records = [
+        {"metric_type": "headline_kpi", "metric_label": "Banked"},
+        {"metric_type": "headline_kpi", "metric_label": "Total Customers"},
+    ]
+
     assert kpi_records_complete(records, profile)
 
 
@@ -334,7 +347,7 @@ def test_terminal_combinations_are_loaded_with_one_query(monkeypatch):
     assert StoreStub.runs.query_count == 1
 
 
-def test_wait_for_kpi_cards_requires_all_expected_labels():
+def test_wait_for_kpi_cards_requires_expected_number_of_populated_cards():
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
@@ -346,19 +359,15 @@ def test_wait_for_kpi_cards_requires_all_expected_labels():
             '<div class="card-text large-data">100</div></div>'
         )
 
-        assert not wait_for_kpi_cards(
-            page, 100, frozenset({"total customers", "total cards"})
-        )
+        assert not wait_for_kpi_cards(page, 100, 2)
 
         page.locator("body").evaluate("""body => body.insertAdjacentHTML("beforeend", `
                 <div class="custom-card-margin card">
-                    <div class="card-title small-text">Total Cards</div>
+                    <div class="card-title small-text">Banked</div>
                     <div class="card-text large-data">120</div>
                 </div>
             `)""")
-        assert wait_for_kpi_cards(
-            page, 1000, frozenset({"total customers", "total cards"})
-        )
+        assert wait_for_kpi_cards(page, 1000, 2)
         browser.close()
 
 
