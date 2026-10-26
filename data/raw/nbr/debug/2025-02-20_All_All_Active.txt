@@ -1,0 +1,84 @@
+URL: https://fininclusion.bnr.rw/touchpoints/agents
+Date: 2025-02-20
+Filters: {'gender': 'All', 'institution_type': 'All', 'status': 'Active'}
+Error: RuntimeError: Option 'All' not found in filter 0. Visible options: []
+
+PAGE TEXT:
+NBR Financial Inclusion Dashboard
+User Guide
+Inclusion
+Transactional
+Depositors
+Savings
+Credit
+Insurance
+Channels
+Glossary
+Feedback/Request
+Please input your selections
+Gender
+Select...
+Institution Type
+All
+×	
+Agent Status
+Active
+×	
+Location
+All
+×	
+Date
+
+Navigate forward to interact with the calendar and select a date. Press the question mark key to get the keyboard shortcuts for changing dates.
+
+176,977
+
+Total Agents
+67.4%
+32.6%
+Male
+Female
+AGENTS BY DISTRICT
+
+Click to view Graph
+
+Click to view Table
+
+Click to view Map
+
+Nyarugenge
+Gasabo
+Kicukiro
+Nyamagabe
+Nyanza
+Rubavu
+Nyagatare
+Musanze
+Gakenke
+Gisagara
+Nyaruguru
+Rwamagana
+Rusizi
+Kamonyi
+Huye
+Muhanga
+Kayonza
+Bugesera
+Ruhango
+Nyabihu
+Gatsibo
+Rutsiro
+Karongi
+Gicumbi
+Ngoma
+Kirehe
+Nyamasheke
+Rulindo
+Burera
+Ngororero
+1
+District
+Total Agents  (in Hundreds of Thousands)
+ADDITIONAL INFORMATION
+
+Click to view Agents Opened in a Month

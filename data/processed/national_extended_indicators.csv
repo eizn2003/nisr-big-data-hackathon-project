@@ -1,0 +1,5 @@
+Indicator,Estimate (%),Source variable,Interpretation
+Ever used Umurenge SACCO,26.10,qf1_06,Respondents who have ever used an Umurenge SACCO.
+Currently uses Umurenge SACCO,21.26,qf4_06,Respondents who currently use an Umurenge SACCO. Respondents who never used one are counted as non-users (full-population denominator).
+Ever used a savings group,48.15,qf1_10,Respondents who have ever used a savings group they save with or borrow from.
+Currently uses a savings group,45.71,qf4_10,Respondents who currently use a savings group. Respondents who never used one are counted as non-users (full-population denominator).

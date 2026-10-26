@@ -1,0 +1,67 @@
+{
+  "source": "NBR Financial Inclusion Dashboard",
+  "page": "merchants",
+  "url": "https://fininclusion.bnr.rw/touchpoints/merchants",
+  "extracted_at_utc": "2026-10-25T09:58:20.642352+00:00",
+  "disclaimer_dismissed": false,
+  "filters": {
+    "Gender": "All",
+    "Institution Type": "All",
+    "Merchant Status": "Active",
+    "Location": "All"
+  },
+  "kpi_count": 3,
+  "kpis": [
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "merchants",
+      "url": "https://fininclusion.bnr.rw/touchpoints/merchants",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Merchants",
+      "metric_value": "1,148,030",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Institution Type": "All",
+        "Merchant Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:58:17.944018+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/touchpoints/merchants",
+      "url": "https://fininclusion.bnr.rw/touchpoints/merchants",
+      "metric_type": "gender_distribution",
+      "metric_label": "Female customers",
+      "metric_value": 35.7,
+      "gender": "Female",
+      "filters": {
+        "Gender": "All",
+        "Institution Type": "All",
+        "Merchant Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:58:20.642259+00:00",
+      "extraction_method": "plotly_pie_trace"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/touchpoints/merchants",
+      "url": "https://fininclusion.bnr.rw/touchpoints/merchants",
+      "metric_type": "gender_distribution",
+      "metric_label": "Male customers",
+      "metric_value": 64.3,
+      "gender": "Male",
+      "filters": {
+        "Gender": "All",
+        "Institution Type": "All",
+        "Merchant Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:58:20.642298+00:00",
+      "extraction_method": "plotly_pie_trace"
+    }
+  ]
+}

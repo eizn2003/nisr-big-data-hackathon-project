@@ -1,0 +1,19 @@
+Variable,Indicator,Role,Status,Denominator,Decision
+k1,Owns a bank account,Core,Existing baseline,Full eligible survey population; verify valid responses,Retain as a main indicator
+f5,Registered mobile-money user,Core,Existing baseline,Full survey population,Retain; distinguish registration from current activity
+h2_1,Borrowed in past 12 months,Core,Existing baseline,Full eligible survey population; verify valid responses,Retain; borrowing is not automatically positive or negative
+g3a_17,Does not save,Core,Existing baseline,Full survey population,Retain; interpret alongside specific saving mechanisms
+e9b,Has emergency funds,Supporting,Responses observed; weighted national rate checked,Full survey population,Keep; measures one aspect of financial resilience
+g3a_11,"Saves through a group, VSLA or tontine",Supporting,Yes/No responses observed,Full survey population,Keep; distinct from not saving at all
+h3_09,Borrowed from an informal group in past 12 months,Supporting,Question wording and period verified,Full survey population; validate coding and routing,Keep; source-specific context for h2_1
+qf4_05,Currently uses mobile-money operator,Supporting,Routing observed; denominator validation pending,"4,915 ever-users; 9,079 skipped",Keep as a candidate; do not treat skipped responses as No
+qf5_05_6,Sent or received money via mobile money,Supporting,Routing observed; denominator validation pending,"4,915 ever-users; 9,079 skipped",Keep as transaction-activity candidate
+qf4_10,Currently uses a savings group,Supporting,Routing observed; denominator validation pending,"7,026 ever-users; 6,968 skipped",Keep; compare with direct group-saving measure
+qf4_11,Currently uses village/community association,Supporting,Routing observed; denominator validation pending,"1,166 ever-users; 12,828 skipped",Keep provisionally; assess district reliability
+qf4_07,Currently uses an insurance provider,Supporting,Sparse responses; routing observed,"198 ever-users; 13,796 skipped",Retain for context; not a priority district indicator yet
+e18_1,Borrowed from a bank/formal institution,Supporting,Eligibility and routing need validation,"11,219 observed; 2,775 missing",Keep provisionally; establish reference period first
+uf4_09_1,EJOHEZA savings account,Supporting,Sparse/routed product responses,"1,723 observed; 12,271 missing",Keep as an exploratory product measure
+k17 / f14 / h7,"Barriers to bank, mobile-money and borrowing access",Supporting,Eligible populations and question routing need validation,Varies by question,Keep as separate barrier families; do not combine
+uf4_*_1,Savings products by provider,Supporting,Provider-specific missingness/routing unresolved,Varies by provider,Use selected products only after routing validation
+c7c_3 / c8e_3,Borrowing from savings group to finance improvements,Deferred,Question purpose identified,Specific improvement-financing population,Exclude from general financial-inclusion indicators
+qf5_05_9,Mobile-money insurance payments/claims,Deferred,Only 63 Yes responses observed,Ever-users; routing applies,Too sparse for a priority district indicator at present

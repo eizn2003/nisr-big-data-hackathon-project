@@ -31,8 +31,11 @@ htmlcov/
 Thumbs.db
 
 # Local data — review before committing
-data/raw/
-data/processed/
+data/reports/
+#data/processed/
 
 # Logs
 *.log
+
+#dataset
+data/datasets/

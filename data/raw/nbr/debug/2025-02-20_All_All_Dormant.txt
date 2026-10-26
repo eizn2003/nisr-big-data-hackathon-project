@@ -1,0 +1,120 @@
+URL: https://fininclusion.bnr.rw/touchpoints/agents
+Date: 2025-02-20
+Filters: {'gender': 'All', 'institution_type': 'All', 'status': 'Dormant'}
+Error: TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for get_by_role("combobox").first
+    - locator resolved to <input value="" aria-owns="" role="combobox" autocomplete="off" aria-expanded="false" aria-haspopup="false" aria-activedescendant="react-select-2--value"/>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <span role="option" aria-selected="true" class="Select-value-label" id="react-select-2--value-item">All</span> from <div class="Select-value">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <span role="option" aria-selected="true" class="Select-value-label" id="react-select-2--value-item">All</span> from <div class="Select-value">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    56 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <span role="option" aria-selected="true" class="Select-value-label" id="react-select-2--value-item">All</span> from <div class="Select-value">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+
+
+PAGE TEXT:
+NBR Financial Inclusion Dashboard
+User Guide
+Inclusion
+Transactional
+Depositors
+Savings
+Credit
+Insurance
+Channels
+Glossary
+Feedback/Request
+Please input your selections
+Gender
+All
+×	
+Institution Type
+All
+×	
+Agent Status
+Active
+×	
+Location
+All
+×	
+Date
+
+Navigate forward to interact with the calendar and select a date. Press the question mark key to get the keyboard shortcuts for changing dates.
+
+SuMoTuWeThFrSa
+February 2025
+26	27	28	29	30	31	1
+2	3	4	5	6	7	8
+9	10	11	12	13	14	15
+16	17	18	19	20	21	22
+23	24	25	26	27	28	1
+?
+
+176,977
+
+Total Agents
+67.4%
+32.6%
+Male
+Female
+AGENTS BY DISTRICT
+
+Click to view Graph
+
+Click to view Table
+
+Click to view Map
+
+Nyarugenge
+Gasabo
+Kicukiro
+Nyamagabe
+Nyanza
+Rubavu
+Nyagatare
+Musanze
+Gakenke
+Gisagara
+Nyaruguru
+Rwamagana
+Rusizi
+Kamonyi
+Huye
+Muhanga
+Kayonza
+Bugesera
+Ruhango
+Nyabihu
+Gatsibo
+Rutsiro
+Karongi
+Gicumbi
+Ngoma
+Kirehe
+Nyamasheke
+Rulindo
+Burera
+Ngororero
+1
+District
+Total Agents  (in Hundreds of Thousands)
+ADDITIONAL INFORMATION
+
+Click to view Agents Opened in a Month
