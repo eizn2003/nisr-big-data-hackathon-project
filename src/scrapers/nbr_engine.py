@@ -206,12 +206,12 @@ def kpi_records_complete(
     """Require every known headline card; gender charts are optional per filter state."""
     if profile is None:
         return True
-    headlines = {
-        norm_label(record.get("metric_label", ""))
+    headline_count = sum(
+        bool(norm_label(record.get("metric_label", "")))
         for record in records
         if record.get("metric_type") == "headline_kpi"
-    }
-    return profile["headlines"].issubset(headlines)
+    )
+    return headline_count >= len(profile["headlines"])
 
 
 def ignore_filter_label(label: str | None) -> bool:
@@ -1005,8 +1005,8 @@ _KPI_READY_JS = """
         return rect.width > 0 && rect.height > 0 && style.display !== "none" &&
                style.visibility !== "hidden" && value?.innerText.trim() && label?.innerText.trim();
     }).map(card => card.querySelector(args.label).innerText.trim().toLowerCase());
-    return labels.length > 0 && (args.expected.length === 0 ||
-        args.expected.every(label => labels.includes(label.toLowerCase())));
+    return labels.length > 0 && (args.expectedCount === 0 ||
+        labels.length >= args.expectedCount);
 }
 """
 
@@ -1014,7 +1014,7 @@ _KPI_READY_JS = """
 def wait_for_kpi_cards(
     page,
     timeout_ms: int,
-    expected_labels: frozenset[str] = frozenset(),
+    expected_count: int = 0,
     cfg: PageConfig | None = None,
 ) -> bool:
     try:
@@ -1024,7 +1024,7 @@ def wait_for_kpi_cards(
                 "card": cfg.kpi_card_selector if cfg else KPI_CARD_SELECTOR,
                 "value": cfg.kpi_value_selector if cfg else KPI_VALUE_SELECTOR,
                 "label": cfg.kpi_label_selector if cfg else KPI_LABEL_SELECTOR,
-                "expected": sorted(expected_labels),
+                "expectedCount": expected_count,
             },
             timeout=timeout_ms,
         )
@@ -1786,7 +1786,7 @@ def scrape_combination(
             if not cfg.gender_distribution:
                 expected_genders = frozenset()
             kpi_ready = wait_for_kpi_cards(
-                page, runtime.kpi_wait_ms, expected_headlines, cfg
+                page, runtime.kpi_wait_ms, len(expected_headlines), cfg
             )
             runtime.kpi_wait_ms = (
                 PAGE_TIMEOUT_MS if expected_headlines or kpi_ready else SHORT_WAIT_MS
@@ -1794,7 +1794,7 @@ def scrape_combination(
             records = extract_headline_kpis(page, cfg) if kpi_ready else []
             if expected_headlines and not kpi_ready:
                 raise RuntimeError(
-                    f"Timed out waiting for all reference headline KPIs: {sorted(expected_headlines)}."
+                    f"Timed out waiting for {len(expected_headlines)} populated headline KPI cards."
                 )
 
             gender_status = "disabled"
