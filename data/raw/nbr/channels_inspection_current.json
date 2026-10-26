@@ -1,0 +1,35 @@
+{
+  "url": "https://fininclusion.bnr.rw/channels",
+  "title": "Financial Inclusion Dashboard",
+  "headings": [
+    "NBR Financial Inclusion Dashboard",
+    "Important Notes"
+  ],
+  "elements": [
+    {
+      "tag": "H2",
+      "id": null,
+      "class": "dashboard-title text-white",
+      "text": "NBR Financial Inclusion Dashboard",
+      "value": null,
+      "html": "<h2 class=\"dashboard-title text-white\">NBR Financial Inclusion Dashboard</h2>"
+    },
+    {
+      "tag": "H2",
+      "id": null,
+      "class": "",
+      "text": "Important Notes",
+      "value": null,
+      "html": "<h2>Important Notes</h2>"
+    },
+    {
+      "tag": "BUTTON",
+      "id": "close-disclaimer",
+      "class": "mt-2 disclaimer-thanks-button px-4 sm:px-6 py-1 sm:py-2 bg-gray-300 text-gray-900 font-semibold rounded-lg shadow-md hover:bg-[gray-900] transition btn btn-primary",
+      "text": "Thanks!",
+      "value": "",
+      "html": "<button id=\"close-disclaimer\" class=\"mt-2 disclaimer-thanks-button px-4 sm:px-6 py-1 sm:py-2 bg-gray-300 text-gray-900 font-semibold rounded-lg shadow-md hover:bg-[gray-900] transition btn btn-primary\">Thanks!</button>"
+    }
+  ],
+  "visibleText": "NBR Financial Inclusion Dashboard\nUser Guide\nInclusion\nTransactional\nDepositors\nSavings\nCredit\nInsurance\nChannels\nGlossary\nFeedback/Request\n404 Page Not Found\nImportant Notes\n\nThis dashboard exclusively displays data related to adult individuals.\n\nData is sourced from institutions regulated by the National Bank of Rwanda.\n\nEach individual is uniquely identified by their national identity number.\n\nThanks!"
+}

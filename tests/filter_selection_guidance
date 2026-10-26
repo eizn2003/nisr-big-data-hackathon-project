@@ -1,0 +1,57 @@
+Filters to ignore completely in all concerned pages:
+
+page 1: Inclusion: 
+    Ignored:[Account/Policy Status(only use active), Location(ignore completely)] 
+    Left: [Gender(3), Age Segment(3), Institution type(6)] 54 combinations
+
+Page 2: Transactional: 
+    Ignored: [Account Type(ignore completely), Account Status(only use active), Location(ignore completely)]
+    Left: [Gender(3), Age Segment(3), Institution type(5)] 45 combinations
+
+page 3: Depositors: 
+    Ignored: [Account Type(ignore completely), Account Status(only use active), Location(ignore completely)]
+    Left: [Gender(3), Age Segment(3), Institution type(4)] 36 combinations
+
+page 4: Savings:
+    Ignored: [Account Type(ignore completely), Account Status(only use active), Location(ignore completely)]
+    Left: [Gender(3), Age Segment(3), Institution type(4)] 36 combinations
+
+page 5: Credit:
+    Ignored: [Credit category(ignore completely), Account Status(only use active), Location(ignore completely)]
+    Left: [Gender(3), Age Segment(3), Institution type(5)] 36 combinations
+
+page 6: Insurance:
+    Ignored: [Insurance Type(ignore completely), Policy Status(only use active), Location(ignore completely)]
+    Left: [Gender(3), Age Segment(3)] 9 combinations
+
+page 7: Channel, Agents: 
+    Ignored: [Gender(ignore completely), Agent Status(only use active), Location(ignore completely)]
+    Left: [Institution type(5)] 5 combinations
+
+page 8: Channel, Branches:
+    Ignored: [Branch Status(only use active), Location(ignore completely)]
+    Left: [Institution type(5)] 5 combinations
+
+page 9: Channel, Cards:
+    Ignored: [Account Type(ignore completely), Card Status(only use active), Card Product(ignore completely), Location(ignore completely)]
+    Left: [Gender(3), Age Segment(3), Institution type(4)] 36 combinations
+
+page 10: Channel, Internet Banking:
+    Ignored: [Account Type(ignore completely), Account Status(only use active), Location(ignore completely)]
+    Left: [Gender(3), Age Segment(3), Institution type(4)] 36 combinations
+
+page 11: Channel, Merchants:
+    Ignored: [Gender(ignore completely), Merchant Status(only use active), Location(ignore completely)]
+    Left: [Institution type(5)] 5 combinations
+
+page 12: Channel, Mobile Banking:
+    Ignored: [Account Type(ignore completely), Account Status(only use active), Location(ignore completely)]
+    Left: [Gender(3), Age Segment(3), Institution type(4)] 36 combinations
+
+page 13: Channel, POS:
+    Ignored: [Location(ignore completely)]
+    Left: [Institution type(2), Terminal Status(3)] 6 combinations
+
+
+NB: Ignore completelly means always selecting "All" in that filter, it can also mean never touching that filter since All is the default value in those filters. For Account Status Active is also the default option but i said only use Active for clarity. despite ignoring the fields when saving a record in mongoDB the ignored filters should always have all value and active in account status's case. 
+

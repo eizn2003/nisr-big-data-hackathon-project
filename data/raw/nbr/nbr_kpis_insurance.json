@@ -1,0 +1,107 @@
+{
+  "source": "NBR Financial Inclusion Dashboard",
+  "page": "insurance",
+  "url": "https://fininclusion.bnr.rw/insurance",
+  "extracted_at_utc": "2026-10-25T09:50:29.684393+00:00",
+  "disclaimer_dismissed": false,
+  "filters": {
+    "Gender": "All",
+    "Age Segment": "All",
+    "Insurance Type": "All",
+    "Policy Status": "Active",
+    "Location": "All"
+  },
+  "kpi_count": 5,
+  "kpis": [
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "insurance",
+      "url": "https://fininclusion.bnr.rw/insurance",
+      "metric_type": "headline_kpi",
+      "metric_label": "Insured",
+      "metric_value": "8.5%",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Insurance Type": "All",
+        "Policy Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:27.237052+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "insurance",
+      "url": "https://fininclusion.bnr.rw/insurance",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Policy Holders",
+      "metric_value": "757,656",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Insurance Type": "All",
+        "Policy Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:27.237052+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "insurance",
+      "url": "https://fininclusion.bnr.rw/insurance",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Policies",
+      "metric_value": "1,770,769",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Insurance Type": "All",
+        "Policy Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:27.237052+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/insurance",
+      "url": "https://fininclusion.bnr.rw/insurance",
+      "metric_type": "gender_distribution",
+      "metric_label": "Female customers",
+      "metric_value": 33.8,
+      "gender": "Female",
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Insurance Type": "All",
+        "Policy Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:29.684016+00:00",
+      "extraction_method": "plotly_pie_trace"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/insurance",
+      "url": "https://fininclusion.bnr.rw/insurance",
+      "metric_type": "gender_distribution",
+      "metric_label": "Male customers",
+      "metric_value": 66.2,
+      "gender": "Male",
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Insurance Type": "All",
+        "Policy Status": "Active",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:50:29.684056+00:00",
+      "extraction_method": "plotly_pie_trace"
+    }
+  ]
+}

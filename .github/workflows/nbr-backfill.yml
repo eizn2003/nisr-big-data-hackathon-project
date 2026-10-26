@@ -1,0 +1,44 @@
+name: NBR Engine Historical Backfill
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nbr-historical-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install python-dotenv pymongo playwright
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Run NBR engine backfill
+        run: |
+          python src/scrapers/scrape_nbr_backfill.py \
+            --all-pages \
+            --config config/nbr_pages.json \
+            --dates-file config/nbr_backfill_dates.txt

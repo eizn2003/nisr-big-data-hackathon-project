@@ -1,0 +1,932 @@
+
+from __future__ import annotations
+
+import csv
+import hashlib
+import itertools
+import json
+import os
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from dotenv import load_dotenv
+from pymongo import MongoClient, UpdateOne
+from pymongo.errors import PyMongoError
+from playwright.sync_api import (
+    sync_playwright,
+    TimeoutError as PlaywrightTimeoutError,
+)
+
+
+# ------------------------------------------------------------
+# CONFIGURATION
+# ------------------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = PROJECT_ROOT / "data" / "raw" / "nbr" / "inclusion"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+URL = "https://fininclusion.bnr.rw/inclusion"
+TIMEZONE = ZoneInfo("Africa/Kigali")
+
+DATABASE_NAME = "nbr_financial_inclusion"
+
+DISTRICT_COLLECTION = "agent_district_observations"
+KPI_COLLECTION = "agent_kpi_observations"
+RUN_COLLECTION = "scrape_runs"
+
+TABLE_SELECTOR = "table.cell-table"
+NEXT_BUTTON_SELECTOR = "button.next-page"
+FIRST_BUTTON_SELECTOR = "button.first-page"
+
+MAX_TABLE_PAGES = 100
+MAX_RETRIES = 3
+PAGE_TIMEOUT_MS = 15000
+
+FILTERS = {
+    "Gender": ["All", "Female", "Male"],
+    "Age Segment": ["All", "Youth", "Non-Youth"],
+    "Institution Type": [
+        "All",
+        "Banks",
+        "E-money issuers",
+        "Insurance",
+        "Microfinance",
+        "Sacco",
+    ],
+    "Account/Policy Status": [
+        "Active",
+        "Matured",
+        "Dormant",
+        "Inactive",
+    ],
+}
+
+LOCATION_FILTER_INDEX = 4
+
+# Keep the existing dashboard disclaimer workaround.
+MODAL_CSS = """
+.modal, .modal.show, .modal-backdrop, [role="dialog"] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+body {
+    overflow: auto !important;
+}
+"""
+
+
+# ------------------------------------------------------------
+# ENVIRONMENT AND MONGODB
+# ------------------------------------------------------------
+
+load_dotenv(PROJECT_ROOT / ".env")
+
+MONGODB_URI = (
+    os.getenv("MONGODB_URI")
+    or os.getenv("MONGO_URI")
+)
+
+if not MONGODB_URI:
+    raise RuntimeError(
+        "MongoDB URI not found. Add MONGODB_URI or MONGO_URI "
+        "to the project .env file."
+    )
+
+
+def connect_mongodb():
+    client = MongoClient(
+        MONGODB_URI,
+        serverSelectionTimeoutMS=15000,
+        connectTimeoutMS=15000,
+    )
+
+    # Force an actual connection check before opening the browser.
+    client.admin.command("ping")
+
+    db = client[DATABASE_NAME]
+
+    districts = db[DISTRICT_COLLECTION]
+    kpis = db[KPI_COLLECTION]
+    runs = db[RUN_COLLECTION]
+
+    # One district observation per date/filter/district.
+    districts.create_index(
+        [
+            ("snapshot_date", 1),
+            ("filters.Gender", 1),
+            ("filters.Age Segment", 1),
+            ("filters.Institution Type", 1),
+            ("filters.Account/Policy Status", 1),
+            ("district", 1),
+        ],
+        unique=True,
+    )
+
+    # One KPI observation per date/filter combination.
+    kpis.create_index(
+        [
+            ("snapshot_date", 1),
+            ("filters.Gender", 1),
+            ("filters.Age Segment", 1),
+            ("filters.Institution Type", 1),
+            ("filters.Account/Policy Status", 1),
+        ],
+        unique=True,
+    )
+
+    # One checkpoint per date/filter combination.
+    runs.create_index(
+        [
+            ("snapshot_date", 1),
+            ("filters.Gender", 1),
+            ("filters.Age Segment", 1),
+            ("filters.Institution Type", 1),
+            ("filters.Account/Policy Status", 1),
+        ],
+        unique=True,
+    )
+
+    return client, districts, kpis, runs
+
+
+# ------------------------------------------------------------
+# FILTER INTERACTION
+# ------------------------------------------------------------
+
+def select_filter_option(page, filter_name, option_text):
+    filter_index = list(FILTERS).index(filter_name)
+    comboboxes = page.get_by_role("combobox")
+
+    if comboboxes.count() <= filter_index:
+        raise RuntimeError(
+            f"Dropdown not found: {filter_name}"
+        )
+
+    dropdown = comboboxes.nth(filter_index)
+
+    control = dropdown.locator(
+        "xpath=ancestor::div[contains(@class, 'Select-control')]"
+    )
+
+    control.click(timeout=5000)
+    page.wait_for_timeout(250)
+
+    options = page.locator(".VirtualizedSelectOption")
+
+    for index in range(options.count()):
+        option = options.nth(index)
+
+        if not option.is_visible():
+            continue
+
+        label = option.inner_text().strip()
+
+        if label.casefold() == option_text.casefold():
+            option.click()
+            page.wait_for_timeout(500)
+            return
+
+    page.keyboard.press("Escape")
+
+    raise RuntimeError(
+        f"Option {option_text!r} not found for {filter_name!r}"
+    )
+
+
+def keep_location_at_all(page):
+    comboboxes = page.get_by_role("combobox")
+
+    if comboboxes.count() <= LOCATION_FILTER_INDEX:
+        raise RuntimeError("Location dropdown not found.")
+
+    dropdown = comboboxes.nth(LOCATION_FILTER_INDEX)
+
+    control = dropdown.locator(
+        "xpath=ancestor::div[contains(@class, 'Select-control')]"
+    )
+
+    control.click(timeout=5000)
+    page.wait_for_timeout(250)
+
+    options = page.locator(".VirtualizedSelectOption")
+
+    for index in range(options.count()):
+        option = options.nth(index)
+
+        if (
+            option.is_visible()
+            and option.inner_text().strip().casefold() == "all"
+        ):
+            option.click()
+            page.wait_for_timeout(500)
+            return
+
+    page.keyboard.press("Escape")
+    raise RuntimeError("Could not set Location to All.")
+
+
+def apply_filters(page, filters):
+    for name, value in filters.items():
+        select_filter_option(page, name, value)
+
+    keep_location_at_all(page)
+    wait_for_dashboard_update(page)
+
+
+def wait_for_dashboard_update(page):
+    updating = page.get_by_text("Updating...", exact=False)
+
+    try:
+        if updating.count() > 0:
+            updating.first.wait_for(
+                state="hidden",
+                timeout=PAGE_TIMEOUT_MS,
+            )
+    except PlaywrightTimeoutError:
+        raise RuntimeError(
+            "Dashboard did not finish updating."
+        )
+
+
+# ------------------------------------------------------------
+# TABLE VIEW AND PAGINATION
+# ------------------------------------------------------------
+
+def open_table_view(page):
+    candidates = page.get_by_text(
+        "Click to view table",
+        exact=False,
+    )
+
+    for index in range(candidates.count()):
+        candidate = candidates.nth(index)
+
+        if candidate.is_visible():
+            candidate.click()
+
+            page.locator(TABLE_SELECTOR).wait_for(
+                state="visible",
+                timeout=PAGE_TIMEOUT_MS,
+            )
+            return
+
+    if page.locator(TABLE_SELECTOR).is_visible():
+        return
+
+    raise RuntimeError("Could not open dashboard table view.")
+
+
+def reset_table_to_first_page(page):
+    first_button = page.locator(FIRST_BUTTON_SELECTOR)
+
+    if first_button.count() == 0:
+        return
+
+    if first_button.is_disabled():
+        return
+
+    previous_rows = page.locator(
+        f"{TABLE_SELECTOR} tr"
+    ).all_inner_texts()
+
+    first_button.click()
+
+    try:
+        wait_for_table_change(page, previous_rows)
+    except PlaywrightTimeoutError:
+        # A one-page table or a redraw may not change visible rows.
+        # Verify that the table is still available.
+        if page.locator(TABLE_SELECTOR).count() == 0:
+            raise RuntimeError(
+                "Table disappeared while resetting pagination."
+            )
+
+
+def read_table_page(page):
+    table = page.locator(TABLE_SELECTOR).first
+
+    if table.count() == 0:
+        raise RuntimeError("Dashboard table not found.")
+
+    rows = []
+
+    for row in table.locator("tr").all():
+        values = [
+            cell.inner_text().strip()
+            for cell in row.locator("th, td").all()
+        ]
+        values = [value for value in values if value]
+
+        if values:
+            rows.append(values)
+
+    # Inclusion dashboard uses its headings as the first table row.
+    if rows and [v.casefold() for v in rows[0][:3]] == [
+        "district",
+        "customers",
+        "rank",
+    ]:
+        rows = rows[1:]
+
+    return rows
+
+
+def wait_for_table_change(page, previous_rows):
+    previous_text = "\n".join(previous_rows)
+
+    page.wait_for_function(
+        """previousText => {
+            const table = document.querySelector("table.cell-table");
+            if (!table) return false;
+
+            const currentText = Array.from(
+                table.querySelectorAll("tr")
+            ).map(row => row.innerText.trim()).join("\\n");
+
+            return currentText !== previousText;
+        }""",
+        arg=previous_text,
+        timeout=PAGE_TIMEOUT_MS,
+    )
+
+
+def parse_integer(value):
+    cleaned = value.replace(",", "").strip()
+
+    if not cleaned:
+        return None
+
+    if not re.fullmatch(r"-?\d+", cleaned):
+        return None
+
+    return int(cleaned)
+
+
+def collect_all_district_rows(page):
+    all_rows = []
+    seen_rows = set()
+    seen_pages = set()
+
+    for page_number in range(MAX_TABLE_PAGES):
+        rows = read_table_page(page)
+
+        if not rows:
+            raise RuntimeError(
+                f"Empty table on page {page_number + 1}."
+            )
+
+        signature = tuple(tuple(row) for row in rows)
+
+        if signature in seen_pages:
+            raise RuntimeError(
+                "Repeated table page detected; refusing to "
+                "mark this combination complete."
+            )
+
+        seen_pages.add(signature)
+
+        for row in rows:
+            # The dashboard table has District, Customers, Rank.
+            if len(row) < 3:
+                print("  Skipping malformed row:", row)
+                continue
+
+            district = row[0].strip()
+            customers = parse_integer(row[1])
+            rank = parse_integer(row[2])
+
+            if not district or customers is None or rank is None:
+                print("  Skipping unparseable row:", row)
+                continue
+
+            record = {
+                "district": district,
+                "customers": customers,
+                "rank": rank,
+            }
+
+            key = (
+                district.casefold(),
+                customers,
+                rank,
+            )
+
+            if key not in seen_rows:
+                seen_rows.add(key)
+                all_rows.append(record)
+
+        next_button = page.locator(NEXT_BUTTON_SELECTOR)
+
+        if next_button.count() == 0:
+            break
+
+        if next_button.is_disabled():
+            break
+
+        previous_rows = page.locator(
+            f"{TABLE_SELECTOR} tr"
+        ).all_inner_texts()
+
+        next_button.click()
+
+        try:
+            wait_for_table_change(page, previous_rows)
+        except PlaywrightTimeoutError as exc:
+            raise RuntimeError(
+                "Next was clicked but the table did not change."
+            ) from exc
+
+    else:
+        raise RuntimeError(
+            f"Reached pagination safety limit of "
+            f"{MAX_TABLE_PAGES} pages."
+        )
+
+    if not all_rows:
+        raise RuntimeError("No valid district rows collected.")
+
+    return all_rows
+
+
+# ------------------------------------------------------------
+# KPI CAPTURE
+# ------------------------------------------------------------
+
+def capture_kpis(page):
+    """
+    Preserve visible KPI text without assuming every KPI label
+    or value has a stable HTML selector.
+    """
+    body_text = page.locator("body").inner_text()
+
+    interesting_lines = []
+
+    for line in body_text.splitlines():
+        line = line.strip()
+
+        if not line:
+            continue
+
+        if re.search(
+            r"total customers|financially included|inclusion rate",
+            line,
+            flags=re.IGNORECASE,
+        ):
+            interesting_lines.append(line)
+
+    # The raw visible text is retained for future re-parsing.
+    # Extract a percentage only when the label and number are
+    # visibly present together in the same line.
+    financially_included_percent = None
+
+    for line in interesting_lines:
+        if re.search(
+            r"financially included|inclusion rate",
+            line,
+            flags=re.IGNORECASE,
+        ):
+            match = re.search(
+                r"(\d+(?:\.\d+)?)\s*%",
+                line,
+            )
+
+            if match:
+                financially_included_percent = float(match.group(1))
+                break
+
+    return {
+        "kpi_text": interesting_lines,
+        "financially_included_percent": financially_included_percent,
+    }
+
+
+# ------------------------------------------------------------
+# SNAPSHOT STORAGE AND CHECKPOINTS
+# ------------------------------------------------------------
+
+def current_snapshot_date():
+    return datetime.now(TIMEZONE).date().isoformat()
+
+
+def make_filters_key(filters):
+    return json.dumps(
+        filters,
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+
+def is_combination_complete(runs, snapshot_date, filters):
+    run = runs.find_one({
+        "snapshot_date": snapshot_date,
+        "filters": filters,
+        "status": "complete",
+    })
+
+    return run is not None
+
+
+def save_combination(
+    districts_collection,
+    kpis_collection,
+    runs_collection,
+    snapshot_date,
+    filters,
+    district_rows,
+    kpis,
+):
+    collected_at = datetime.now(TIMEZONE)
+    filters_key = make_filters_key(filters)
+
+    content_for_hash = {
+        "district_rows": sorted(
+            district_rows,
+            key=lambda row: row["district"].casefold(),
+        ),
+        "kpis": kpis,
+    }
+
+    content_hash = hashlib.sha256(
+        json.dumps(
+            content_for_hash,
+            sort_keys=True,
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    # Check whether another collection date has identical results
+    # for this filter combination. Record a warning, not a claim
+    # that the underlying data must be unchanged.
+    previous = runs_collection.find_one({
+        "filters": filters,
+        "content_hash": content_hash,
+        "status": "complete",
+        "snapshot_date": {"$ne": snapshot_date},
+    })
+
+    repeated_snapshot_warning = previous is not None
+
+    district_operations = []
+
+    for row in district_rows:
+        document = {
+            "snapshot_date": snapshot_date,
+            "collected_at": collected_at,
+            "source_url": URL,
+            "filters": filters,
+            "location_filter": "All",
+            "district": row["district"],
+            "district_known": (
+                row["district"].strip().casefold() != "unknown"
+            ),
+            "customers": row["customers"],
+            "rank": row["rank"],
+            "content_hash": content_hash,
+        }
+
+        district_operations.append(
+            UpdateOne(
+                {
+                    "snapshot_date": snapshot_date,
+                    "filters": filters,
+                    "district": row["district"],
+                },
+                {"$set": document},
+                upsert=True,
+            )
+        )
+
+    if district_operations:
+        districts_collection.bulk_write(
+            district_operations,
+            ordered=False,
+        )
+
+    kpi_document = {
+        "snapshot_date": snapshot_date,
+        "collected_at": collected_at,
+        "source_url": URL,
+        "filters": filters,
+        "location_filter": "All",
+        **kpis,
+        "content_hash": content_hash,
+        "repeated_snapshot_warning": repeated_snapshot_warning,
+    }
+
+    kpis_collection.update_one(
+        {
+            "snapshot_date": snapshot_date,
+            "filters": filters,
+        },
+        {"$set": kpi_document},
+        upsert=True,
+    )
+
+    run_document = {
+        "snapshot_date": snapshot_date,
+        "collected_at": collected_at,
+        "filters": filters,
+        "filters_key": filters_key,
+        "status": "complete",
+        "district_rows": len(district_rows),
+        "content_hash": content_hash,
+        "repeated_snapshot_warning": repeated_snapshot_warning,
+        "source_url": URL,
+    }
+
+    runs_collection.update_one(
+        {
+            "snapshot_date": snapshot_date,
+            "filters": filters,
+        },
+        {"$set": run_document},
+        upsert=True,
+    )
+
+    return repeated_snapshot_warning
+
+
+def mark_combination_failed(
+    runs_collection,
+    snapshot_date,
+    filters,
+    error,
+):
+    runs_collection.update_one(
+        {
+            "snapshot_date": snapshot_date,
+            "filters": filters,
+        },
+        {
+            "$set": {
+                "snapshot_date": snapshot_date,
+                "filters": filters,
+                "status": "failed",
+                "error": str(error),
+                "failed_at": datetime.now(TIMEZONE),
+                "source_url": URL,
+            }
+        },
+        upsert=True,
+    )
+
+
+# ------------------------------------------------------------
+# CSV EXPORTS
+# ------------------------------------------------------------
+
+def export_collection_csv(collection, filename, fields):
+    output_path = OUTPUT_DIR / filename
+
+    cursor = collection.find(
+        {},
+        {"_id": 0},
+    ).sort([
+        ("snapshot_date", 1),
+    ])
+
+    with output_path.open(
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=fields,
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+
+        for document in cursor:
+            row = dict(document)
+
+            if isinstance(row.get("filters"), dict):
+                row["filters"] = json.dumps(
+                    row["filters"],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+
+            if isinstance(row.get("kpi_text"), list):
+                row["kpi_text"] = " | ".join(row["kpi_text"])
+
+            writer.writerow(row)
+
+    print("Exported:", output_path)
+
+
+def export_all(districts_collection, kpis_collection):
+    export_collection_csv(
+        districts_collection,
+        "district_observations.csv",
+        [
+            "snapshot_date",
+            "collected_at",
+            "source_url",
+            "filters",
+            "location_filter",
+            "district",
+            "district_known",
+            "customers",
+            "rank",
+            "content_hash",
+        ],
+    )
+
+    export_collection_csv(
+        kpis_collection,
+        "kpi_observations.csv",
+        [
+            "snapshot_date",
+            "collected_at",
+            "source_url",
+            "filters",
+            "location_filter",
+            "kpi_text",
+            "financially_included_percent",
+            "content_hash",
+            "repeated_snapshot_warning",
+        ],
+    )
+
+
+# ------------------------------------------------------------
+# MAIN SCRAPE
+# ------------------------------------------------------------
+
+def main():
+    client = None
+    completed = 0
+    skipped = 0
+    failed = 0
+
+    snapshot_date = current_snapshot_date()
+
+    combinations = [
+        dict(zip(FILTERS.keys(), values))
+        for values in itertools.product(*FILTERS.values())
+    ]
+
+    print("NBR Financial Inclusion Dashboard")
+    print("URL:", URL)
+    print("Snapshot date (Kigali):", snapshot_date)
+    print("Filter combinations:", len(combinations))
+    print("MongoDB database:", DATABASE_NAME)
+    print("Output directory:", OUTPUT_DIR)
+
+    try:
+        (
+            client,
+            districts_collection,
+            kpis_collection,
+            runs_collection,
+        ) = connect_mongodb()
+
+        print("MongoDB connection successful.")
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                viewport={"width": 1440, "height": 1000}
+            )
+
+            try:
+                page.goto(
+                    URL,
+                    wait_until="networkidle",
+                    timeout=60000,
+                )
+                page.add_style_tag(content=MODAL_CSS)
+                page.wait_for_timeout(1500)
+
+                for index, filters in enumerate(
+                    combinations,
+                    start=1,
+                ):
+                    print(
+                        f"\n[{index}/{len(combinations)}] "
+                        f"{filters}"
+                    )
+
+                    if is_combination_complete(
+                        runs_collection,
+                        snapshot_date,
+                        filters,
+                    ):
+                        print("  Already complete; skipping.")
+                        skipped += 1
+                        continue
+
+                    last_error = None
+
+                    for attempt in range(1, MAX_RETRIES + 1):
+                        try:
+                            print(
+                                f"  Attempt {attempt}/{MAX_RETRIES}"
+                            )
+
+                            apply_filters(page, filters)
+
+                            # Open table view only when needed.
+                            open_table_view(page)
+                            reset_table_to_first_page(page)
+
+                            kpis = capture_kpis(page)
+                            district_rows = collect_all_district_rows(
+                                page
+                            )
+
+                            repeated = save_combination(
+                                districts_collection,
+                                kpis_collection,
+                                runs_collection,
+                                snapshot_date,
+                                filters,
+                                district_rows,
+                                kpis,
+                            )
+
+                            print(
+                                f"  Saved {len(district_rows)} "
+                                "district rows and KPI observation."
+                            )
+
+                            if repeated:
+                                print(
+                                    "  WARNING: Results match a "
+                                    "different collection date."
+                                )
+
+                            completed += 1
+                            last_error = None
+                            break
+
+                        except Exception as exc:
+                            last_error = exc
+                            print(
+                                f"  ERROR: {type(exc).__name__}: {exc}"
+                            )
+
+                            if attempt < MAX_RETRIES:
+                                time.sleep(attempt * 2)
+
+                    if last_error is not None:
+                        failed += 1
+
+                        mark_combination_failed(
+                            runs_collection,
+                            snapshot_date,
+                            filters,
+                            last_error,
+                        )
+
+                        print(
+                            "  Combination marked failed; "
+                            "continuing with the next one."
+                        )
+
+            finally:
+                browser.close()
+
+        # Export every observation currently stored in MongoDB.
+        export_all(
+            districts_collection,
+            kpis_collection,
+        )
+
+        print("\n--- SCRAPE SUMMARY ---")
+        print("Snapshot date:", snapshot_date)
+        print("Combinations:", len(combinations))
+        print("Completed this run:", completed)
+        print("Skipped as already complete:", skipped)
+        print("Failed:", failed)
+
+        print(
+            "\nMongoDB collections:",
+            DISTRICT_COLLECTION,
+            KPI_COLLECTION,
+            RUN_COLLECTION,
+        )
+
+        if failed:
+            print(
+                "Some combinations failed. Rerun the script to "
+                "retry them; completed combinations will be skipped."
+            )
+
+    except PyMongoError as exc:
+        print("MongoDB error:", exc)
+        raise
+
+    finally:
+        if client is not None:
+            client.close()
+
+
+if __name__ == "__main__":
+    main()

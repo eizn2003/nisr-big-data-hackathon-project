@@ -1,0 +1,94 @@
+{
+  "source": "NBR Financial Inclusion Dashboard",
+  "page": "internet_banking",
+  "url": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
+  "extracted_at_utc": "2026-10-25T09:57:37.707728+00:00",
+  "disclaimer_dismissed": false,
+  "filters": {
+    "Gender": "All",
+    "Age Segment": "All",
+    "Institution Type": "All",
+    "Account Status": "Active",
+    "Account Type": "All",
+    "Location": "All"
+  },
+  "kpi_count": 4,
+  "kpis": [
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "internet_banking",
+      "url": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
+      "metric_type": "headline_kpi",
+      "metric_label": "Use Internet Banking",
+      "metric_value": "3.5%",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:57:35.380393+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "internet_banking",
+      "url": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
+      "metric_type": "headline_kpi",
+      "metric_label": "Total Customers",
+      "metric_value": "314,920",
+      "gender": null,
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:57:35.380393+00:00",
+      "extraction_method": "headline_card"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
+      "url": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
+      "metric_type": "gender_distribution",
+      "metric_label": "Female customers",
+      "metric_value": 42,
+      "gender": "Female",
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:57:37.707632+00:00",
+      "extraction_method": "plotly_pie_trace"
+    },
+    {
+      "source": "NBR Financial Inclusion Dashboard",
+      "page": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
+      "url": "https://fininclusion.bnr.rw/touchpoints/internet_banking",
+      "metric_type": "gender_distribution",
+      "metric_label": "Male customers",
+      "metric_value": 58,
+      "gender": "Male",
+      "filters": {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All"
+      },
+      "extracted_at_utc": "2026-10-25T09:57:37.707657+00:00",
+      "extraction_method": "plotly_pie_trace"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "requested_date": "2025-02-24",
+  "initial_date": "2026-10-24",
+  "selected_date_after_input": "2025-02-24",
+  "collection_timestamp_utc": "2026-10-24T08:51:27.268327+00:00",
+  "table_before": [
+    [
+      "District",
+      "Customers",
+      "Rank"
+    ],
+    [
+      "Gasabo",
+      "2,252,276",
+      "1"
+    ],
+    [
+      "Nyarugenge",
+      "1,353,026",
+      "2"
+    ],
+    [
+      "unknown",
+      "441,639",
+      "3"
+    ],
+    [
+      "Rubavu",
+      "195,485",
+      "4"
+    ],
+    [
+      "Musanze",
+      "192,507",
+      "5"
+    ],
+    [
+      "Kicukiro",
+      "190,380",
+      "6"
+    ]
+  ],
+  "table_after": [
+    [
+      "District",
+      "Customers",
+      "Rank"
+    ],
+    [
+      "Gasabo",
+      "1,917,698",
+      "1"
+    ],
+    [
+      "Nyarugenge",
+      "890,337",
+      "2"
+    ],
+    [
+      "unknown",
+      "315,172",
+      "3"
+    ],
+    [
+      "Kicukiro",
+      "198,817",
+      "4"
+    ],
+    [
+      "Rubavu",
+      "188,157",
+      "5"
+    ],
+    [
+      "Musanze",
+      "181,639",
+      "6"
+    ]
+  ],
+  "table_changed": true
+}
