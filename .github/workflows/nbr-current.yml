@@ -37,6 +37,6 @@ jobs:
 
       - name: Run NBR current snapshot
         run: |
-          python src/scrapers/scrape_nbr_current.py \
+          python -m src.scrapers.scrape_nbr_current \
             --all-pages \
             --config config/nbr_pages.json
