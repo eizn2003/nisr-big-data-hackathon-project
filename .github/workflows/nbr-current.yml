@@ -1,0 +1,45 @@
+name: NBR Current Snapshot
+
+on:
+  schedule:
+    - cron: "17 12 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nbr-current-snapshot
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install python-dotenv pymongo playwright
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Run NBR current snapshot
+        run: |
+          python src/scrapers/scrape_nbr_current.py \
+            --all-pages \
+            --config config/nbr_pages.json
