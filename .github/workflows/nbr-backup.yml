@@ -1,0 +1,82 @@
+name: NBR Backup Snapshot
+
+on:
+  schedule:
+    - cron: "41 17 * * 2" # 7:41 PM Kigali Time (UTC+2) - High reliability window
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  backup-check:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: Check for a successful primary run today
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const today = new Date().toISOString().slice(0, 10);
+            try {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: "nbr-current.yml", // Explicitly targets the primary filename
+                branch: context.ref_name,
+                event: "schedule",
+                status: "completed",
+                per_page: 20
+              });
+              
+              const succeeded = data.workflow_runs.some((run) =>
+                run.conclusion === "success" &&
+                run.created_at.startsWith(`${today}T`)
+              );
+              
+              core.setOutput("skip", String(succeeded));
+              if (succeeded) {
+                core.info("Primary scrape succeeded today. Skipping backup execution.");
+              } else {
+                core.info("No successful primary scrape found for today. Proceeding with backup.");
+              }
+            } catch (error) {
+              core.error(`GitHub API Error: ${error.message}`);
+              core.setOutput("skip", "false"); // Safe fallback: run backup if API fails
+            }
+
+  scrape:
+    needs: backup-check
+    if: needs.backup-check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install python-dotenv pymongo playwright
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Run NBR current snapshot (Backup Mode)
+        run: |
+          python src/scrapers/scrape_nbr_current.py \
+            --all-pages \
+            --config config/nbr_pages.json
