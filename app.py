@@ -33,17 +33,28 @@ NAV = {
     "Methodology & sources": ":material/menu_book:",
 }
 
+
+def select_page(page):
+    st.session_state["selected_page"] = page
+
+
+selected_page = st.session_state.get("selected_page", "National overview")
+
 with st.sidebar:
     sidebar_brand()
     render_html('<div class="sb-section">Explore</div>')
 
-    selected_page = st.radio(
-        "Navigate",
-        list(NAV.keys()),
-        format_func=lambda page: f"{NAV[page]}  {page}",
-        label_visibility="collapsed",
-        key="main_nav",
-    )
+    with st.container(key="sidebar_navigation"):
+        for index, (page, icon) in enumerate(NAV.items()):
+            st.button(
+                page,
+                key=f"nav_{index}",
+                icon=icon,
+                type="primary" if page == selected_page else "secondary",
+                on_click=select_page,
+                args=(page,),
+                use_container_width=True,
+            )
 
     sidebar_dataset_card()
 
