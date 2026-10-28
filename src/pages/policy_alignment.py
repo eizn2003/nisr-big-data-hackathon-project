@@ -303,6 +303,10 @@ def render_policy_alignment():
     # ---- 4. Evidence to action --------------------------------------------------------------
     section_title("From evidence to action",
                   "Starting points drawn directly from the data. They indicate where to look, not why gaps exist.")
+    note("How to interpret these results",
+         "Estimates come from one survey, carry sampling uncertainty, and describe differences rather than causes. "
+         "The priority score is an exploratory screening tool, not an official ranking.", tone="info")
+    st.markdown("")
     actions = _evidence_actions(nat, district, groups)
     with st.container(key="card_actions"):
         html = "".join(
@@ -320,10 +324,6 @@ def render_policy_alignment():
         with col:
             st.button(f"Open {page}", key=f"pa_nav_{page}", on_click=_go, args=(page,), use_container_width=True)
     st.markdown("")
-
-    note("Use these results as a starting point",
-         "Estimates come from one survey, carry sampling uncertainty, and describe differences rather than causes. "
-         "The priority score is an exploratory screening tool, not an official ranking.", tone="warn")
 
     # ---- Sources --------------------------------------------------------------------------------------
     with st.expander("Sources for this page"):

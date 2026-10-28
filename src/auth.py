@@ -67,21 +67,17 @@ def _gate_card(icon, tone, title, text):
 
 def render_access_gate() -> bool:
     """
-    Allow access only to authenticated users whose email is
-    explicitly included in the administrator-managed allowlist.
+    Allow access to any user authenticated with Google.
     """
 
     try:
         auth_config = st.secrets.get("auth", {})
         google_config = auth_config.get("google", {})
-        access_config = st.secrets.get("access", {})
     except Exception:
         auth_config = {}
         google_config = {}
-        access_config = {}
 
-    # Fail closed: do not display dashboard data until
-    # authentication and the approved-user list are configured.
+    # Fail closed: do not display dashboard data until authentication is configured.
     if not google_config.get("client_id") or not google_config.get(
         "client_secret"
     ):
@@ -138,7 +134,7 @@ def render_access_gate() -> bool:
                         f"""
                         <div class="lg-logo">{LOGO_SVG}</div>
                         <div class="lg-title">Sign in to the Gap Explorer</div>
-                        <div class="lg-text">Use your approved Google account to
+                        <div class="lg-text">Use your Google account to
                         open the dashboard.</div>
                         """
                     )
@@ -152,44 +148,11 @@ def render_access_gate() -> bool:
                     )
                     render_html(
                         """
-                        <div class="lg-note">🔒 Restricted access. Approved accounts only.<br>
+                        <div class="lg-note">🔒 Sign-in with Google is required.<br>
                         Based on FinScope Rwanda 2024 survey data.</div>
                         """
                     )
 
         st.stop()
-
-    email = str(st.user.get("email", "")).strip().lower()
-
-    approved_emails = access_config.get("allowed_emails", [])
-    if not isinstance(approved_emails, (list, tuple)):
-        approved_emails = []
-
-    approved_emails = {
-        str(address).strip().lower()
-        for address in approved_emails
-        if str(address).strip()
-    }
-
-    if not email or email not in approved_emails:
-        st.markdown(LOGIN_CSS, unsafe_allow_html=True)
-        _, middle, _ = st.columns([1, 1.1, 1], vertical_alignment="center")
-        with middle:
-            st.markdown("<div style='height:12vh'></div>", unsafe_allow_html=True)
-            with st.container(key="card_gate"):
-                _gate_card(
-                    "🚫",
-                    "stop",
-                    "This account is not approved",
-                    "Your account is not approved to access this dashboard. "
-                    "Contact the administrator if you believe this is a mistake.",
-                )
-                st.button(
-                    "Sign out",
-                    on_click=st.logout,
-                    use_container_width=True,
-                    icon=":material/logout:",
-                )
-        return False
 
     return True

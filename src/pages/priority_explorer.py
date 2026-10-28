@@ -277,9 +277,9 @@ def render_priority_explorer():
         ]),
     )
     st.markdown("")
-    note("An exploratory screening score",
+    note("About the screening score",
          "This is not an official poverty ranking. It compares FinScope Rwanda 2024 estimates with national "
-         "estimates and does not establish causation or current conditions.", tone="warn")
+         "estimates and does not establish causation or current conditions.", tone="info")
     st.markdown("")
 
     # ---- Controls -----------------------------------------------------------------

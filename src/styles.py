@@ -151,29 +151,12 @@ a{color:var(--teal);}
 
 /* ---------- sidebar ---------- */
 [data-testid="stSidebar"]{
-  background:linear-gradient(180deg,#0E2A35 0%,#0A212A 100%);
-  border-right:1px solid rgba(255,255,255,.06);
+  background:
+    radial-gradient(420px 260px at 0% 0%,rgba(26,138,125,.16),transparent 72%),
+    linear-gradient(180deg,#102F3A 0%,#0A212A 100%);
+  border-right:1px solid rgba(255,255,255,.08);
 }
-[data-testid="stSidebar"] .stMarkdown p,
-[data-testid="stSidebar"] label p{color:#B9C9D0;}
-[data-testid="stSidebar"] div[role="radiogroup"]{gap:.25rem;}
-[data-testid="stSidebar"] div[role="radiogroup"] > label{
-  width:100%; margin:0; padding:.72rem .9rem; border-radius:12px;
-  border:1px solid transparent; cursor:pointer;
-  transition:background .15s ease, border-color .15s ease;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child{display:none;}
-[data-testid="stSidebar"] div[role="radiogroup"] > label p{
-  display:flex; align-items:center; gap:.65rem;
-  font-size:.95rem; font-weight:500; color:#B9C9D0;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > label:hover{background:rgba(255,255,255,.06);}
-[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked){
-  background:linear-gradient(90deg, rgba(242,184,75,.20), rgba(242,184,75,.05));
-  border-color:rgba(242,184,75,.40);
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p{color:#FFFFFF; font-weight:700;}
-[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) [data-testid="stIconMaterial"]{color:var(--sun);}
+[data-testid="stSidebar"] .stMarkdown p{color:#B9C9D0;}
 [data-testid="stSidebar"] .stButton > button{
   background:rgba(255,255,255,.06); color:#E8F0F2; border:1px solid rgba(255,255,255,.16);
 }
@@ -181,18 +164,69 @@ a{color:var(--teal);}
 [data-testid="stSidebar"] .stButton > button:hover{
   background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.3); color:#fff;
 }
-.sb-brand{display:flex; gap:12px; align-items:center; padding:6px 4px 18px;}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button[kind="secondary"]{
+  min-height:48px; justify-content:flex-start; text-align:left;
+  padding:.38rem .72rem; border-radius:14px;
+  border-color:rgba(255,255,255,.075);
+  background:rgba(255,255,255,.035);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025);
+  transition:transform .16s ease, background .16s ease, border-color .16s ease,
+    box-shadow .16s ease;
+}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button[kind="secondary"] p{
+  color:#B9C9D0; font-size:.86rem; font-weight:600; letter-spacing:.005em;
+}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button[kind="secondary"] [data-testid="stIconMaterial"]{
+  color:#9DB6BE; font-size:19px;
+}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button[kind="secondary"]:hover{
+  transform:translateX(2px); background:rgba(255,255,255,.085);
+  border-color:rgba(255,255,255,.16);
+}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button[kind="primary"]{
+  min-height:50px; justify-content:flex-start; text-align:left;
+  padding:.38rem .72rem; border-radius:14px;
+  border:1px solid rgba(106,202,183,.3); border-left:3px solid var(--sun);
+  background:linear-gradient(105deg,rgba(26,138,125,.43),rgba(26,138,125,.19) 72%,rgba(242,184,75,.08));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 8px 20px -16px rgba(0,0,0,.8);
+  transition:transform .16s ease, filter .16s ease, box-shadow .16s ease;
+}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button[kind="primary"] p{
+  color:#FFFFFF; font-size:.86rem; font-weight:700; letter-spacing:.005em;
+}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button[kind="primary"] [data-testid="stIconMaterial"]{
+  color:var(--sun); font-size:20px;
+}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button[kind="primary"]:hover{
+  filter:brightness(1.12); transform:translateX(2px);
+}
+[data-testid="stSidebar"] .st-key-sidebar_navigation .stButton > button:focus-visible{
+  outline:2px solid var(--sun); outline-offset:2px;
+}
+.sb-brand{
+  display:flex; gap:12px; align-items:center; padding:8px 4px 20px;
+  border-bottom:1px solid rgba(255,255,255,.09); margin-bottom:8px;
+}
 .sb-logo{
   width:42px; height:42px; border-radius:12px; display:grid; place-items:center; flex:none;
   background:linear-gradient(145deg,#1A8A7D,#0F5C63);
-  box-shadow:0 10px 22px -10px rgba(26,138,125,.9);
+  box-shadow:0 10px 24px -10px rgba(26,138,125,.95),inset 0 1px 0 rgba(255,255,255,.22);
 }
 .sb-name{font-family:'Fraunces',Georgia,serif; font-size:17px; font-weight:600; color:#FFFFFF !important; line-height:1.2;}
 .sb-sub{font-size:12px; color:#8FA8B1 !important; margin-top:2px;}
-.sb-section{font-size:12px; font-weight:700; color:#7F99A3 !important; margin:12px 6px 8px;}
+.sb-section{
+  display:flex; align-items:center; gap:9px; font-size:10px; font-weight:800;
+  color:#89A5AE !important; letter-spacing:.14em; text-transform:uppercase;
+  margin:16px 6px 8px;
+}
+.sb-section:before{
+  content:""; width:7px; height:7px; border-radius:50%;
+  background:var(--sun); box-shadow:0 0 12px rgba(242,184,75,.55);
+}
 .sb-card, .sb-user{
   margin-top:18px; padding:14px; border-radius:14px;
-  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.09);
+  background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.035));
+  border:1px solid rgba(255,255,255,.105); box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
 }
 .sb-card b{color:#FFFFFF !important; font-size:13px;}
 .sb-card span{display:block; font-size:12px; color:#9DB3BB !important; margin-top:4px; line-height:1.5;}
@@ -311,6 +345,9 @@ div[data-baseweb="select"] > div:hover{border-color:var(--teal);}
 .note.warn{background:#FFF6E0; border-color:#F3DFA8;}
 .note.warn .note-ic{background:#F2B84B; color:#0E2A35;}
 .note.warn p{color:#5E4510;}
+.note.info{gap:11px; padding:13px 16px; background:#F4F7F8; border-color:#E2E9EC;}
+.note.info .note-ic{width:28px; height:28px; border-radius:9px; background:#E2EFED; color:#176C63;}
+.note.info p{color:#4E626B;}
 .note b{display:block; margin-bottom:4px; color:var(--ink); font-size:14.5px;}
 .note p{margin:0; font-size:14px; line-height:1.65; color:#2B535A;}
 .src-note{font-size:12.5px; color:var(--muted); margin-top:4px;}
