@@ -32,7 +32,7 @@ Thumbs.db
 
 # Local data — review before committing
 data/reports/
-#data/processed/
+data/processed/
 
 # Logs
 *.log
@@ -41,3 +41,6 @@ data/reports/
 data/datasets/
 
 sh.exe.stackdump
+# Accidental local Python package artifacts
+/pd
+/pyreadstat

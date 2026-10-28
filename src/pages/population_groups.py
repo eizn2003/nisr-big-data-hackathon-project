@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src import data
+from src.data_sources.mongodb_population_groups import load_population_group_results
 from src.indicators import available
 from src.styles import (
     PALETTE,
@@ -28,7 +29,7 @@ KEY_GROUP, KEY_IND = "population_groups_type", "population_groups_indicator"
 
 @st.cache_data
 def load_group_data():
-    frame = data.read_population_groups()
+    frame = load_population_group_results().observations
     needed = {"Group type", "Group", "Valid respondents"}
     missing = needed.difference(frame.columns)
     if missing:
@@ -324,4 +325,5 @@ def render_population_groups():
              tone="warn")
     render_html('<div class="src-note">Source: FinScope Rwanda 2024. Percentages are weighted survey estimates; '
                 "respondent counts are unweighted valid sample sizes. Margins are indicative (simple random "
-                "sampling) and understate design-based uncertainty. Differences alone do not establish causation.</div>")
+                "sampling) and understate design-based uncertainty. NBR context is not combined with these estimates; "
+                "Education is FinScope-only. Differences alone do not establish causation.</div>")
