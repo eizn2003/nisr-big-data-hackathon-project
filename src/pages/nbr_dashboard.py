@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Mapping, Sequence
 
 import pandas as pd
@@ -15,6 +15,7 @@ import streamlit as st
 from pymongo.errors import PyMongoError
 
 from src import data
+from src.data_sources.mongodb_district_explorer import parse_numeric_value
 from src.models.nbr_intelligence.contextualization import (
     _filters_match,
     prepare_source_points,
@@ -112,6 +113,113 @@ NATIONAL_HEADER_KPIS = (
         "context": "Branch count; not a customer or inclusion measure.",
     },
 )
+NATIONAL_INCLUSION_FILTERS = {
+    "Gender": "All",
+    "Age Segment": "All",
+    "Institution Type": "All",
+    "Account/Policy Status": "Active",
+    "Location": "All",
+}
+NATIONAL_INFRASTRUCTURE_REPORTING_DATE = "2026-10-24"
+NATIONAL_CUSTOMER_COMPARISON_REPORTING_DATE = "2026-10-27"
+NATIONAL_INFRASTRUCTURE_SERIES = (
+    {
+        "page": "branches",
+        "page_label": "Branches",
+        "district_metric": "Branches",
+        "national_metric": "Total Branches",
+        "title": "Active Branches by District",
+        "unit": "branches",
+        "chart_style": "ranked_bar",
+        "height": 850,
+        "filters": {
+            "Branch Status": "Active",
+            "Institution Type": "All",
+            "Location": "All",
+        },
+        "color": "#2F6FB3",
+    },
+    {
+        "page": "pos",
+        "page_label": "POS",
+        "district_metric": "POS",
+        "national_metric": "Total POS",
+        "title": "Active POS Terminals by District",
+        "unit": "terminals",
+        "chart_style": "lollipop",
+        "height": 780,
+        "filters": {
+            "Terminal Status": "Active",
+            "Institution Type": "All",
+            "Location": "All",
+        },
+        "color": "#1A8A7D",
+    },
+)
+NATIONAL_CUSTOMER_COMPARISONS = (
+    {
+        "key": "gender",
+        "title": "Female vs Male",
+        "metric": "Customers",
+        "groups": (
+            {
+                "label": "Female",
+                "filters": {
+                    "Account/Policy Status": "Active",
+                    "Age Segment": "All",
+                    "Gender": "Female",
+                    "Institution Type": "All",
+                    "Location": "All",
+                },
+                "unknown_key": "Gender:Female",
+                "color": "#3969AC",
+            },
+            {
+                "label": "Male",
+                "filters": {
+                    "Account/Policy Status": "Active",
+                    "Age Segment": "All",
+                    "Gender": "Male",
+                    "Institution Type": "All",
+                    "Location": "All",
+                },
+                "unknown_key": "Gender:Male",
+                "color": "#D98944",
+            },
+        ),
+    },
+    {
+        "key": "age_segment",
+        "title": "Youth vs Non-Youth",
+        "metric": "Customers",
+        "groups": (
+            {
+                "label": "Youth",
+                "filters": {
+                    "Account/Policy Status": "Active",
+                    "Age Segment": "Youth",
+                    "Gender": "All",
+                    "Institution Type": "All",
+                    "Location": "All",
+                },
+                "unknown_key": "Age Segment:Youth",
+                "color": "#7656A6",
+            },
+            {
+                "label": "Non-Youth",
+                "filters": {
+                    "Account/Policy Status": "Active",
+                    "Age Segment": "Non-Youth",
+                    "Gender": "All",
+                    "Institution Type": "All",
+                    "Location": "All",
+                },
+                "unknown_key": "Age Segment:Non-Youth",
+                "color": "#3A8C78",
+            },
+        ),
+    },
+)
 _DIMENSIONS = {
     "Gender": "Gender",
     "Age Segment": "Age Segment (NBR Youth/Non-Youth)",
@@ -176,6 +284,13 @@ _NBR_CSS = """
 .nbr-tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:5px;background:rgba(47,111,179,.12);color:var(--nbr-accent);white-space:nowrap}
 .nbr-tag.beta{background:#FFF1CC;color:#6B4E00}
 .nbr-beta{display:flex;gap:10px;align-items:center;margin:2px 0 14px;padding:8px 12px;border-left:3px solid #E0A12F;background:#FFFAEE;color:#4D421F;font-size:12.5px;line-height:1.5;border-radius:4px}
+.nbr-highlight-value{font-family:Fraunces,Georgia,serif;font-size:40px;font-weight:600;line-height:1.1;letter-spacing:-.02em;color:#163D4B;margin:14px 0 10px;font-variant-numeric:tabular-nums}
+.st-key-card_nbr_highlight_inclusion,.st-key-card_nbr_highlight_unknown_district{min-height:210px}
+.st-key-card_nbr_highlight_trend_transactional,.st-key-card_nbr_highlight_trend_pos,.st-key-card_nbr_highlight_trend_branches{min-height:380px}
+.st-key-card_nbr_infrastructure_branches{background:linear-gradient(180deg,#F4F8FC 0%%,#FFFFFF 170px)!important}
+.st-key-card_nbr_infrastructure_pos{background:linear-gradient(180deg,#F1F8F6 0%%,#FFFFFF 170px)!important}
+.nbr-unknown-counts{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 18px;margin-top:8px;padding:13px 15px;border:1px solid #DCE5E8;border-radius:10px;background:#F7F9FA;color:#536A76;font-size:12px}
+.nbr-unknown-counts b{color:#163D4B;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
 .nbr-ctx{margin-top:10px;padding-top:9px;border-top:1px solid var(--nbr-line);font-size:12px;color:var(--nbr-muted)}
 .nbr-ctx-top{display:flex;align-items:center;gap:7px;margin-bottom:3px}
 .nbr-ctx-label{font-weight:600;color:var(--nbr-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -254,6 +369,877 @@ def _national_supply_header_html(
             source,
         ))
     return kpi_grid(cards, columns=3)
+
+
+def _national_highlight_metadata(
+    points: Sequence[Mapping[str, Any]],
+    runs: Sequence[Mapping[str, Any]],
+    kpi_documents: Sequence[Mapping[str, Any]],
+    table_documents: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Keep source display values and unknown-district counts tied to eligible evidence."""
+    inclusion_series = [
+        point for point in points
+        if point.get("page") == "inclusion"
+        and point.get("metric_label") == "Financially Included"
+        and point.get("source_type") == "national_kpi"
+        and point.get("geography_level") == "national"
+        and point.get("geography") == "Rwanda"
+        and point.get("filters") == NATIONAL_INCLUSION_FILTERS
+        and point.get("repeated_snapshot_warning") is not True
+    ]
+    latest = max(
+        inclusion_series,
+        key=lambda point: str(point.get("reporting_date", "")),
+        default=None,
+    )
+    empty = {
+        "inclusion_value": None,
+        "inclusion_reporting_date": None,
+        "inclusion_collected_at": None,
+        "inclusion_quality_qualifications": [],
+        "unknown_customer_count": None,
+        "unknown_reporting_date": None,
+    }
+    if latest is None:
+        return empty
+
+    identity = (
+        str(latest["page"]),
+        str(latest["reporting_date"]),
+        str(latest.get("combo_key", "")),
+    )
+    matching_runs = [
+        run for run in runs
+        if (
+            str(run.get("page", "")),
+            str(run.get("snapshot_date", "")),
+            str(run.get("combo_key", "")),
+        ) == identity
+        and run.get("run_id") == latest.get("run_id")
+        and run.get("status") == "complete"
+        and run.get("repeated_snapshot_warning") is not True
+        and run.get("filters") == NATIONAL_INCLUSION_FILTERS
+        and (
+            not isinstance(run.get("filters_requested"), Mapping)
+            or run.get("filters_requested") == NATIONAL_INCLUSION_FILTERS
+        )
+    ]
+    matching_kpis = [
+        document for document in kpi_documents
+        if (
+            str(document.get("page", "")),
+            str(document.get("snapshot_date", "")),
+            str(document.get("combo_key", "")),
+        ) == identity
+        and document.get("run_id") == latest.get("run_id")
+        and document.get("filters") == NATIONAL_INCLUSION_FILTERS
+        and (
+            not isinstance(document.get("filters_requested"), Mapping)
+            or document.get("filters_requested") == NATIONAL_INCLUSION_FILTERS
+        )
+    ]
+    if len(matching_runs) != 1 or len(matching_kpis) != 1:
+        return empty
+
+    run = matching_runs[0]
+    kpi_document = matching_kpis[0]
+    inclusion_metrics = [
+        metric for metric in kpi_document.get("kpis", [])
+        if isinstance(metric, Mapping)
+        and metric.get("metric_type") in (None, "headline_kpi")
+        and metric.get("metric_label") == "Financially Included"
+    ]
+    if len(inclusion_metrics) != 1:
+        return empty
+    source_value = inclusion_metrics[0].get("metric_value")
+    if not isinstance(source_value, str) or not source_value.strip().endswith("%"):
+        return empty
+    try:
+        source_numeric_value = float(source_value.strip()[:-1].replace(",", ""))
+    except ValueError:
+        return empty
+    if (
+        not math.isfinite(source_numeric_value)
+        or source_numeric_value != float(latest["value"])
+    ):
+        return empty
+    collected_at = kpi_document.get("collected_at") or run.get("collected_at")
+    if isinstance(collected_at, datetime):
+        collected_at = collected_at.isoformat()
+    try:
+        datetime.fromisoformat(str(collected_at).replace("Z", "+00:00"))
+    except ValueError:
+        return empty
+
+    unknown_rows = [
+        row for row in table_documents
+        if (
+            str(row.get("page", "")),
+            str(row.get("snapshot_date", "")),
+            str(row.get("combo_key", "")),
+        ) == identity
+        and row.get("run_id") == latest.get("run_id")
+        and row.get("filters") == NATIONAL_INCLUSION_FILTERS
+        and (
+            not isinstance(row.get("filters_requested"), Mapping)
+            or row.get("filters_requested") == NATIONAL_INCLUSION_FILTERS
+        )
+        and str(row.get("district", "")).strip().casefold() == "unknown"
+        and row.get("district_known") is False
+    ]
+    unknown_customer_count = None
+    if len(unknown_rows) == 1:
+        unknown_row = unknown_rows[0]
+        row_collected_at = unknown_row.get("collected_at") or run.get("collected_at")
+        try:
+            datetime.fromisoformat(str(row_collected_at).replace("Z", "+00:00"))
+        except ValueError:
+            row_collected_at = None
+        values = unknown_row.get("values")
+        raw_count = values.get("Customers") if isinstance(values, Mapping) else None
+        try:
+            parsed_count = float(str(raw_count).replace(",", ""))
+        except (TypeError, ValueError):
+            parsed_count = math.nan
+        if (
+            row_collected_at is not None
+            and math.isfinite(parsed_count)
+            and parsed_count >= 0
+            and parsed_count.is_integer()
+        ):
+            unknown_customer_count = int(parsed_count)
+
+    return {
+        "inclusion_value": source_value.strip(),
+        "inclusion_reporting_date": str(latest["reporting_date"]),
+        "inclusion_collected_at": str(collected_at) if collected_at else None,
+        "inclusion_quality_qualifications": list(
+            latest.get("quality_qualifications") or []
+        ),
+        "unknown_customer_count": unknown_customer_count,
+        "unknown_reporting_date": (
+            str(latest["reporting_date"]) if unknown_customer_count is not None else None
+        ),
+    }
+
+
+def _national_kpi_series(
+    points: Sequence[Mapping[str, Any]],
+    spec: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    return sorted(
+        (
+            point for point in points
+            if point.get("page") == spec["page"]
+            and point.get("metric_label") == spec["metric"]
+            and point.get("source_type") == "national_kpi"
+            and point.get("geography_level") == "national"
+            and point.get("geography") == "Rwanda"
+            and point.get("filters") == spec["filters"]
+            and point.get("unit") == "count"
+            and point.get("unit_status") == "configured_source_label"
+            and point.get("repeated_snapshot_warning") is not True
+        ),
+        key=lambda point: str(point.get("reporting_date", "")),
+    )
+
+
+def _national_highlight_figure(
+    points: Sequence[Mapping[str, Any]],
+    page: str,
+) -> go.Figure:
+    ordered = sorted(points, key=lambda point: str(point["reporting_date"]))
+    dates = [str(point["reporting_date"]) for point in ordered]
+    values = [float(point["value"]) for point in ordered]
+    labels = [fmt_value(value) for value in values]
+    unit = str(ordered[0].get("unit") or "count") if ordered else "count"
+    y_max = max(values, default=0.0) * 1.2 or 1.0
+    fig = go.Figure()
+
+    if page == "transactional":
+        fig.add_trace(go.Scatter(
+            x=dates,
+            y=values,
+            mode="lines+markers+text",
+            text=labels,
+            textposition="top center",
+            cliponaxis=False,
+            line=dict(color="#247D8B", width=3),
+            marker=dict(
+                size=10,
+                color="#FFFFFF",
+                line=dict(color="#247D8B", width=3),
+            ),
+            fill="tozeroy",
+            fillcolor="rgba(36,125,139,0.12)",
+            hovertemplate=(
+                "<b>%{x}</b><br>Observed: %{y:,.0f} "
+                f"{esc(unit)}<extra>Active transactional accounts</extra>"
+            ),
+        ))
+    elif page == "pos":
+        palette = ["#D8E5F1", "#B6CDE2", "#8DAFCF", "#5F8FB8", "#286C91"]
+        colors = [
+            palette[round(index * (len(palette) - 1) / max(len(values) - 1, 1))]
+            for index in range(len(values))
+        ]
+        fig.add_trace(go.Bar(
+            x=dates,
+            y=values,
+            text=labels,
+            textposition="outside",
+            cliponaxis=False,
+            marker=dict(
+                color=colors,
+                line=dict(color="#FFFFFF", width=1.5),
+            ),
+            hovertemplate=(
+                "<b>%{x}</b><br>Observed: %{y:,.0f} "
+                f"{esc(unit)}<extra>Active POS terminals</extra>"
+            ),
+        ))
+    elif page == "branches":
+        stem_x = []
+        stem_y = []
+        for reporting_date, value in zip(dates, values):
+            stem_x.extend((reporting_date, reporting_date, None))
+            stem_y.extend((0, value, None))
+        fig.add_trace(go.Scatter(
+            x=stem_x,
+            y=stem_y,
+            mode="lines",
+            line=dict(color="rgba(195,126,56,0.42)", width=3),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
+        fig.add_trace(go.Scatter(
+            x=dates,
+            y=values,
+            mode="markers+text",
+            text=labels,
+            textposition="top center",
+            cliponaxis=False,
+            marker=dict(
+                size=13,
+                symbol="diamond",
+                color="#C37E38",
+                line=dict(color="#FFFFFF", width=2),
+            ),
+            hovertemplate=(
+                "<b>%{x}</b><br>Observed: %{y:,.0f} "
+                f"{esc(unit)}<extra>Active branches</extra>"
+            ),
+        ))
+    else:
+        raise ValueError(f"Unknown national highlight chart page: {page}")
+
+    fig.update_xaxes(
+        title=None,
+        type="category",
+        showgrid=False,
+        tickfont=dict(size=11, color=PALETTE["muted"]),
+        linecolor=PALETTE["line"],
+        ticks="outside",
+        ticklen=5,
+    )
+    fig.update_yaxes(
+        title=unit,
+        range=[0, y_max],
+        gridcolor=PALETTE["grid"],
+        zeroline=False,
+        tickfont=dict(size=11, color=PALETTE["muted"]),
+        ticks="outside",
+        ticklen=4,
+    )
+    return style_chart(
+        fig,
+        310,
+        margin=dict(l=8, r=16, t=48, b=24),
+        bargap=0.48,
+    )
+
+
+def _national_infrastructure_series(
+    points: Sequence[Mapping[str, Any]],
+    spec: Mapping[str, Any],
+) -> tuple[list[Mapping[str, Any]], Mapping[str, Any] | None]:
+    district_points = [
+        point for point in points
+        if point.get("page") == spec["page"]
+        and point.get("metric_label") == spec["district_metric"]
+        and point.get("source_type") == "district_table"
+        and point.get("geography_level") == "district"
+        and str(point.get("geography", "")).strip().casefold() != "unknown"
+        and point.get("reporting_date") == NATIONAL_INFRASTRUCTURE_REPORTING_DATE
+        and point.get("filters") == spec["filters"]
+        and point.get("unit") == "count"
+        and point.get("unit_status") == "source_column"
+        and point.get("repeated_snapshot_warning") is not True
+    ]
+    district_names = [str(point.get("geography", "")).strip() for point in district_points]
+    if len(district_names) != len(set(district_names)):
+        return [], None
+    district_points.sort(
+        key=lambda point: (
+            float(point["value"]),
+            str(point.get("geography", "")).casefold(),
+        )
+    )
+    national_points = [
+        point for point in points
+        if point.get("page") == spec["page"]
+        and point.get("metric_label") == spec["national_metric"]
+        and point.get("source_type") == "national_kpi"
+        and point.get("geography_level") == "national"
+        and point.get("geography") == "Rwanda"
+        and point.get("reporting_date") == NATIONAL_INFRASTRUCTURE_REPORTING_DATE
+        and point.get("filters") == spec["filters"]
+        and point.get("unit") == "count"
+        and point.get("unit_status") == "configured_source_label"
+        and point.get("repeated_snapshot_warning") is not True
+    ]
+    return district_points, national_points[0] if len(national_points) == 1 else None
+
+
+def _national_infrastructure_figure(
+    observations: Sequence[Mapping[str, Any]],
+    spec: Mapping[str, Any],
+) -> go.Figure:
+    ordered = sorted(
+        observations,
+        key=lambda point: (
+            -float(point["value"]),
+            str(point.get("geography", "")).casefold(),
+        ),
+    )
+    labels = [str(point["geography"]) for point in ordered]
+    values = [float(point["value"]) for point in ordered]
+    provenance = [
+        [
+            str(point.get("reporting_date", "")),
+            str(point.get("run_id", "")),
+            str(point.get("source_record_id", "")),
+            str(point.get("collected_at", "")),
+        ]
+        for point in ordered
+    ]
+    hovertemplate = (
+        "<b>%{y}</b><br>"
+        f"{esc(spec['district_metric'])}: %{{x:,.0f}} {esc(spec['unit'])}<br>"
+        "Reporting date: %{customdata[0]}<br>"
+        "Run ID: %{customdata[1]}<br>"
+        "Source record: %{customdata[2]}<br>"
+        "Collected at: %{customdata[3]}<extra></extra>"
+    )
+    fig = go.Figure()
+    if spec["chart_style"] == "ranked_bar":
+        fig.add_trace(go.Bar(
+            x=values,
+            y=labels,
+            orientation="h",
+            text=values,
+            texttemplate="%{text:,.0f}",
+            textposition="outside",
+            textfont=dict(size=12, color="#183A5B"),
+            marker=dict(
+                color="#28669B",
+                line=dict(color="#17466F", width=0.8),
+            ),
+            cliponaxis=False,
+            customdata=provenance,
+            hovertemplate=hovertemplate,
+        ))
+        fig.update_layout(bargap=0.34)
+        grid_color = "#E3EAF1"
+        tick_color = "#35536F"
+    elif spec["chart_style"] == "lollipop":
+        fig.add_trace(go.Bar(
+            x=values,
+            y=labels,
+            orientation="h",
+            marker=dict(
+                color="#DFECE9",
+                line=dict(color="#DFECE9", width=0),
+            ),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
+        fig.add_trace(go.Scatter(
+            x=values,
+            y=labels,
+            mode="markers+text",
+            text=[fmt_value(value) for value in values],
+            textposition="middle right",
+            textfont=dict(size=12, color="#075C53"),
+            marker=dict(
+                size=13,
+                color="#0D8174",
+                line=dict(color="#FFFFFF", width=2),
+                symbol="circle",
+            ),
+            cliponaxis=False,
+            customdata=provenance,
+            hovertemplate=hovertemplate,
+            showlegend=False,
+        ))
+        fig.update_layout(bargap=0.72)
+        grid_color = "#DCEBE8"
+        tick_color = "#2D625C"
+    else:
+        raise ValueError(f"Unknown infrastructure chart style: {spec['chart_style']}")
+
+    fig.update_layout(
+        showlegend=False,
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="#FFFFFF",
+    )
+    fig.update_xaxes(
+        title=spec["unit"].capitalize(),
+        rangemode="tozero",
+        range=[0, max(values, default=0) * 1.16 or 1],
+        gridcolor=grid_color,
+        zeroline=False,
+        tickformat=",.0f",
+        ticks="outside",
+        ticklen=5,
+        tickcolor="#A9B8C2",
+        tickfont=dict(size=11, color=tick_color),
+        title_font=dict(size=12, color=tick_color),
+    )
+    fig.update_yaxes(
+        title=None,
+        autorange="reversed",
+        showgrid=False,
+        automargin=True,
+        tickfont=dict(size=12, color=tick_color),
+    )
+    return style_chart(
+        fig,
+        max(spec["height"], 23 * len(labels) + 150),
+        margin=dict(l=8, r=64, t=26, b=48),
+    )
+
+
+def _render_nbr_infrastructure_by_district(
+    points: Sequence[Mapping[str, Any]],
+) -> None:
+    section_title(
+        "Recorded Financial-Service Infrastructure by District",
+        "NBR district observations · reporting date 24 October 2026",
+    )
+    for spec in NATIONAL_INFRASTRUCTURE_SERIES:
+        with st.container(key=f"card_nbr_infrastructure_{spec['page']}"):
+            card_title(
+                spec["title"],
+                f"NBR {spec['page_label']} · {spec['district_metric']} · "
+                f"{_display_reporting_date(NATIONAL_INFRASTRUCTURE_REPORTING_DATE)} · "
+                f"{_filter_label(spec['filters'])}",
+            )
+            district_points, national_point = _national_infrastructure_series(
+                points,
+                spec,
+            )
+            if not district_points or national_point is None:
+                st.info(
+                    "Eligible district observations and a matching national KPI "
+                    "are not available for this reporting date."
+                )
+                continue
+            st.plotly_chart(
+                _national_infrastructure_figure(district_points, spec),
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"nbr_infrastructure_{spec['page']}_20261024",
+            )
+
+
+def _national_customer_comparison_series(
+    points: Sequence[Mapping[str, Any]],
+    comparison: Mapping[str, Any],
+) -> dict[str, list[Mapping[str, Any]]] | None:
+    selected: dict[str, list[Mapping[str, Any]]] = {}
+    district_sets: list[set[str]] = []
+    for group in comparison["groups"]:
+        observations = [
+            point for point in points
+            if point.get("page") == "inclusion"
+            and point.get("metric_label") == comparison["metric"]
+            and point.get("source_type") == "district_table"
+            and point.get("geography_level") == "district"
+            and point.get("reporting_date")
+            == NATIONAL_CUSTOMER_COMPARISON_REPORTING_DATE
+            and point.get("filters") == group["filters"]
+            and point.get("unit") == "count"
+            and point.get("unit_status") == "source_column"
+            and str(point.get("geography", "")).strip()
+            and str(point.get("geography", "")).strip().casefold() != "unknown"
+            and point.get("repeated_snapshot_warning") is not True
+        ]
+        districts = [str(point["geography"]).strip() for point in observations]
+        folded_districts = {district.casefold() for district in districts}
+        if not observations or len(districts) != len(folded_districts):
+            return None
+        selected[group["label"]] = observations
+        district_sets.append(set(districts))
+    if not district_sets or any(names != district_sets[0] for names in district_sets[1:]):
+        return None
+    return selected
+
+
+def _national_customer_unknown_counts(
+    points: Sequence[Mapping[str, Any]],
+    runs: Sequence[Mapping[str, Any]],
+    table_documents: Sequence[Mapping[str, Any]],
+) -> dict[str, int | None]:
+    result: dict[str, int | None] = {
+        group["unknown_key"]: None
+        for comparison in NATIONAL_CUSTOMER_COMPARISONS
+        for group in comparison["groups"]
+    }
+    for comparison in NATIONAL_CUSTOMER_COMPARISONS:
+        for group in comparison["groups"]:
+            group_points = [
+                point for point in points
+                if point.get("page") == "inclusion"
+                and point.get("metric_label") == comparison["metric"]
+                and point.get("source_type") == "district_table"
+                and point.get("geography_level") == "district"
+                and point.get("reporting_date")
+                == NATIONAL_CUSTOMER_COMPARISON_REPORTING_DATE
+                and point.get("filters") == group["filters"]
+                and point.get("unit") == "count"
+                and point.get("unit_status") == "source_column"
+            ]
+            if not group_points:
+                continue
+            identities = {
+                (
+                    str(point.get("page", "")),
+                    str(point.get("reporting_date", "")),
+                    str(point.get("combo_key", "")),
+                    str(point.get("run_id", "")),
+                )
+                for point in group_points
+            }
+            if len(identities) != 1:
+                continue
+            page, reporting_date, combo_key, run_id = next(iter(identities))
+            matching_runs = [
+                run for run in runs
+                if (
+                    str(run.get("page", "")),
+                    str(run.get("snapshot_date", "")),
+                    str(run.get("combo_key", "")),
+                    str(run.get("run_id", "")),
+                ) == (page, reporting_date, combo_key, run_id)
+                and run.get("status") == "complete"
+                and run.get("repeated_snapshot_warning") is not True
+                and run.get("filters") == group["filters"]
+                and (
+                    not isinstance(run.get("filters_requested"), Mapping)
+                    or run.get("filters_requested") == group["filters"]
+                )
+                and run.get("collected_at") is not None
+            ]
+            matching_rows = [
+                row for row in table_documents
+                if (
+                    str(row.get("page", "")),
+                    str(row.get("snapshot_date", "")),
+                    str(row.get("combo_key", "")),
+                    str(row.get("run_id", "")),
+                ) == (page, reporting_date, combo_key, run_id)
+                and row.get("filters") == group["filters"]
+                and (
+                    not isinstance(row.get("filters_requested"), Mapping)
+                    or row.get("filters_requested") == group["filters"]
+                )
+                and str(row.get("district", "")).strip().casefold() == "unknown"
+                and row.get("district_known") is False
+            ]
+            if len(matching_runs) != 1 or len(matching_rows) != 1:
+                continue
+            collected_at = (
+                matching_rows[0].get("collected_at")
+                or matching_runs[0].get("collected_at")
+            )
+            if isinstance(collected_at, datetime):
+                collected_at = collected_at.isoformat()
+            try:
+                datetime.fromisoformat(str(collected_at).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            values = matching_rows[0].get("values")
+            raw_value = (
+                values.get(comparison["metric"])
+                if isinstance(values, Mapping)
+                else None
+            )
+            try:
+                value = float(str(raw_value).replace(",", ""))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value) and value >= 0 and value.is_integer():
+                result[group["unknown_key"]] = int(value)
+    return result
+
+
+def _national_customer_comparison_figure(
+    observations: Mapping[str, Sequence[Mapping[str, Any]]],
+    comparison: Mapping[str, Any],
+) -> go.Figure:
+    groups = comparison["groups"]
+    totals: dict[str, float] = defaultdict(float)
+    by_group_district: dict[str, dict[str, Mapping[str, Any]]] = {}
+    for group in groups:
+        values_by_district = {
+            str(point["geography"]).strip(): point
+            for point in observations[group["label"]]
+        }
+        by_group_district[group["label"]] = values_by_district
+        for district, point in values_by_district.items():
+            totals[district] += float(point["value"])
+    district_order = sorted(
+        totals,
+        key=lambda district: (-totals[district], district.casefold()),
+    )
+    max_value = max(
+        (
+            float(point["value"])
+            for group_points in observations.values()
+            for point in group_points
+        ),
+        default=0,
+    )
+    figure = go.Figure()
+    for group in groups:
+        district_points = by_group_district[group["label"]]
+        ordered_points = [district_points[district] for district in district_order]
+        figure.add_trace(go.Bar(
+            name=group["label"],
+            x=[float(point["value"]) for point in ordered_points],
+            y=district_order,
+            orientation="h",
+            text=[_compact_customer_count(point["value"]) for point in ordered_points],
+            textposition="outside",
+            textfont=dict(size=10, color=PALETTE["ink"]),
+            marker=dict(
+                color=group["color"],
+                line=dict(color="#FFFFFF", width=0.8),
+            ),
+            cliponaxis=False,
+            customdata=[
+                [
+                    point.get("reporting_date", ""),
+                    point.get("run_id", ""),
+                    point.get("source_record_id", ""),
+                    point.get("collected_at", ""),
+                    _filter_label(group["filters"]),
+                ]
+                for point in ordered_points
+            ],
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                f"{esc(group['label'])} · {esc(comparison['metric'])}: "
+                "%{x:,.0f} customers<br>"
+                "Reporting date: %{customdata[0]}<br>"
+                "Filters: %{customdata[4]}<br>"
+                "Run ID: %{customdata[1]}<br>"
+                "Source record: %{customdata[2]}<extra></extra>"
+            ),
+        ))
+    figure.update_layout(
+        barmode="group",
+        bargap=0.26,
+        bargroupgap=0.05,
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="#FFFFFF",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            title=None,
+        ),
+    )
+    figure.update_xaxes(
+        title="Customers (count)",
+        range=[0, max_value * 1.18 or 1],
+        tickformat=".3~s",
+        gridcolor=PALETTE["grid"],
+        zeroline=False,
+        ticks="outside",
+        ticklen=5,
+    )
+    figure.update_yaxes(
+        title=None,
+        autorange="reversed",
+        showgrid=False,
+        automargin=True,
+        tickfont=dict(size=11, color=PALETTE["ink"]),
+    )
+    return style_chart(
+        figure,
+        max(980, 27 * len(district_order) + 180),
+        margin=dict(l=8, r=58, t=54, b=48),
+    )
+
+
+def _compact_customer_count(value: Any) -> str:
+    count = float(value)
+    if abs(count) >= 1_000_000:
+        return f"{count / 1_000_000:.1f}M"
+    if abs(count) >= 10_000:
+        return f"{count / 1_000:.0f}k"
+    if abs(count) >= 1_000:
+        return f"{count / 1_000:.1f}k"
+    return fmt_value(count)
+
+
+def _render_nbr_customer_counts_by_district(
+    points: Sequence[Mapping[str, Any]],
+    unknown_counts: Mapping[str, int | None] | None = None,
+) -> None:
+    unknown_counts = unknown_counts or {}
+    section_title(
+        "NBR Customer Counts by District and Demographic Group",
+        "NBR Inclusion · reported Customers · "
+        f"{_display_reporting_date(NATIONAL_CUSTOMER_COMPARISON_REPORTING_DATE)}",
+    )
+    for comparison in NATIONAL_CUSTOMER_COMPARISONS:
+        with st.container(key=f"card_nbr_customer_comparison_{comparison['key']}"):
+            observations = _national_customer_comparison_series(
+                points,
+                comparison,
+            )
+            filter_summary = " · ".join(
+                f"{group['label']}: {_filter_label(group['filters'])}"
+                for group in comparison["groups"]
+            )
+            district_count = (
+                len(next(iter(observations.values())))
+                if observations is not None else 0
+            )
+            card_title(
+                comparison["title"],
+                f"Metric: {comparison['metric']} · Reporting date: "
+                f"{_display_reporting_date(NATIONAL_CUSTOMER_COMPARISON_REPORTING_DATE)}"
+                f" · {district_count} districts · {filter_summary}",
+            )
+            if observations is None:
+                st.info(
+                    "A matching eligible district series for both groups is "
+                    "not available for this reporting date."
+                )
+                continue
+            st.plotly_chart(
+                _national_customer_comparison_figure(observations, comparison),
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"nbr_customer_comparison_{comparison['key']}_20261027",
+            )
+            unknown_labels = []
+            for group in comparison["groups"]:
+                unknown_value = unknown_counts.get(group["unknown_key"])
+                display_value = (
+                    fmt_value(unknown_value)
+                    if unknown_value is not None
+                    else "Unavailable"
+                )
+                unknown_labels.append(f"{group['label']}: {display_value}")
+            render_html(
+                '<div class="nbr-unknown-counts">'
+                '<span>Unknown district · shown separately</span>'
+                f"<b>{esc(' · '.join(unknown_labels))}</b>"
+                "</div>"
+            )
+
+
+def _display_reporting_date(value: Any) -> str:
+    try:
+        return date.fromisoformat(str(value)).strftime("%d %B %Y")
+    except ValueError:
+        return str(value or "No eligible observation")
+
+
+def _render_nbr_data_highlights(
+    points: Sequence[Mapping[str, Any]],
+    metadata: Mapping[str, Any] | None = None,
+) -> None:
+    metadata = metadata or {}
+    section_title(
+        "NBR Data Highlights",
+        "Observed NBR administrative figures and a source-data quality note.",
+    )
+
+    top_row = st.columns(2, gap="medium")
+    with top_row[0]:
+        with st.container(key="card_nbr_highlight_inclusion"):
+            card_title(
+                "NBR-reported Financially Included",
+                _display_reporting_date(metadata.get("inclusion_reporting_date")),
+            )
+            value = metadata.get("inclusion_value")
+            render_html(
+                '<div class="nbr-highlight-value">'
+                f"{esc(value) if value else 'Unavailable'}"
+                "</div>"
+            )
+            st.caption(
+                "The source-reported denominator and population definition are not "
+                "documented; do not interpret this as a confirmed share of Rwanda’s "
+                "population."
+            )
+            qualifications = metadata.get("inclusion_quality_qualifications") or []
+            for qualification in qualifications:
+                st.warning(str(qualification.get("message", "Data-quality qualification.")))
+    with top_row[1]:
+        with st.container(key="card_nbr_highlight_unknown_district"):
+            card_title(
+                "District assignment",
+                metadata.get("unknown_reporting_date") or "Inclusion snapshot",
+            )
+            unknown_count = metadata.get("unknown_customer_count")
+            render_html(
+                '<div class="nbr-highlight-value">'
+                f"{fmt_value(unknown_count) if unknown_count is not None else 'Unavailable'}"
+                "</div>"
+            )
+            st.caption(
+                "customers are recorded with an `unknown` district assignment. "
+                "They are not assigned to a named district in district-level results."
+                if unknown_count is not None
+                else "No eligible unknown-district count is available for this snapshot."
+            )
+
+    def render_trend_card(spec: Mapping[str, Any]) -> None:
+        with st.container(key=f"card_nbr_highlight_trend_{spec['page']}"):
+            series = _national_kpi_series(points, spec)
+            dates = sorted({
+                str(point["reporting_date"]) for point in series
+            })
+            date_context = (
+                f"{dates[0]} to {dates[-1]} · {len(dates)} observed dates"
+                if dates else "No eligible observations"
+            )
+            card_title(spec["label"], date_context)
+            st.plotly_chart(
+                _national_highlight_figure(series, spec["page"]),
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=(
+                    "nbr_highlight_chart_"
+                    + hashlib.sha1(spec["page"].encode()).hexdigest()[:10]
+                ),
+            )
+
+    render_trend_card(NATIONAL_HEADER_KPIS[0])
+    secondary_columns = st.columns(2, gap="medium")
+    for column, spec in zip(secondary_columns, NATIONAL_HEADER_KPIS[1:]):
+        with column:
+            render_trend_card(spec)
 
 
 def kpi_trend_html(points: Sequence[Mapping[str, Any]]) -> str:
@@ -373,6 +1359,16 @@ def load_nbr_dashboard_data(
         tables,
         as_of_date=date.today(),
     )
+    if pages is None or "inclusion" in pages:
+        summary["national_highlights"] = _national_highlight_metadata(
+            points,
+            runs,
+            kpis,
+            tables,
+        )
+        summary["national_customer_unknown_counts"] = (
+            _national_customer_unknown_counts(points, runs, tables)
+        )
     registry = build_nbr_indicator_registry(points)
     return points, summary, registry, _source_data_version(points)
 
@@ -1982,14 +2978,10 @@ def render_nbr_page(
     }[view]
 
     if view == "national":
-        page_key = "nbr_source_page_national"
-        source_page = st.session_state.get(page_key, "inclusion")
-        if source_page not in NBR_PAGE_LABELS:
-            source_page = "inclusion"
         header_pages = tuple(
             spec["page"] for spec in NATIONAL_HEADER_KPIS
         )
-        pages = tuple(sorted(set((*header_pages, source_page))))
+        pages = tuple(sorted(set((*header_pages, "inclusion"))))
         try:
             points, summary, registry, source_version = load_nbr_dashboard_data(
                 "nbr-dashboard-v2",
@@ -2004,7 +2996,10 @@ def render_nbr_page(
                 size="tall",
                 below_html=_national_supply_header_html([]),
             )
-            _render_service_area_selector(view)
+            st.markdown("")
+            _render_nbr_data_highlights([])
+            st.markdown("")
+            _render_nbr_customer_counts_by_district([])
             with st.container(key="card_nbr_unavailable"):
                 card_title("NBR data could not be loaded")
                 st.error(
@@ -2023,13 +3018,19 @@ def render_nbr_page(
             size="tall",
             below_html=_national_supply_header_html(points),
         )
-        source_page = _render_service_area_selector(view)
-        _render_nbr_national_page(
+        st.markdown("")
+        _render_nbr_data_highlights(
             points,
-            summary,
-            registry,
-            source_version,
-            source_page,
+            summary.get("national_highlights"),
+        )
+        st.markdown("")
+        render_nbr_savings_activity()
+        st.markdown("")
+        _render_nbr_infrastructure_by_district(points)
+        st.markdown("")
+        _render_nbr_customer_counts_by_district(
+            points,
+            summary.get("national_customer_unknown_counts"),
         )
         return
 
@@ -2124,6 +3125,574 @@ def render_nbr_page(
         tone="info",
     )
 
+
+def _savings_activity_series(
+    points: Sequence[Mapping[str, Any]],
+    kpi_documents: Sequence[Mapping[str, Any]] = (),
+) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for point in points:
+        page = point.get("page")
+        metric = point.get("metric_label")
+        level = point.get("geography_level")
+        if (
+            page != "savings"
+            or level != "national"
+            or point.get("geography") != "Rwanda"
+            or point.get("source_type") != "national_kpi"
+            or metric not in {"Saved", "Total Customers"}
+            or not isinstance(point.get("filters"), Mapping)
+        ):
+            continue
+        expected_unit = "percent" if metric == "Saved" else "count"
+        normalized_point = dict(point)
+        if kpi_documents:
+            filters_key = _filters_key(point["filters"])
+            matching_documents = [
+                document
+                for document in kpi_documents
+                if document.get("page") == "savings"
+                and str(document.get("snapshot_date", ""))
+                == str(point.get("reporting_date", ""))
+                and document.get("combo_key") == point.get("combo_key")
+                and document.get("run_id") == point.get("run_id")
+                and _filters_key(document.get("filters", {})) == filters_key
+            ]
+            if len(matching_documents) != 1:
+                continue
+            matching_metrics = [
+                item
+                for item in matching_documents[0].get("kpis", [])
+                if isinstance(item, Mapping)
+                and item.get("metric_label") == metric
+                and item.get("metric_type") in (None, "headline_kpi")
+            ]
+            if len(matching_metrics) != 1:
+                continue
+            source_metric = matching_metrics[0]
+            raw_value = source_metric.get("metric_value")
+            numeric_value = parse_numeric_value(
+                source_metric.get("metric_value_numeric")
+                if source_metric.get("metric_value_numeric") is not None
+                else raw_value
+            )
+            if (
+                numeric_value is None
+                or float(numeric_value) != float(point.get("value", math.nan))
+                or (
+                    expected_unit == "percent"
+                    and not (
+                        isinstance(raw_value, str)
+                        and raw_value.strip().endswith("%")
+                    )
+                )
+                or (
+                    expected_unit == "count"
+                    and isinstance(raw_value, str)
+                    and raw_value.strip().endswith("%")
+                )
+            ):
+                continue
+            normalized_point["unit"] = expected_unit
+            normalized_point["unit_status"] = (
+                "source_value" if expected_unit == "percent"
+                else "configured_source_label"
+            )
+            normalized_point["raw_value"] = raw_value
+        elif point.get("unit") != expected_unit:
+            continue
+        filters_key = _filters_key(point["filters"])
+        entry = grouped.setdefault(
+            filters_key,
+            {
+                "filters": dict(point["filters"]),
+                "saved": defaultdict(list),
+                "customers": defaultdict(list),
+                "districts": defaultdict(list),
+            },
+        )
+        metric_key = "saved" if metric == "Saved" else "customers"
+        entry[metric_key][str(point.get("reporting_date", ""))].append(normalized_point)
+
+    for point in points:
+        if (
+            point.get("page") != "savings"
+            or point.get("metric_label") != "Customers"
+            or point.get("geography_level") != "district"
+            or point.get("source_type") != "district_table"
+            or point.get("unit") != "count"
+            or not isinstance(point.get("filters"), Mapping)
+        ):
+            continue
+        entry = grouped.get(_filters_key(point["filters"]))
+        if entry is not None:
+            entry["districts"][str(point.get("reporting_date", ""))].append(dict(point))
+
+    result = []
+    for key, entry in sorted(grouped.items()):
+        saved = entry["saved"]
+        customers = entry["customers"]
+        saved_dates = sorted(
+            reporting_date
+            for reporting_date, observations in saved.items()
+            if len(observations) == 1
+        )
+        customer_dates = sorted(
+            reporting_date
+            for reporting_date, observations in customers.items()
+            if len(observations) == 1
+        )
+        if not saved_dates or not customer_dates:
+            continue
+        entry["filters_key"] = key
+        entry["saved_dates"] = saved_dates
+        entry["customer_dates"] = customer_dates
+        result.append(entry)
+    return result
+
+
+def _unknown_savings_customer(
+    runs: Sequence[Mapping[str, Any]],
+    table_documents: Sequence[Mapping[str, Any]],
+    *,
+    reporting_date: str,
+    filters: Mapping[str, Any],
+) -> tuple[int | float | None, str]:
+    filters_key = _filters_key(filters)
+    matching_runs = [
+        run
+        for run in runs
+        if run.get("page") == "savings"
+        and str(run.get("snapshot_date", "")) == reporting_date
+        and run.get("combo_key") == filters_key
+        and run.get("filters") == dict(filters)
+        and (
+            not isinstance(run.get("filters_requested"), Mapping)
+            or run.get("filters_requested") == dict(filters)
+        )
+        and run.get("status") == "complete"
+        and run.get("table_status") == "extracted"
+        and run.get("repeated_snapshot_warning") is not True
+    ]
+    if len(matching_runs) != 1:
+        return None, "unavailable"
+    run = matching_runs[0]
+    unknown_rows = [
+        row
+        for row in table_documents
+        if row.get("page") == "savings"
+        and str(row.get("snapshot_date", "")) == reporting_date
+        and row.get("combo_key") == filters_key
+        and row.get("run_id") == run.get("run_id")
+        and row.get("filters") == dict(filters)
+        and (
+            not isinstance(row.get("filters_requested"), Mapping)
+            or row.get("filters_requested") == dict(filters)
+        )
+        and row.get("district_known") is False
+        and str(row.get("district", "")).strip().casefold() == "unknown"
+    ]
+    if not unknown_rows:
+        return None, "not_reported"
+    if len(unknown_rows) != 1:
+        return None, "unavailable"
+    values = unknown_rows[0].get("values")
+    raw_value = values.get("Customers") if isinstance(values, Mapping) else None
+    value = parse_numeric_value(raw_value)
+    if (
+        value is None
+        or value < 0
+        or not float(value).is_integer()
+        or (isinstance(raw_value, str) and raw_value.strip().endswith("%"))
+    ):
+        return None, "unavailable"
+    return value, "reported"
+
+
+def _savings_trend_figure(
+    observations: Sequence[Mapping[str, Any]],
+    *,
+    metric_label: str,
+    unit: str,
+) -> go.Figure:
+    ordered = sorted(observations, key=lambda point: str(point["reporting_date"]))
+    values = [float(point["value"]) for point in ordered]
+    dates = [str(point["reporting_date"]) for point in ordered]
+    if unit == "percent":
+        fig = go.Figure(
+            go.Scatter(
+                x=dates,
+                y=values,
+                mode="lines+markers",
+                line=dict(color="#087E78", width=4, shape="linear"),
+                marker=dict(
+                    size=12,
+                    color="#F2B84B",
+                    line=dict(color="#FFFFFF", width=2.5),
+                ),
+                fill="tozeroy",
+                fillcolor="rgba(8,126,120,0.13)",
+                connectgaps=False,
+                hovertemplate=(
+                    f"<b>{esc(metric_label)}</b><br>%{{x}}<br>%{{y:.1f}}%"
+                    "<extra></extra>"
+                ),
+            )
+        )
+        fig.update_xaxes(
+            type="category",
+            categoryorder="array",
+            categoryarray=dates,
+            title=None,
+            showgrid=False,
+            automargin=True,
+        )
+        fig.update_yaxes(
+            title="Source-reported percent",
+            ticksuffix="%",
+            tickformat=".1f",
+            rangemode="tozero",
+            gridcolor="#D8E6E5",
+            zeroline=False,
+        )
+        return style_chart(
+            fig,
+            430,
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#F1F8F7",
+            font=dict(family="Plus Jakarta Sans, Segoe UI, Arial, sans-serif", color="#163D4B", size=13),
+            margin=dict(l=64, r=28, t=38, b=52),
+            hoverlabel=dict(bgcolor="#0E2A35", bordercolor="#0E2A35", font=dict(color="#FFFFFF", size=13)),
+        )
+
+    fig = go.Figure(
+        go.Bar(
+            x=dates,
+            y=values,
+            marker=dict(
+                color="#3267A8",
+                line=dict(color="#234B7A", width=1),
+                cornerradius=5,
+            ),
+            text=[fmt_value(value) for value in values],
+            textposition="outside",
+            textfont=dict(size=12, color="#163D4B"),
+            cliponaxis=False,
+            hovertemplate=(
+                f"<b>{esc(metric_label)}</b><br>%{{x}}<br>%{{y:,.0f}} customers"
+                "<extra></extra>"
+            ),
+        )
+    )
+    fig.update_layout(bargap=0.48)
+    fig.update_xaxes(
+        type="category",
+        categoryorder="array",
+        categoryarray=dates,
+        title=None,
+        showgrid=False,
+        automargin=True,
+    )
+    fig.update_yaxes(
+        title="Customers",
+        tickformat=",.0f",
+        rangemode="tozero",
+        gridcolor="#DEE7F1",
+        zeroline=False,
+    )
+    return style_chart(
+        fig,
+        380,
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#F3F6FB",
+        font=dict(family="Plus Jakarta Sans, Segoe UI, Arial, sans-serif", color="#163D4B", size=13),
+        margin=dict(l=72, r=32, t=44, b=52),
+        hoverlabel=dict(bgcolor="#0E2A35", bordercolor="#0E2A35", font=dict(color="#FFFFFF", size=13)),
+    )
+
+
+def _select_savings_coverage(
+    series: Sequence[Mapping[str, Any]],
+    source_version: str,
+) -> Mapping[str, Any]:
+    dimensions = sorted({
+        str(key)
+        for entry in series
+        for key in entry["filters"]
+    })
+    selected_filters: dict[str, str] = {}
+    controls = st.columns(3, gap="small")
+    control_index = 0
+    for dimension in dimensions:
+        candidates = [
+            entry
+            for entry in series
+            if all(
+                str(entry["filters"].get(key, "")) == value
+                for key, value in selected_filters.items()
+            )
+        ]
+        options = sorted({
+            str(entry["filters"][dimension])
+            for entry in candidates
+            if dimension in entry["filters"]
+        })
+        if not options:
+            continue
+        state_key = (
+            f"nbr_savings_filter_{hashlib.sha1(dimension.encode()).hexdigest()[:8]}_"
+            f"{source_version}"
+        )
+        selected = st.session_state.get(state_key)
+        if selected not in options:
+            selected = "All" if "All" in options else options[0]
+        if len(options) > 1:
+            with controls[control_index % len(controls)]:
+                choice = st.segmented_control(
+                    dimension,
+                    options=options,
+                    default=selected,
+                    selection_mode="single",
+                    key=state_key,
+                )
+            control_index += 1
+            selected = choice if choice in options else selected
+        else:
+            st.session_state[state_key] = selected
+        selected_filters[dimension] = selected
+
+    matching = [
+        entry
+        for entry in series
+        if all(
+            str(entry["filters"].get(key, "")) == value
+            for key, value in selected_filters.items()
+        )
+    ]
+    if not matching:
+        raise ValueError("Selected Savings filters do not match an observed NBR series.")
+    return matching[0]
+
+
+def _savings_district_figure(
+    observations: Sequence[Mapping[str, Any]],
+) -> go.Figure:
+    ordered = sorted(
+        observations,
+        key=lambda point: (
+            str(point.get("geography", "")).casefold() == "unknown",
+            -float(point["value"]),
+            str(point.get("geography", "")).casefold(),
+        ),
+    )
+    labels = [str(point["geography"]) for point in ordered]
+    values = [float(point["value"]) for point in ordered]
+    named_count = sum(label.casefold() != "unknown" for label in labels)
+    palette = [
+        "#0E2A35",
+        "#164A55",
+        "#1C6970",
+        "#258B88",
+        "#48A99A",
+    ]
+    colors = []
+    for label in labels:
+        if label.casefold() == "unknown":
+            colors.append("#D79A2B")
+            continue
+        rank = len(colors)
+        color_index = min(
+            round(rank / max(named_count - 1, 1) * (len(palette) - 1)),
+            len(palette) - 1,
+        )
+        colors.append(palette[color_index])
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=labels,
+            orientation="h",
+            marker=dict(color=colors),
+            text=[fmt_value(value) for value in values],
+            textposition="outside",
+            textfont=dict(size=11, color="#163D4B"),
+            cliponaxis=False,
+            hovertemplate="<b>%{y}</b><br>%{x:,.0f} customers<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        showlegend=False,
+        bargap=0.24,
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#F7F8F5",
+        font=dict(family="Plus Jakarta Sans, Segoe UI, Arial, sans-serif", color="#163D4B", size=12),
+    )
+    fig.update_xaxes(
+        title="Recorded customers",
+        rangemode="tozero",
+        range=[0, max(values, default=0) * 1.16 or 1],
+        tickformat=",.0f",
+        gridcolor="#E2E7DF",
+        zeroline=False,
+    )
+    fig.update_yaxes(title=None, autorange="reversed", showgrid=False, automargin=True)
+    return style_chart(
+        fig,
+        max(560, 20 * len(labels) + 120),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#F7F8F5",
+        font=dict(family="Plus Jakarta Sans, Segoe UI, Arial, sans-serif", color="#163D4B", size=12),
+        margin=dict(l=12, r=84, t=24, b=42),
+        hoverlabel=dict(bgcolor="#0E2A35", bordercolor="#0E2A35", font=dict(color="#FFFFFF", size=12)),
+    )
+
+
+def render_nbr_savings_activity() -> None:
+    """Render the NBR-only savings-service section on National Overview."""
+    section_title(
+        "Recorded Savings-Service Activity",
+        "NBR administrative observations only; separate KPI trends and district customer counts.",
+    )
+    try:
+        points, _, _, source_version = load_nbr_dashboard_data(
+            "nbr-dashboard-v2",
+            ("savings",),
+        )
+        runs, kpi_documents, table_documents = _load_nbr_source_documents(
+            "nbr-dashboard-v2",
+            ("savings",),
+        )
+    except (RuntimeError, ValueError, OSError, PyMongoError) as error:
+        with st.container(key="card_nbr_savings_unavailable"):
+            card_title("Savings-service observations unavailable")
+            st.error(
+                "NBR savings-service observations could not be loaded. "
+                "Unavailable data is not zero."
+            )
+            st.caption(str(error))
+        return
+
+    series = _savings_activity_series(points, kpi_documents)
+    if not series:
+        empty_state(
+            "No comparable savings-service history",
+            "NBR has not provided validated Saved and Total Customers observations "
+            "with matching filters and reporting dates.",
+        )
+        return
+
+    entry = _select_savings_coverage(series, source_version)
+    saved_observations = [entry["saved"][date][0] for date in entry["saved_dates"]]
+    customer_observations = [
+        entry["customers"][date][0] for date in entry["customer_dates"]
+    ]
+
+    with st.container(key="card_nbr_savings_saved_trend"):
+        card_title(
+            "Saved · reported percentage",
+            "Primary trend · actual NBR reporting dates only · no interpolation.",
+        )
+        st.plotly_chart(
+            _savings_trend_figure(
+                saved_observations,
+                metric_label="Saved",
+                unit="percent",
+            ),
+            use_container_width=True,
+            key=f"nbr_savings_saved_{source_version}",
+            config={"displayModeBar": False},
+        )
+
+    with st.container(key="card_nbr_savings_total_customers"):
+        card_title(
+            "Total Customers · reported count",
+            "A separate count series on its own scale; not a population denominator.",
+        )
+        st.plotly_chart(
+            _savings_trend_figure(
+                customer_observations,
+                metric_label="Total Customers",
+                unit="count",
+            ),
+            use_container_width=True,
+            key=f"nbr_savings_customers_{source_version}",
+            config={"displayModeBar": False},
+        )
+
+    district_dates_with_rows = sorted(
+        reporting_date
+        for reporting_date, rows in entry["districts"].items()
+        if rows
+    )
+    district_options: list[tuple[str, str]] = []
+    for reporting_date in district_dates_with_rows:
+        rows = entry["districts"][reporting_date]
+        district_names = [str(point.get("geography", "")) for point in rows]
+        if len(set(district_names)) != len(district_names) or not district_names:
+            continue
+        district_options.append((reporting_date, reporting_date))
+    with st.container(key="card_nbr_savings_districts"):
+        card_title(
+            "District distribution · recorded customers",
+            "Customer counts by district for one eligible NBR snapshot.",
+        )
+        if not district_options:
+            empty_state(
+                "No eligible district snapshot",
+                "No matching district Customer rows are available for the selected coverage and paired dates.",
+            )
+        else:
+            district_dates = [option[0] for option in district_options]
+            date_key = f"nbr_savings_district_date_{source_version}"
+            selected_date = st.session_state.get(date_key, district_dates[-1])
+            if selected_date not in district_dates:
+                selected_date = district_dates[-1]
+            reporting_date = st.selectbox(
+                "District snapshot reporting date",
+                district_dates,
+                index=district_dates.index(selected_date),
+                key=date_key,
+            )
+            st.caption(
+                f"Snapshot: {_display_reporting_date(reporting_date)} · "
+                "Only locations reported by NBR are plotted."
+            )
+            rows = [
+                dict(point)
+                for point in entry["districts"][reporting_date]
+            ]
+            unknown_value, unknown_status = _unknown_savings_customer(
+                runs,
+                table_documents,
+                reporting_date=reporting_date,
+                filters=entry["filters"],
+            )
+            if unknown_status == "reported":
+                rows.append({
+                    "geography": "Unknown",
+                    "value": unknown_value,
+                })
+            st.plotly_chart(
+                _savings_district_figure(rows),
+                use_container_width=True,
+                key=f"nbr_savings_district_chart_{source_version}",
+                config={"displayModeBar": False},
+            )
+            if unknown_status == "reported":
+                st.caption(
+                    "“Unknown” is a count reported by NBR without an assigned district."
+                )
+            elif unknown_status == "not_reported":
+                st.caption(
+                    "NBR did not report a separate count for customers with an unknown district."
+                )
+            else:
+                st.caption(
+                    "An unknown-district count could not be verified, so it is not shown."
+                )
+            st.caption(
+                "Only districts with reported counts are shown; an unlisted district "
+                "does not mean its count is zero."
+            )
 
 def render_methodology_mode_note() -> None:
     if current_mode() == "NBR Supply":

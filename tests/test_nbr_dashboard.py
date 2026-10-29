@@ -10,13 +10,29 @@ from src.pages.district_explorer import build_map
 from src.pages.nbr_dashboard import (
     _group_families,
     _mapped_series,
+    _national_highlight_metadata,
+    _national_highlight_figure,
+    _national_infrastructure_series,
+    _national_infrastructure_figure,
+    _national_customer_comparison_series,
+    _national_customer_comparison_figure,
+    _compact_customer_count,
+    _national_customer_unknown_counts,
     _national_supply_header_html,
     _review_candidate_row,
+    _savings_activity_series,
+    _savings_district_figure,
+    _savings_trend_figure,
+    _select_savings_coverage,
+    _unknown_savings_customer,
     _source_data_version,
     NATIONAL_HEADER_KPIS,
+    NATIONAL_INFRASTRUCTURE_SERIES,
+    NATIONAL_CUSTOMER_COMPARISONS,
     build_nbr_indicator_registry,
     load_mongodb_history,
     render_nbr_page,
+    render_nbr_savings_activity,
     select_review_candidates,
 )
 
@@ -97,6 +113,63 @@ def _header_point(spec, reporting_date, value, **overrides):
     }
 
 
+def _infrastructure_point(
+    spec,
+    *,
+    geography,
+    level,
+    value,
+    reporting_date="2026-10-24",
+    **overrides,
+):
+    is_district = level == "district"
+    metric = spec["district_metric"] if is_district else spec["national_metric"]
+    return {
+        "page": spec["page"],
+        "metric_label": metric,
+        "source_type": "district_table" if is_district else "national_kpi",
+        "geography_level": level,
+        "geography": geography,
+        "filters": spec["filters"],
+        "unit": "count",
+        "unit_status": "source_column" if is_district else "configured_source_label",
+        "reporting_date": reporting_date,
+        "value": value,
+        "source_record_id": f"{spec['page']}-{geography}-{reporting_date}",
+        "run_id": f"{spec['page']}-{reporting_date}",
+        "collected_at": f"{reporting_date}T12:00:00+00:00",
+        **overrides,
+    }
+
+
+def _customer_comparison_point(
+    comparison,
+    group,
+    *,
+    geography,
+    value,
+    reporting_date="2026-10-27",
+    **overrides,
+):
+    return {
+        "page": "inclusion",
+        "metric_label": "Customers",
+        "source_type": "district_table",
+        "geography_level": "district",
+        "geography": geography,
+        "filters": group["filters"],
+        "unit": "count",
+        "unit_status": "source_column",
+        "reporting_date": reporting_date,
+        "value": value,
+        "combo_key": f"{comparison['key']}-{group['label']}",
+        "run_id": f"{comparison['key']}-{group['label']}-run",
+        "source_record_id": f"{comparison['key']}-{group['label']}-{geography}",
+        "collected_at": f"{reporting_date}T12:00:00+00:00",
+        **overrides,
+    }
+
+
 def test_nbr_supply_header_has_only_approved_latest_eligible_cards():
     points = [
         _header_point(NATIONAL_HEADER_KPIS[0], "2026-10-24", 17_386_969),
@@ -156,13 +229,17 @@ def test_nbr_national_header_uses_shared_hero_and_exactly_three_kpis():
         "    requested_pages.extend(pages or ())\n"
         "    return points, {'eligible_source_point_count': len(points)}, [], 'test-version'\n"
         "dashboard.load_nbr_dashboard_data = test_loader\n"
+        "dashboard._load_nbr_source_documents = lambda *args, **kwargs: ([], [], [])\n"
         "dashboard._render_nbr_national_page = lambda *args: None\n"
         "dashboard.render_nbr_page('national')\n"
     )
     app = AppTest.from_string(script, default_timeout=30).run()
 
     assert not app.exception, [error.value for error in app.exception]
-    rendered = " ".join(item.value for item in app.markdown)
+    rendered = " ".join(
+        [item.value for item in app.markdown]
+        + [item.value for item in app.caption]
+    )
     assert rendered.count("pg-hero") == 1
     assert rendered.count('class="kpi"') == 3
     assert rendered.count('class="kpi-grid"') == 1
@@ -178,6 +255,587 @@ def test_nbr_national_header_uses_shared_hero_and_exactly_three_kpis():
     assert "Active POS terminals" in rendered
     assert "Active branches" in rendered
     assert "Observed national value" not in rendered
+
+
+def test_nbr_highlight_metadata_uses_latest_eligible_source_and_unknown_row():
+    filters = {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account/Policy Status": "Active",
+        "Location": "All",
+    }
+    combo_key = json.dumps(filters, sort_keys=True)
+    point = {
+        "page": "inclusion",
+        "metric_label": "Financially Included",
+        "source_type": "national_kpi",
+        "geography_level": "national",
+        "geography": "Rwanda",
+        "filters": filters,
+        "reporting_date": "2026-10-27",
+        "collected_at": "2026-10-27T17:50:01.685000",
+        "run_id": "inclusion-run",
+        "combo_key": combo_key,
+        "value": 97.1,
+        "quality_qualifications": [],
+    }
+    run = {
+        "page": "inclusion",
+        "snapshot_date": "2026-10-27",
+        "combo_key": combo_key,
+        "run_id": "inclusion-run",
+        "status": "complete",
+        "repeated_snapshot_warning": False,
+        "filters": filters,
+        "collected_at": "2026-10-27T17:50:01.685000",
+    }
+    kpi_document = {
+        "page": "inclusion",
+        "snapshot_date": "2026-10-27",
+        "combo_key": combo_key,
+        "run_id": "inclusion-run",
+        "filters": filters,
+        "kpis": [{
+            "metric_type": "headline_kpi",
+            "metric_label": "Financially Included",
+            "metric_value": "97.1%",
+        }],
+    }
+    unknown_row = {
+        "page": "inclusion",
+        "snapshot_date": "2026-10-27",
+        "combo_key": combo_key,
+        "run_id": "inclusion-run",
+        "filters": filters,
+        "district": "unknown",
+        "district_known": False,
+        "values": {"Customers": "441,572"},
+    }
+
+    metadata = _national_highlight_metadata(
+        [point],
+        [run],
+        [kpi_document],
+        [unknown_row],
+    )
+
+    assert metadata["inclusion_value"] == "97.1%"
+    assert metadata["inclusion_reporting_date"] == "2026-10-27"
+    assert metadata["inclusion_collected_at"] == "2026-10-27T17:50:01.685000"
+    assert metadata["unknown_customer_count"] == 441572
+    assert metadata["unknown_reporting_date"] == "2026-10-27"
+
+    repeated = {**run, "repeated_snapshot_warning": True}
+    unavailable = _national_highlight_metadata(
+        [point],
+        [repeated],
+        [kpi_document],
+        [unknown_row],
+    )
+    assert unavailable["inclusion_value"] is None
+    assert unavailable["unknown_customer_count"] is None
+
+
+def test_nbr_highlights_render_between_header_and_service_area():
+    highlights = {
+        "inclusion_value": "97.1%",
+        "inclusion_reporting_date": "2026-10-27",
+        "inclusion_collected_at": "2026-10-27T17:50:01.685000",
+        "inclusion_quality_qualifications": [],
+        "unknown_customer_count": 441572,
+        "unknown_reporting_date": "2026-10-27",
+    }
+    points = [
+        _header_point(spec, reporting_date, value)
+        for spec, reporting_date, value in zip(
+            NATIONAL_HEADER_KPIS,
+            ("2026-10-27", "2026-10-27", "2026-10-24"),
+            (17_449_006, 6_482, 1_991),
+        )
+    ]
+    for spec, district_values, national_value in (
+        (NATIONAL_INFRASTRUCTURE_SERIES[0], (900, 1_063), 1_991),
+        (NATIONAL_INFRASTRUCTURE_SERIES[1], (3_000, 3_471), 6_471),
+    ):
+        for district, value in zip(("Gasabo", "Kirehe"), district_values):
+            points.append(_infrastructure_point(
+                spec,
+                geography=district,
+                level="district",
+                value=value,
+            ))
+        if spec["page"] == "pos":
+            points.append(_infrastructure_point(
+                spec,
+                geography="Rwanda",
+                level="national",
+                value=national_value,
+            ))
+    group_values = (
+        (("Female", 620, 480), ("Male", 680, 520)),
+        (("Youth", 300, 240), ("Non-Youth", 1_000, 800)),
+    )
+    for comparison, comparison_values in zip(
+        NATIONAL_CUSTOMER_COMPARISONS,
+        group_values,
+    ):
+        for group, (_label, gasabo_value, kirehe_value) in zip(
+            comparison["groups"],
+            comparison_values,
+        ):
+            points.extend([
+                _customer_comparison_point(
+                    comparison,
+                    group,
+                    geography="Gasabo",
+                    value=gasabo_value,
+                ),
+                _customer_comparison_point(
+                    comparison,
+                    group,
+                    geography="Kirehe",
+                    value=kirehe_value,
+                ),
+            ])
+    script = (
+        "import src.pages.nbr_dashboard as dashboard\n"
+        "import streamlit as st\n"
+        f"points = {json.dumps(points)}\n"
+        f"highlights = {json.dumps(highlights)}\n"
+        "st.session_state['requested_pages'] = []\n"
+        "def test_loader(version, pages=None):\n"
+        "    st.session_state['requested_pages'].append(list(pages or ()))\n"
+        "    return points, {'national_highlights': highlights, "
+        "'national_customer_unknown_counts': {'Gender:Female': 197630, "
+        "'Gender:Male': 243942, 'Age Segment:Youth': 151121, "
+        "'Age Segment:Non-Youth': 290451}}, [], 'test-version'\n"
+        "dashboard.load_nbr_dashboard_data = test_loader\n"
+        "dashboard._render_nbr_national_page = lambda *args: None\n"
+        "dashboard.render_nbr_savings_activity = lambda: st.markdown("
+        "'Recorded Savings-Service Activity')\n"
+        "dashboard.render_nbr_page('national')\n"
+    )
+    app = AppTest.from_string(script, default_timeout=30).run()
+
+    assert not app.exception, [error.value for error in app.exception]
+    rendered = " ".join(
+        [item.value for item in app.markdown]
+        + [item.value for item in app.caption]
+        + [item.value for item in app.warning]
+    )
+    assert rendered.count("pg-hero") == 1
+    assert rendered.count('class="kpi"') == 3
+    assert rendered.count("NBR Data Highlights") == 1
+    assert "97.1%" in rendered
+    assert "27 October 2026" in rendered
+    assert "441,572" in rendered
+    assert "unknown" in rendered
+    assert (
+        rendered.index("NBR Data Highlights")
+        < rendered.index("Recorded Savings-Service Activity")
+        < rendered.index("Recorded Financial-Service Infrastructure by District")
+        < rendered.index("NBR Customer Counts by District and Demographic Group")
+    )
+    assert "Female vs Male" in rendered
+    assert "Youth vs Non-Youth" in rendered
+    assert "Gender: Female" in rendered
+    assert "Age Segment: Youth" in rendered
+    assert "Unknown district" in rendered
+    assert "Female: 197,630 · Male: 243,942" in rendered
+    assert "Youth: 151,121 · Non-Youth: 290,451" in rendered
+    assert "These are administrative customer counts" not in rendered
+    assert "Interpretation" not in rendered
+    assert "Service area" not in rendered
+    assert "National measure" not in rendered
+    assert "District sum" not in rendered
+    assert "differs from the national KPI" not in rendered
+    assert "How to read these counts" not in rendered
+    assert any("inclusion" in pages for pages in app.session_state["requested_pages"])
+    assert len(app.get("plotly_chart")) == 7
+    assert len(app.warning) == 0
+
+
+@pytest.mark.parametrize(
+    "spec",
+    NATIONAL_INFRASTRUCTURE_SERIES,
+)
+def test_nbr_infrastructure_series_requires_exact_eligible_scope(spec):
+    district = _infrastructure_point(
+        spec,
+        geography="Kirehe",
+        level="district",
+        value=12,
+    )
+    national = _infrastructure_point(
+        spec,
+        geography="Rwanda",
+        level="national",
+        value=20,
+    )
+    mismatched_filter = {
+        **district,
+        "filters": {**spec["filters"], "Institution Type": "Banks"},
+    }
+    wrong_date = {
+        **district,
+        "reporting_date": "2026-10-27",
+        "repeated_snapshot_warning": True,
+    }
+    unknown_district = {**district, "geography": "unknown"}
+
+    districts, national_point = _national_infrastructure_series(
+        [
+            district,
+            national,
+            mismatched_filter,
+            wrong_date,
+            unknown_district,
+        ],
+        spec,
+    )
+
+    assert districts == [district]
+    assert national_point == national
+
+
+@pytest.mark.parametrize(
+    "spec",
+    NATIONAL_INFRASTRUCTURE_SERIES,
+)
+def test_nbr_infrastructure_series_rejects_duplicate_observations(spec):
+    district = _infrastructure_point(
+        spec,
+        geography="Kirehe",
+        level="district",
+        value=12,
+    )
+    national = _infrastructure_point(
+        spec,
+        geography="Rwanda",
+        level="national",
+        value=20,
+    )
+
+    districts, national_point = _national_infrastructure_series(
+        [district, {**district, "source_record_id": "duplicate"}, national],
+        spec,
+    )
+
+    assert districts == []
+    assert national_point is None
+
+
+def test_nbr_infrastructure_figure_keeps_distinct_count_axis_and_provenance():
+    spec = NATIONAL_INFRASTRUCTURE_SERIES[0]
+    points = [
+        _infrastructure_point(
+            spec,
+            geography="Gasabo",
+            level="district",
+            value=106,
+        ),
+        _infrastructure_point(
+            spec,
+            geography="Kirehe",
+            level="district",
+            value=85,
+        ),
+    ]
+
+    figure = _national_infrastructure_figure(points, spec)
+
+    assert figure.data[0].type == "bar"
+    assert figure.data[0].orientation == "h"
+    assert list(figure.data[0].y) == ["Gasabo", "Kirehe"]
+    assert list(figure.data[0].text) == ["106.0", "85.0"]
+    assert figure.data[0].textposition == "outside"
+    assert list(figure.data[0].customdata[1]) == [
+        "2026-10-24",
+        "branches-2026-10-24",
+        "branches-Kirehe-2026-10-24",
+        "2026-10-24T12:00:00+00:00",
+    ]
+    assert figure.layout.xaxis.title.text == "Branches"
+    assert figure.layout.xaxis.range[1] > 106
+    assert figure.layout.height == 850
+    assert figure.data[0].marker.color == "#28669B"
+
+    pos_spec = NATIONAL_INFRASTRUCTURE_SERIES[1]
+    pos_figure = _national_infrastructure_figure(
+        [
+            _infrastructure_point(
+                pos_spec,
+                geography="Gasabo",
+                level="district",
+                value=620,
+            ),
+            _infrastructure_point(
+                pos_spec,
+                geography="Kirehe",
+                level="district",
+                value=410,
+            ),
+        ],
+        pos_spec,
+    )
+    assert [trace.type for trace in pos_figure.data] == ["bar", "scatter"]
+    assert pos_figure.data[1].mode == "markers+text"
+    assert pos_figure.data[1].marker.color == "#0D8174"
+    assert pos_figure.layout.height == 780
+
+
+@pytest.mark.parametrize("comparison", NATIONAL_CUSTOMER_COMPARISONS)
+def test_nbr_customer_comparison_requires_exact_date_filters_and_matched_districts(
+    comparison,
+):
+    points = []
+    for group, base in zip(comparison["groups"], (100, 200)):
+        points.extend([
+            _customer_comparison_point(
+                comparison,
+                group,
+                geography="Gasabo",
+                value=base,
+            ),
+            _customer_comparison_point(
+                comparison,
+                group,
+                geography="Kirehe",
+                value=base + 20,
+            ),
+            _customer_comparison_point(
+                comparison,
+                group,
+                geography="Gasabo",
+                value=999,
+                reporting_date="2026-10-24",
+            ),
+            _customer_comparison_point(
+                comparison,
+                group,
+                geography="unknown",
+                value=500,
+            ),
+            _customer_comparison_point(
+                comparison,
+                group,
+                geography="Kirehe",
+                value=888,
+                filters={**group["filters"], "Institution Type": "Banks"},
+            ),
+        ])
+
+    observations = _national_customer_comparison_series(points, comparison)
+
+    assert observations is not None
+    assert set(observations) == {group["label"] for group in comparison["groups"]}
+    assert all(
+        {point["geography"] for point in group_points} == {"Gasabo", "Kirehe"}
+        for group_points in observations.values()
+    )
+    assert all(
+        point["reporting_date"] == "2026-10-27"
+        for group_points in observations.values()
+        for point in group_points
+    )
+    assert all(
+        point["geography"] != "unknown"
+        for group_points in observations.values()
+        for point in group_points
+    )
+
+    missing_paired_district = [
+        point for point in points
+        if not (
+            point["geography"] == "Kirehe"
+            and point["filters"] == comparison["groups"][1]["filters"]
+            and point["reporting_date"] == "2026-10-27"
+        )
+    ]
+    assert _national_customer_comparison_series(
+        missing_paired_district,
+        comparison,
+    ) is None
+
+
+@pytest.mark.parametrize("comparison", NATIONAL_CUSTOMER_COMPARISONS)
+def test_nbr_customer_comparison_figure_pairs_values_in_one_district_order(
+    comparison,
+):
+    observations = {}
+    values = ((1_100_000, 320_000), (210_000, 220_000))
+    for group, group_values in zip(comparison["groups"], values):
+        observations[group["label"]] = [
+            _customer_comparison_point(
+                comparison,
+                group,
+                geography=district,
+                value=value,
+            )
+            for district, value in zip(("Gasabo", "Kirehe"), group_values)
+        ]
+
+    figure = _national_customer_comparison_figure(observations, comparison)
+
+    assert [trace.name for trace in figure.data] == [
+        group["label"] for group in comparison["groups"]
+    ]
+    assert list(figure.data[0].y) == ["Gasabo", "Kirehe"]
+    assert list(figure.data[1].y) == ["Gasabo", "Kirehe"]
+    assert list(figure.data[0].text) == ["1.1M", "320k"]
+    assert list(figure.data[1].text) == ["210k", "220k"]
+    assert [trace.orientation for trace in figure.data] == ["h", "h"]
+    assert figure.layout.barmode == "group"
+    assert figure.layout.xaxis.title.text == "Customers (count)"
+    assert figure.layout.xaxis.range[1] > 1_100_000
+    assert figure.layout.xaxis.tickformat == ".3~s"
+    assert figure.layout.height == 980
+    assert len(figure.data[0].customdata) == 2
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (955, "955"),
+        (1_500, "1.5k"),
+        (15_500, "16k"),
+        (1_260_000, "1.3M"),
+    ],
+)
+def test_nbr_customer_count_labels_use_human_readable_scale(value, expected):
+    assert _compact_customer_count(value) == expected
+
+
+def test_nbr_customer_comparison_renders_two_full_width_charts():
+    points = []
+    for comparison in NATIONAL_CUSTOMER_COMPARISONS:
+        for group, base in zip(comparison["groups"], (1_200_000, 900_000)):
+            points.extend([
+                _customer_comparison_point(
+                    comparison,
+                    group,
+                    geography="Gasabo",
+                    value=base,
+                ),
+                _customer_comparison_point(
+                    comparison,
+                    group,
+                    geography="Kirehe",
+                    value=base // 2,
+                ),
+            ])
+    script = (
+        "import json\n"
+        "import streamlit as st\n"
+        "import src.pages.nbr_dashboard as dashboard\n"
+        f"points = json.loads({json.dumps(json.dumps(points))})\n"
+        "st.session_state['chart_heights'] = []\n"
+        "st.session_state['chart_stretch'] = []\n"
+        "_original_plotly_chart = st.plotly_chart\n"
+        "def capture_chart(figure, *args, **kwargs):\n"
+        "    st.session_state['chart_heights'].append(figure.layout.height)\n"
+        "    st.session_state['chart_stretch'].append(kwargs.get('use_container_width'))\n"
+        "    return _original_plotly_chart(figure, *args, **kwargs)\n"
+        "dashboard.st.plotly_chart = capture_chart\n"
+        "dashboard._render_nbr_customer_counts_by_district(points, {})\n"
+    )
+
+    app = AppTest.from_string(script, default_timeout=30).run()
+
+    assert not app.exception, [error.value for error in app.exception]
+    assert len(app.get("plotly_chart")) == 2
+    assert len(app.get("column")) == 0
+    assert app.session_state["chart_heights"] == [980, 980]
+    assert app.session_state["chart_stretch"] == [True, True]
+
+
+def test_nbr_customer_unknown_counts_require_matching_complete_source_rows():
+    points = []
+    runs = []
+    table_documents = []
+    expected = {}
+    for comparison in NATIONAL_CUSTOMER_COMPARISONS:
+        for index, group in enumerate(comparison["groups"], start=1):
+            point = _customer_comparison_point(
+                comparison,
+                group,
+                geography="Gasabo",
+                value=index * 100,
+            )
+            points.append(point)
+            run = {
+                "page": "inclusion",
+                "snapshot_date": "2026-10-27",
+                "combo_key": point["combo_key"],
+                "run_id": point["run_id"],
+                "status": "complete",
+                "repeated_snapshot_warning": False,
+                "collected_at": "2026-10-27T17:50:01.685000",
+                "filters": group["filters"],
+            }
+            runs.append(run)
+            unknown_count = index * 10_000
+            expected[group["unknown_key"]] = unknown_count
+            table_documents.append({
+                "page": "inclusion",
+                "snapshot_date": "2026-10-27",
+                "combo_key": point["combo_key"],
+                "run_id": point["run_id"],
+                "filters": group["filters"],
+                "district": "unknown",
+                "district_known": False,
+                "values": {"Customers": f"{unknown_count:,}"},
+            })
+
+    assert _national_customer_unknown_counts(
+        points,
+        runs,
+        table_documents,
+    ) == expected
+
+    repeated_runs = [
+        {**run, "repeated_snapshot_warning": True}
+        if index == 0 else run
+        for index, run in enumerate(runs)
+    ]
+    unavailable = _national_customer_unknown_counts(
+        points,
+        repeated_runs,
+        table_documents,
+    )
+    assert unavailable[NATIONAL_CUSTOMER_COMPARISONS[0]["groups"][0]["unknown_key"]] is None
+
+
+def test_nbr_highlight_charts_have_distinct_snapshot_visuals():
+    points = [
+        _header_point(spec, reporting_date, value)
+        for spec, reporting_date, value in zip(
+            NATIONAL_HEADER_KPIS,
+            ("2025-02-20", "2025-02-20", "2025-02-20"),
+            (13_992_018, 4_842, 2_022),
+        )
+    ]
+
+    account_chart = _national_highlight_figure([points[0]], "transactional")
+    pos_chart = _national_highlight_figure([points[1]], "pos")
+    branch_chart = _national_highlight_figure([points[2]], "branches")
+
+    assert account_chart.data[0].type == "scatter"
+    assert account_chart.data[0].fill == "tozeroy"
+    assert account_chart.data[0].line.color == "#247D8B"
+    assert pos_chart.data[0].type == "bar"
+    assert pos_chart.data[0].marker.color == ("#D8E5F1",)
+    assert [trace.type for trace in branch_chart.data] == ["scatter", "scatter"]
+    assert branch_chart.data[1].marker.symbol == "diamond"
+    assert account_chart.layout.height == pos_chart.layout.height == branch_chart.layout.height == 310
+    for chart in (account_chart, pos_chart, branch_chart):
+        assert chart.layout.xaxis.type == "category"
+        assert chart.data[-1].x[-1] == "2025-02-20"
+        assert chart.layout.yaxis.range[0] == 0
+        assert chart.layout.yaxis.range[1] > max(chart.data[-1].y)
+        assert chart.layout.margin.t == 48
+        assert chart.data[-1].cliponaxis is False
 
 
 def test_nbr_registry_attaches_only_approved_relationships():
@@ -768,3 +1426,308 @@ def test_nbr_national_map_uses_only_exact_unit_and_reporting_date(monkeypatch):
         "Value": 20,
         "Unit": "count",
     }]
+
+
+def _savings_point(metric, level, reporting_date, value, *, filters=None, geography=None, unit):
+    source_type = "district_table" if level == "district" else "national_kpi"
+    return {
+        "page": "savings",
+        "metric_label": metric,
+        "reporting_date": reporting_date,
+        "value": value,
+        "raw_value": value,
+        "geography": geography or ("Rwanda" if level == "national" else "Gasabo"),
+        "geography_level": level,
+        "source_type": source_type,
+        "filters": filters or {
+            "Gender": "All",
+            "Age Segment": "All",
+            "Institution Type": "All",
+            "Account Status": "Active",
+            "Account Type": "All",
+            "Location": "All",
+        },
+        "unit": unit,
+        "unit_status": "source_value" if unit == "percent" else "configured_source_label",
+        "source_record_id": f"{metric}-{level}-{reporting_date}-{geography}",
+        "run_id": f"run-{reporting_date}",
+        "combo_key": json.dumps(
+            filters or {
+                "Gender": "All",
+                "Age Segment": "All",
+                "Institution Type": "All",
+                "Account Status": "Active",
+                "Account Type": "All",
+                "Location": "All",
+            },
+            sort_keys=True,
+        ),
+    }
+
+
+def test_savings_activity_keeps_observed_dates_and_matching_scope():
+    points = [
+        _savings_point("Saved", "national", "2025-02-20", 26.5, unit="percent"),
+        _savings_point("Total Customers", "national", "2025-02-20", 2_301_293, unit="count"),
+        _savings_point("Saved", "national", "2025-11-20", 30.2, unit="percent"),
+        _savings_point("Total Customers", "national", "2025-11-20", 2_622_710, unit="count"),
+        _savings_point("Saved", "national", "2026-08-20", 31.3, unit="percent"),
+        _savings_point("Total Customers", "national", "2026-08-20", 2_791_847, unit="count"),
+        _savings_point("Saved", "national", "2026-10-24", 31.9, unit="percent"),
+        _savings_point("Saved", "national", "2026-10-27", 32.8, unit="percent"),
+        _savings_point("Total Customers", "national", "2026-10-24", 2_845_248, unit="count"),
+        _savings_point("Saved", "national", "2026-10-24", 44.0, unit="percent", filters={
+            "Gender": "Female",
+            "Age Segment": "All",
+            "Institution Type": "All",
+            "Account Status": "Active",
+            "Account Type": "All",
+            "Location": "All",
+        }),
+        _savings_point("Customers", "district", "2026-10-24", 1_390_274, unit="count", geography="Gasabo"),
+        _savings_point("Customers", "district", "2026-10-24", 8_463, unit="count", geography="Ngororero"),
+    ]
+
+    series = _savings_activity_series(points)
+
+    assert len(series) == 1
+    entry = series[0]
+    assert entry["saved_dates"] == [
+        "2025-02-20",
+        "2025-11-20",
+        "2026-08-20",
+        "2026-10-24",
+        "2026-10-27",
+    ]
+    assert entry["customer_dates"] == [
+        "2025-02-20",
+        "2025-11-20",
+        "2026-08-20",
+        "2026-10-24",
+    ]
+    assert len(entry["districts"]["2026-10-24"]) == 2
+    saved_figure = _savings_trend_figure(
+        [entry["saved"][day][0] for day in entry["saved_dates"]],
+        metric_label="Saved",
+        unit="percent",
+    )
+    count_figure = _savings_trend_figure(
+        [entry["customers"][day][0] for day in entry["customer_dates"]],
+        metric_label="Total Customers",
+        unit="count",
+    )
+    district_figure = _savings_district_figure([
+        *entry["districts"]["2026-10-24"],
+        {"geography": "Unknown", "value": 2},
+    ])
+    assert list(saved_figure.data[0].x) == entry["saved_dates"]
+    assert list(saved_figure.data[0].y) == [26.5, 30.2, 31.3, 31.9, 32.8]
+    assert list(count_figure.data[0].y) == [2_301_293, 2_622_710, 2_791_847, 2_845_248]
+    assert list(district_figure.data[0].y) == ["Gasabo", "Ngororero", "Unknown"]
+    assert saved_figure.data[0].type == "scatter"
+    assert saved_figure.data[0].fill == "tozeroy"
+    assert saved_figure.data[0].line.color == "#087E78"
+    assert saved_figure.layout.height == 430
+    assert count_figure.data[0].type == "bar"
+    assert count_figure.data[0].marker.color == "#3267A8"
+    assert count_figure.layout.height == 380
+    assert district_figure.data[0].type == "bar"
+    assert district_figure.layout.height >= 560
+    assert district_figure.layout.plot_bgcolor == "#F7F8F5"
+    assert "#D79A2B" in district_figure.data[0].marker.color
+
+
+def test_unknown_savings_customer_preserves_zero_and_distinguishes_missing():
+    filters = {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "All",
+        "Account Status": "Active",
+        "Account Type": "All",
+        "Location": "All",
+    }
+    filters_key = json.dumps(filters, sort_keys=True)
+    run = {
+        "page": "savings",
+        "snapshot_date": "2026-10-24",
+        "combo_key": filters_key,
+        "run_id": "savings-run",
+        "filters": filters,
+        "filters_requested": filters,
+        "status": "complete",
+        "table_status": "extracted",
+        "repeated_snapshot_warning": False,
+    }
+    unknown_row = {
+        "page": "savings",
+        "snapshot_date": "2026-10-24",
+        "combo_key": filters_key,
+        "run_id": "savings-run",
+        "filters": filters,
+        "filters_requested": filters,
+        "district": "unknown",
+        "district_known": False,
+        "values": {"Customers": "0"},
+    }
+
+    assert _unknown_savings_customer(
+        [run],
+        [unknown_row],
+        reporting_date="2026-10-24",
+        filters=filters,
+    ) == (0, "reported")
+    assert _unknown_savings_customer(
+        [run],
+        [],
+        reporting_date="2026-10-24",
+        filters=filters,
+    ) == (None, "not_reported")
+    assert _unknown_savings_customer(
+        [run],
+        [unknown_row, unknown_row],
+        reporting_date="2026-10-24",
+        filters=filters,
+    ) == (None, "unavailable")
+
+
+def test_render_nbr_savings_activity_displays_separate_charts_and_limitations(monkeypatch):
+    points = [
+        _savings_point("Saved", "national", day, value, unit="percent")
+        for day, value in (("2025-02-20", 26.5), ("2025-11-20", 30.2))
+    ]
+    points.extend(
+        _savings_point("Total Customers", "national", day, value, unit="count")
+        for day, value in (("2025-02-20", 2_301_293), ("2025-11-20", 2_622_710))
+    )
+    points.extend([
+        _savings_point("Customers", "district", "2025-11-20", 10, unit="count", geography="Gasabo"),
+    ])
+    filters = points[0]["filters"]
+    filters_key = json.dumps(filters, sort_keys=True)
+    run = {
+        "page": "savings",
+        "snapshot_date": "2025-11-20",
+        "combo_key": filters_key,
+        "run_id": "savings-run",
+        "filters": filters,
+        "filters_requested": filters,
+        "status": "complete",
+        "table_status": "extracted",
+        "repeated_snapshot_warning": False,
+    }
+    unknown_row = {
+        "page": "savings",
+        "snapshot_date": "2025-11-20",
+        "combo_key": filters_key,
+        "run_id": "savings-run",
+        "filters": filters,
+        "filters_requested": filters,
+        "district": "unknown",
+        "district_known": False,
+        "values": {"Customers": "4"},
+    }
+    monkeypatch.setattr(
+        "src.pages.nbr_dashboard.load_nbr_dashboard_data",
+        lambda *_args, **_kwargs: (points, {}, [], "savings-test"),
+    )
+    monkeypatch.setattr(
+        "src.pages.nbr_dashboard._load_nbr_source_documents",
+        lambda *_args, **_kwargs: ([run], [], [unknown_row]),
+    )
+    kpi_documents = []
+    for reporting_date in ("2025-02-20", "2025-11-20"):
+        date_points = [
+            point for point in points
+            if point["geography_level"] == "national"
+            and point["reporting_date"] == reporting_date
+        ]
+        kpi_documents.append({
+            "page": "savings",
+            "snapshot_date": reporting_date,
+            "combo_key": date_points[0]["combo_key"],
+            "run_id": date_points[0]["run_id"],
+            "filters": filters,
+            "kpis": [
+                {
+                    "metric_type": "headline_kpi",
+                    "metric_label": point["metric_label"],
+                    "metric_value": (
+                        f'{point["value"]}%'
+                        if point["metric_label"] == "Saved"
+                        else str(point["value"])
+                    ),
+                    "metric_value_numeric": point["value"],
+                }
+                for point in date_points
+            ],
+        })
+    script = (
+        "import json\n"
+        "import src.pages.nbr_dashboard as dashboard\n"
+        f"points = json.loads({json.dumps(json.dumps(points))})\n"
+        f"kpis = json.loads({json.dumps(json.dumps(kpi_documents))})\n"
+        f"runs = json.loads({json.dumps(json.dumps([run]))})\n"
+        f"tables = json.loads({json.dumps(json.dumps([unknown_row]))})\n"
+        "dashboard.load_nbr_dashboard_data = lambda *args, **kwargs: (points, {}, [], 'savings-test')\n"
+        "dashboard._load_nbr_source_documents = lambda *args, **kwargs: (runs, kpis, tables)\n"
+        "dashboard.render_nbr_savings_activity()\n"
+    )
+    app = AppTest.from_string(script, default_timeout=30).run()
+
+    assert not app.exception, [error.value for error in app.exception]
+    rendered = " ".join(
+        [item.value for item in app.markdown]
+        + [item.value for item in app.caption]
+    )
+    assert "Recorded Savings-Service Activity" in rendered
+    assert "Saved · reported percentage" in rendered
+    assert "Total Customers · reported count" in rendered
+    assert "Interpretation limits" not in rendered
+    assert "denominator and definition of NBR’s Saved KPI" not in rendered
+    assert "Unknown” is a count reported by NBR without an assigned district." in rendered
+    assert "Only districts with reported counts are shown" in rendered
+    assert "Source metric: Customers" not in rendered
+    assert "Coverage:" not in rendered
+    assert "Saved reports:" not in rendered
+    assert "Total Customers reports:" not in rendered
+    charts = app.get("plotly_chart")
+    assert [chart.key.split("_")[-2] for chart in charts[:2]] == ["saved", "customers"]
+    assert len(charts) == 3
+
+
+def test_savings_coverage_uses_observed_filter_buttons_to_form_a_combination():
+    series = [
+        {"filters": {"Gender": gender, "Institution Type": institution}}
+        for gender in ("All", "Female")
+        for institution in ("All", "Banks")
+    ]
+    script = (
+        "import streamlit as st\n"
+        "import src.pages.nbr_dashboard as dashboard\n"
+        f"series = {series!r}\n"
+        "selected = dashboard._select_savings_coverage(series, 'coverage-test')\n"
+        "st.session_state['selected_filters'] = selected['filters']\n"
+    )
+    app = AppTest.from_string(script, default_timeout=30).run()
+
+    assert not app.exception, [error.value for error in app.exception]
+    controls = app.get("segmented_control")
+    assert len(controls) == 2
+    assert {tuple(control.options) for control in controls} == {
+        ("All", "Female"),
+        ("All", "Banks"),
+    }
+    gender = next(control for control in controls if "Female" in control.options)
+    gender.select("Female").run()
+    institution = next(
+        control
+        for control in app.get("segmented_control")
+        if "Banks" in control.options
+    )
+    institution.select("Banks").run()
+
+    assert app.session_state["selected_filters"] == {
+        "Gender": "Female",
+        "Institution Type": "Banks",
+    }
+    assert not app.selectbox
