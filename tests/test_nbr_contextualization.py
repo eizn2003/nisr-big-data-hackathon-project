@@ -63,7 +63,18 @@ def _channel_trend(page, label, values, *, institution="Banks", dates=None):
         "Gender": "All",
         "Age Segment": "All",
         "Branch Status" if page == "branches" else "Account Status": "Active",
+        "Location": "All",
     }
+    observations = [
+        _point(
+            page,
+            label,
+            day,
+            value,
+            filters=filters,
+        )
+        for day, value in zip(dates, values)
+    ]
     return {
         "page": page,
         "metric_label": label,
@@ -71,17 +82,7 @@ def _channel_trend(page, label, values, *, institution="Banks", dates=None):
         "geography": "Kirehe",
         "filters": filters,
         "unit": "count",
-        "reporting_dates": dates,
-        "observations": [
-            _point(
-                page,
-                label,
-                day,
-                value,
-                filters=filters,
-            )
-            for day, value in zip(dates, values)
-        ],
+        **summarize_trend(observations),
     }
 
 
@@ -203,6 +204,79 @@ def test_cross_channel_reports_possible_substitution_without_a_combined_score():
     assert summary["comparable_scope_count"] == 1
     assert "combined_score" not in findings[0]
     assert len(findings[0]["channels"]) == 2
+    assert findings[0]["channels"][0]["metric_label"] == "Branches"
+    assert findings[0]["channels"][1]["metric_label"] == "Customers"
+    assert summary["comparison_counts_by_reason"]["compared"] == 1
+
+
+def test_cross_channel_compares_all_metrics_on_a_page_without_collapsing_identity():
+    branches = _channel_trend("branches", "Branches", [10, 8, 6])
+    branch_locations = _channel_trend(
+        "branches",
+        "Branch Locations",
+        [4, 5, 6],
+    )
+    mobile = _channel_trend("mobile_banking", "Customers", [50, 80, 90])
+
+    findings, summary = compare_cross_channel_trends(
+        [branches, branch_locations, mobile]
+    )
+
+    assert len(findings) == 2
+    assert {
+        finding["channels"][0]["metric_label"]
+        for finding in findings
+    } == {"Branches", "Branch Locations"}
+    assert all(
+        finding["channels"][1]["metric_label"] == "Customers"
+        for finding in findings
+    )
+    assert len({finding["pair_id"] for finding in findings}) == 2
+    assert summary["comparison_counts_by_reason"]["compared"] == 2
+
+
+def test_shorter_series_is_compared_when_it_has_more_date_overlap():
+    longest = _channel_trend(
+        "branches",
+        "Branch Count",
+        [1, 2, 3, 4, 5],
+        dates=[
+            "2024-12-01",
+            "2025-01-01",
+            "2025-06-01",
+            "2026-01-01",
+            "2026-06-01",
+        ],
+    )
+    shorter = _channel_trend(
+        "branches",
+        "Active Locations",
+        [10, 9, 8],
+        dates=["2025-01-01", "2025-06-01", "2025-12-01"],
+    )
+    mobile = _channel_trend(
+        "mobile_banking",
+        "Customers",
+        [100, 110, 120],
+        dates=["2025-01-01", "2025-06-01", "2025-12-01"],
+    )
+
+    findings, summary = compare_cross_channel_trends(
+        [longest, shorter, mobile]
+    )
+
+    assert len(findings) == 1
+    assert findings[0]["channels"][0]["metric_label"] == "Active Locations"
+    assert findings[0]["shared_reporting_dates"] == [
+        "2025-01-01",
+        "2025-06-01",
+        "2025-12-01",
+    ]
+    assert summary["comparison_counts_by_reason"] == {
+        "candidate_pairs": 2,
+        "compared": 1,
+        "insufficient_shared_dates": 1,
+    }
 
 
 def test_cross_channel_classifies_complementary_growth_and_broad_contraction():
@@ -219,11 +293,11 @@ def test_cross_channel_classifies_complementary_growth_and_broad_contraction():
 
 
 def test_cross_channel_rejects_mismatched_scopes_or_too_few_shared_dates():
-    mismatched_scope, _ = compare_cross_channel_trends([
+    mismatched_scope, scope_summary = compare_cross_channel_trends([
         _channel_trend("branches", "Branches", [5, 8, 10], institution="Banks"),
         _channel_trend("mobile_banking", "Customers", [50, 80, 90], institution="Sacco"),
     ])
-    mismatched_dates, _ = compare_cross_channel_trends([
+    mismatched_dates, date_summary = compare_cross_channel_trends([
         _channel_trend("branches", "Branches", [5, 8, 10]),
         _channel_trend(
             "mobile_banking",
@@ -234,6 +308,54 @@ def test_cross_channel_rejects_mismatched_scopes_or_too_few_shared_dates():
     ])
     assert mismatched_scope == []
     assert mismatched_dates == []
+    assert scope_summary["comparison_counts_by_reason"]["incompatible_scope"] == 1
+    assert (
+        date_summary["comparison_counts_by_reason"]["insufficient_shared_dates"]
+        == 1
+    )
+
+
+def test_cross_channel_rejects_incompatible_additional_filters():
+    branches = _channel_trend("branches", "Branches", [5, 8, 10])
+    mobile = _channel_trend("mobile_banking", "Customers", [50, 80, 90])
+    mobile["filters"] = dict(mobile["filters"])
+    mobile["filters"].pop("Account Status")
+    for point in mobile["observations"]:
+        point["filters"] = dict(mobile["filters"])
+
+    findings, summary = compare_cross_channel_trends([branches, mobile])
+
+    assert findings == []
+    assert (
+        summary["comparison_counts_by_reason"]["incompatible_filter_scope"]
+        == 1
+    )
+
+
+def test_cross_channel_deduplicates_series_and_skips_duplicate_reporting_dates():
+    branches = _channel_trend("branches", "Branches", [10, 8, 6])
+    mobile = _channel_trend("mobile_banking", "Customers", [50, 80, 90])
+
+    findings, duplicate_summary = compare_cross_channel_trends(
+        [branches, branches, mobile]
+    )
+    assert len(findings) == 1
+    assert duplicate_summary["duplicate_series_count"] == 1
+    assert duplicate_summary["candidate_pair_count"] == 1
+
+    branches_with_duplicate_date = dict(branches)
+    branches_with_duplicate_date["observations"] = [
+        *branches["observations"],
+        dict(branches["observations"][0]),
+    ]
+    duplicate_date_findings, date_summary = compare_cross_channel_trends(
+        [branches_with_duplicate_date, mobile]
+    )
+    assert duplicate_date_findings == []
+    assert (
+        date_summary["comparison_counts_by_reason"]["duplicate_reporting_dates"]
+        == 1
+    )
 
 
 def test_gender_mapping_is_exact_and_age_bins_are_not_crosswalked():
@@ -351,7 +473,7 @@ def test_unresolved_nbr_proxy_direction_does_not_imply_survey_improvement():
         "observations": [
             _point(
                 "inclusion",
-                "Total Customers",
+                "Customers",
                 day,
                 value,
                 geography="Rwanda",
@@ -379,6 +501,255 @@ def test_unresolved_nbr_proxy_direction_does_not_imply_survey_improvement():
     assert "relationship to the FinScope measure is not established" in (
         suggestion["suggested_interpretation"]
     )
+    assert suggestion["survey_indicator_conclusion"] == "not_established"
+
+
+def test_kirehe_bank_customer_proxy_remains_insufficient_evidence():
+    filters = {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "Banks",
+        "Account/Policy Status": "Active",
+        "Location": "All",
+    }
+    dates = [
+        "2025-02-20",
+        "2025-11-20",
+        "2026-08-20",
+        "2026-10-24",
+        "2026-10-27",
+    ]
+    values = [24916, 22862, 22703, 22139, 21943]
+    observations = [
+        _point(
+            "inclusion",
+            "Customers",
+            day,
+            value,
+            filters=filters,
+        )
+        for day, value in zip(dates, values)
+    ]
+    trend = {
+        "page": "inclusion",
+        "metric_label": "Customers",
+        "geography_level": "district",
+        "geography": "Kirehe",
+        "filters": filters,
+        "direction": "decreasing",
+        "evidence_sufficiency_state": "limited_evidence",
+        "reporting_dates": dates,
+        "observations": observations,
+        "quality_qualifications": [],
+        "source_record_ids": [
+            item["source_record_id"] for item in observations
+        ],
+    }
+    baseline = {
+        "analytical_level": "district",
+        "geography": "Kirehe",
+        "subgroup_type": "",
+        "subgroup": "",
+        "indicator_variable": "k1",
+        "indicator_label": "Bank-account ownership",
+        "estimate_percent": 5.41,
+        "baseline_source": "district_financial_inclusion.csv",
+    }
+
+    suggestions = generate_finscope_suggestions([baseline], [trend], [])
+    suggestion = next(
+        item for item in suggestions
+        if item.get("nbr_page") == "inclusion"
+    )
+
+    assert suggestion["finscope_estimate_percent"] == 5.41
+    assert suggestion["outcome"] == "insufficient_evidence"
+    assert suggestion["nbr_observed_direction"] == "decreasing"
+    assert suggestion["nbr_channel_directional_signal"]["direction"] == "decreasing"
+    assert suggestion["survey_indicator_conclusion"] == "not_established"
+    assert suggestion["supporting_evidence"][0]["relationship"] == (
+        "proxy_with_unresolved_definition"
+    )
+
+
+def test_muhanga_sacco_branch_decline_and_internet_growth_become_mixed_evidence():
+    dates = ["2025-02-20", "2025-11-20", "2026-08-20", "2026-10-24"]
+    internet_banking_dates = [*dates, "2026-10-27"]
+    branches = _channel_trend(
+        "branches",
+        "Branches",
+        [20, 19, 19, 19],
+        institution="Sacco",
+        dates=dates,
+    )
+    internet_banking = _channel_trend(
+        "internet_banking",
+        "Customers",
+        [104, 123, 145, 152, 151],
+        institution="Sacco",
+        dates=internet_banking_dates,
+    )
+    branches["geography"] = "Muhanga"
+    internet_banking["geography"] = "Muhanga"
+    for trend in (branches, internet_banking):
+        trend["observations"] = [
+            {**point, "geography": "Muhanga"}
+            for point in trend["observations"]
+        ]
+    channel_findings, _ = compare_cross_channel_trends(
+        [branches, internet_banking]
+    )
+    baseline = {
+        "analytical_level": "district",
+        "geography": "Muhanga",
+        "subgroup_type": "",
+        "subgroup": "",
+        "indicator_variable": "qf4_06",
+        "indicator_label": "Currently uses an Umurenge SACCO",
+        "estimate_percent": 18.57,
+        "baseline_source": "district_extended_indicators.csv",
+    }
+
+    suggestions = generate_finscope_suggestions(
+        [baseline],
+        [branches, internet_banking],
+        channel_findings,
+    )
+    branch_suggestion = next(
+        item for item in suggestions
+        if item.get("nbr_page") == "branches"
+    )
+
+    assert channel_findings[0]["pattern"] == "possible_channel_substitution"
+    assert branch_suggestion["nbr_channel_directional_signal"]["direction"] == (
+        "decreasing"
+    )
+    assert branch_suggestion["outcome"] == "mixed_evidence"
+    assert branch_suggestion["contradictory_or_missing_evidence"] == [
+        "possible_channel_substitution"
+    ]
+    assert branch_suggestion["cross_channel_context"][0]["channels"][1][
+        "direction"
+    ] == "increasing"
+    aligned_channels = {
+        channel["page"]: channel
+        for channel in branch_suggestion["cross_channel_context"][0]["channels"]
+    }
+    branch_channel = aligned_channels["branches"]
+    internet_channel = aligned_channels["internet_banking"]
+    assert [
+        (item["reporting_date"], item["observed_value"])
+        for item in branch_channel["observations"]
+    ] == list(zip(dates, [20, 19, 19, 19]))
+    assert [
+        (item["reporting_date"], item["observed_value"])
+        for item in internet_channel["observations"]
+    ] == list(zip(dates, [104, 123, 145, 152]))
+    assert all(
+        item["page"] == "internet_banking"
+        and item["metric_label"] == "Customers"
+        and item["unit"] == "count"
+        and item["filters"]["Institution Type"] == "Sacco"
+        and item["source_record_id"]
+        for item in internet_channel["observations"]
+    )
+    assert internet_banking["direction"] == "mixed"
+    assert internet_banking["first_value"] == 104
+    assert internet_banking["last_value"] == 151
+    assert internet_banking["reporting_dates"] == internet_banking_dates
+    assert internet_channel["observations"][-1]["observed_value"] == 152
+    assert internet_banking["observations"][-1]["value"] == 151
+    assert (
+        branch_suggestion["cross_channel_context"][0]["channels"][1][
+            "filter_compatibility_policy"
+        ]
+        == "page_specific_active_status_filters"
+    )
+    assert branch_suggestion["survey_indicator_conclusion"] == "not_established"
+    assert "neither movement establishes a change" in (
+        branch_suggestion["suggested_interpretation"].casefold()
+    )
+
+
+def test_conflicting_channels_do_not_override_unresolved_proxy_abstention():
+    filters = {
+        "Gender": "All",
+        "Age Segment": "All",
+        "Institution Type": "E-money issuers",
+        "Account/Policy Status": "Active",
+        "Location": "All",
+    }
+    dates = ["2025-01-01", "2025-06-01", "2025-12-01"]
+    observations = [
+        _point(
+            "inclusion",
+            "Total Customers",
+            day,
+            value,
+            geography="Rwanda",
+            level="national",
+            filters=filters,
+            source_type="national_kpi",
+        )
+        for day, value in zip(dates, [10, 15, 20])
+    ]
+    trend = {
+        "page": "inclusion",
+        "metric_label": "Total Customers",
+        "geography_level": "national",
+        "geography": "Rwanda",
+        "filters": filters,
+        "direction": "increasing",
+        "evidence_sufficiency_state": "limited_evidence",
+        "reporting_dates": dates,
+        "observations": observations,
+        "quality_qualifications": [],
+        "source_record_ids": [
+            item["source_record_id"] for item in observations
+        ],
+    }
+    conflicting = {
+        "analytical_level": "national",
+        "geography": "Rwanda",
+        "gender_filter": "all",
+        "age_segment_filter": "all",
+        "institution_type_filter": "e-money issuers",
+        "pattern": "mixed_trends",
+        "channels": [
+            {
+                "page": "inclusion",
+                "metric_label": "Customers",
+                "direction": "increasing",
+                "source_record_ids": trend["source_record_ids"],
+            },
+            {
+                "page": "agents",
+                "metric_label": "Agents",
+                "direction": "decreasing",
+                "source_record_ids": ["agent-1", "agent-2", "agent-3"],
+            },
+        ],
+    }
+    baseline = {
+        "analytical_level": "national",
+        "geography": "Rwanda",
+        "subgroup_type": "",
+        "subgroup": "",
+        "indicator_variable": "f5",
+        "indicator_label": "Registered mobile-money user",
+        "estimate_percent": 66.61,
+        "baseline_source": "national_financial_inclusion.csv",
+    }
+
+    suggestion = generate_finscope_suggestions(
+        [baseline],
+        [trend],
+        [conflicting],
+    )[0]
+
+    assert suggestion["outcome"] == "insufficient_evidence"
+    assert suggestion["nbr_channel_directional_signal"]["direction"] == "increasing"
+    assert suggestion["survey_indicator_conclusion"] == "not_established"
 
 
 def test_source_extraction_excludes_repeated_or_mismatched_runs():
@@ -439,15 +810,24 @@ def test_review_queue_preserves_disposition_when_context_is_rerun(tmp_path):
         "baseline_source": "district_financial_inclusion.csv",
     }
     report = build_contextualization_report(runs, kpis, tables, [baseline])
+    assert report["assessment"]["model_version"] == "nbr-intelligence-0.4.4"
+    assert report["assessment"]["source_git_commit"]
+    assert isinstance(report["assessment"]["source_worktree_dirty"], bool)
     review_report = _review_queue_report(report)
     path = tmp_path / "context-review.csv"
     merge_review_queue_csv(review_report, path)
     with path.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
     assert rows
+    assert {
+        row["model_version"] for row in rows
+    } == {report["assessment"]["model_version"]}
     rows[0]["review_status"] = "reviewed"
+    rows[0]["reviewer"] = "reviewer@example.invalid"
     rows[0]["reviewer_disposition"] = "needs_source_verification"
     rows[0]["reviewer_rationale"] = "Check documented count definition."
+    rows[0]["supporting_source_evidence"] = "NBR source table checked."
+    rows[0]["review_timestamp"] = "2026-10-29T00:00:00Z"
     with path.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=rows[0].keys())
         writer.writeheader()
@@ -457,5 +837,9 @@ def test_review_queue_preserves_disposition_when_context_is_rerun(tmp_path):
     with path.open(encoding="utf-8-sig", newline="") as stream:
         saved = list(csv.DictReader(stream))
     assert saved[0]["review_status"] == "reviewed"
+    assert saved[0]["reviewer"] == "reviewer@example.invalid"
     assert saved[0]["reviewer_disposition"] == "needs_source_verification"
     assert saved[0]["reviewer_rationale"] == "Check documented count definition."
+    assert saved[0]["supporting_source_evidence"] == "NBR source table checked."
+    assert saved[0]["review_timestamp"] == "2026-10-29T00:00:00Z"
+    assert saved[0]["model_version"] == report["assessment"]["model_version"]

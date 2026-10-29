@@ -4,6 +4,8 @@ import math
 import statistics
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
+
 from src.data_sources.nbr_anomaly_experiment import (
     NBRObservation,
     build_experiment_report,
@@ -12,7 +14,10 @@ from src.data_sources.nbr_anomaly_experiment import (
     prepare_observations,
     write_review_queue_csv,
 )
+from src.models.nbr_intelligence.assessment import write_json_report_new
 from src.models.nbr_intelligence.experiment import _score_rate_deviation
+import src.models.nbr_intelligence.contextualization as contextualization
+import src.models.nbr_intelligence.experiment as experiment
 
 
 def _records(
@@ -626,3 +631,58 @@ def test_tentative_kpi_reconciliation_is_attached_as_a_quality_qualification():
     qualifications = report["cases"][0]["quality_qualifications"]
     assert len(qualifications) == 5
     assert {item["check"] for item in qualifications} == {"reconciliation"}
+
+
+def test_anomaly_assessment_exposes_consistent_model_and_source_metadata():
+    runs, tables = _records([10, 12, 14, 16, 20])
+    report = build_experiment_report(runs, tables)
+
+    experiment_metadata = report["experiment"]
+    assessment_metadata = report["evidence_assessment"]
+    assert experiment_metadata["model_version"] == "nbr-intelligence-0.4.4"
+    assert experiment_metadata["source_git_commit"] == assessment_metadata[
+        "source_git_commit"
+    ]
+    assert experiment_metadata["source_worktree_dirty"] == assessment_metadata[
+        "source_worktree_dirty"
+    ]
+
+
+def test_json_report_writer_refuses_to_replace_existing_output(tmp_path):
+    output = tmp_path / "historical.json"
+    output.write_bytes(b"preserve this report")
+
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        write_json_report_new(output, {"model_version": "new"})
+
+    assert output.read_bytes() == b"preserve this report"
+    assert list(tmp_path.iterdir()) == [output]
+
+
+def test_both_report_clis_reject_existing_json_before_source_reads(
+    tmp_path,
+    monkeypatch,
+):
+    output = tmp_path / "existing.json"
+    output.write_text("historical", encoding="utf-8")
+    monkeypatch.setattr(
+        experiment,
+        "load_mongodb_history",
+        lambda: pytest.fail("source data should not be loaded"),
+    )
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        experiment.main(["--output", str(output)])
+
+    monkeypatch.setattr(
+        contextualization,
+        "load_mongodb_history",
+        lambda: pytest.fail("source data should not be loaded"),
+    )
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        contextualization.main([
+            "--output",
+            str(output),
+            "--review-csv",
+            str(tmp_path / "review.csv"),
+        ])
+    assert output.read_text(encoding="utf-8") == "historical"

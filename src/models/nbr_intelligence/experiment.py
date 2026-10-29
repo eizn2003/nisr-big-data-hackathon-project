@@ -28,6 +28,7 @@ from src.models.nbr_intelligence.assessment import (
     MODEL_VERSION,
     assess_evidence,
     attach_candidate_evidence,
+    write_json_report_new,
 )
 from src.models.nbr_intelligence.review import (
     merge_review_queue_csv,
@@ -1388,6 +1389,10 @@ def build_experiment_report(
             "name": "NBR cross-sectional and temporal anomaly experiments",
             "status": "experimental_insufficient_labeled_history",
             "model_version": MODEL_VERSION,
+            "source_git_commit": evidence_assessment["source_git_commit"],
+            "source_worktree_dirty": evidence_assessment[
+                "source_worktree_dirty"
+            ],
             "assessment_id": assessment_id,
             "assessment_timestamp": evidence_assessment["assessment_timestamp"],
             "learning_objective": (
@@ -1630,6 +1635,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Write the existing ranked candidate queues as a human-review CSV.",
     )
     args = parser.parse_args(argv)
+    if args.output and args.output.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite existing report: {args.output}"
+        )
     runs, kpis, tables = load_mongodb_history()
     from src.data_sources.mongodb_data_health import (
         assess_data_health,
@@ -1655,15 +1664,14 @@ def main(argv: list[str] | None = None) -> int:
         assessment_timestamp=assessed_at,
         data_health_report=health_report,
     )
-    serialized = json.dumps(report, indent=2, ensure_ascii=False)
     if args.output:
-        args.output.write_text(serialized + "\n", encoding="utf-8")
+        write_json_report_new(args.output, report)
         print(
             f"Wrote read-only NBR experiment report to {args.output} "
             f"({report['evaluation']['walk_forward_test_cases']} test cases)."
         )
     else:
-        print(serialized)
+        print(json.dumps(report, indent=2, ensure_ascii=False))
     if args.review_csv:
         row_count = merge_review_queue_csv(report, args.review_csv)
         print(

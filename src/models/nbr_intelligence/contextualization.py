@@ -25,6 +25,10 @@ from src.models.nbr_intelligence.experiment import (
     load_mongodb_history,
     prepare_observations,
 )
+from src.models.nbr_intelligence.assessment import (
+    source_revision_metadata,
+    write_json_report_new,
+)
 from src.models.nbr_intelligence.indicator_mapping import (
     FINSCOPE_POPULATION,
     FINSCOPE_REFERENCE_PERIOD,
@@ -414,8 +418,21 @@ def _channel_scope(trend: Mapping[str, Any]) -> tuple[str, ...] | None:
     observations = trend.get("observations", [])
     if not observations:
         return None
-    filters = observations[0].get("filters", {})
-    if not isinstance(filters, Mapping):
+    trend_filters = trend.get("filters", observations[0].get("filters", {}))
+    if not isinstance(trend_filters, Mapping):
+        return None
+    expected_filters = {
+        str(key).strip().casefold(): str(value).strip().casefold()
+        for key, value in trend_filters.items()
+    }
+    if any(
+        not isinstance(point.get("filters", trend_filters), Mapping)
+        or {
+            str(key).strip().casefold(): str(value).strip().casefold()
+            for key, value in point.get("filters", trend_filters).items()
+        } != expected_filters
+        for point in observations
+    ):
         return None
 
     if any(
@@ -425,133 +442,372 @@ def _channel_scope(trend: Mapping[str, Any]) -> tuple[str, ...] | None:
             "status" in str(key).casefold()
             and str(value).strip().casefold() == "active"
         )
-        for key, value in filters.items()
+        for key, value in trend_filters.items()
     ):
         return None
     return (
         str(trend.get("geography_level", "")),
         str(trend.get("geography", "")),
-        str(filters.get("Gender", "All")).strip().casefold(),
-        str(filters.get("Age Segment", "All")).strip().casefold(),
-        str(filters.get("Institution Type", "All")).strip().casefold(),
+        str(trend_filters.get("Gender", "All")).strip().casefold(),
+        str(trend_filters.get("Age Segment", "All")).strip().casefold(),
+        str(trend_filters.get("Institution Type", "All")).strip().casefold(),
     )
+
+
+def _channel_scope_exclusion_reason(
+    trend: Mapping[str, Any],
+) -> str | None:
+    observations = trend.get("observations", [])
+    if not observations:
+        return "missing_observations"
+    filters = trend.get("filters", observations[0].get("filters", {}))
+    if not isinstance(filters, Mapping):
+        return "invalid_filter_metadata"
+    expected_filters = {
+        str(key).strip().casefold(): str(value).strip().casefold()
+        for key, value in filters.items()
+    }
+    if any(
+        not isinstance(point.get("filters", filters), Mapping)
+        or {
+            str(key).strip().casefold(): str(value).strip().casefold()
+            for key, value in point.get("filters", filters).items()
+        } != expected_filters
+        for point in observations
+    ):
+        return "inconsistent_filter_provenance"
+    for key, value in filters.items():
+        if key in _METADATA_FILTERS or str(value).strip().casefold() == "all":
+            continue
+        if "status" in str(key).casefold() and (
+            str(value).strip().casefold() == "active"
+        ):
+            continue
+        return "unsupported_non_default_filter"
+    return None
+
+
+def _channel_series_identity(
+    trend: Mapping[str, Any],
+) -> tuple[Any, ...]:
+    filters = trend.get("filters", {})
+    normalized_filters = tuple(sorted(
+        (str(key).strip().casefold(), str(value).strip().casefold())
+        for key, value in filters.items()
+    )) if isinstance(filters, Mapping) else ()
+    return (
+        str(trend.get("page", "")),
+        str(trend.get("metric_label", "")),
+        str(trend.get("unit", "")),
+        str(trend.get("unit_status", "")),
+        normalized_filters,
+        str(trend.get("geography_level", "")),
+        str(trend.get("geography", "")),
+        str(trend.get("source_type", "")),
+    )
+
+
+def _channel_series_signature(trend: Mapping[str, Any]) -> str:
+    return json.dumps(
+        {
+            "identity": _channel_series_identity(trend),
+            "observations": trend.get("observations", []),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        default=_json_default,
+    )
+
+
+def _channel_series_id(trend: Mapping[str, Any]) -> str:
+    serialized = json.dumps(
+        _channel_series_identity(trend),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=_json_default,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:20]
+
+
+def _channel_filters_compatible(
+    first: Mapping[str, Any],
+    second: Mapping[str, Any],
+) -> tuple[bool, str]:
+    first_filters = first.get("filters", {})
+    second_filters = second.get("filters", {})
+    if not isinstance(first_filters, Mapping) or not isinstance(
+        second_filters, Mapping
+    ):
+        return False, "invalid_filter_metadata"
+
+    def comparable_filters(filters: Mapping[str, Any]) -> dict[str, str]:
+        return {
+            str(key).strip().casefold(): str(value).strip().casefold()
+            for key, value in filters.items()
+            if key not in _METADATA_FILTERS
+            and str(value).strip().casefold() != "all"
+            and "status" not in str(key).casefold()
+        }
+
+    first_status = [
+        (str(key).strip().casefold(), str(value).strip().casefold())
+        for key, value in first_filters.items()
+        if "status" in str(key).casefold()
+        and str(value).strip().casefold() != "all"
+    ]
+    second_status = [
+        (str(key).strip().casefold(), str(value).strip().casefold())
+        for key, value in second_filters.items()
+        if "status" in str(key).casefold()
+        and str(value).strip().casefold() != "all"
+    ]
+    if comparable_filters(first_filters) != comparable_filters(second_filters):
+        return False, "incompatible_filter_scope"
+    if first_status == second_status:
+        return True, "exact_filters"
+    if (
+        len(first_status) == 1
+        and len(second_status) == 1
+        and first_status[0][1] == "active"
+        and second_status[0][1] == "active"
+    ):
+        return True, "page_specific_active_status_filters"
+    return False, "incompatible_filter_scope"
 
 
 def compare_cross_channel_trends(
     trends: Sequence[Mapping[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Compare two distinct channel series at a time on aligned dates and scope."""
+    """Compare distinct eligible series on exact common dates and compatible scope."""
     grouped: dict[tuple[str, ...], list[Mapping[str, Any]]] = defaultdict(list)
+    excluded_series: dict[str, int] = defaultdict(int)
+    identity_signatures: dict[tuple[Any, ...], list[str]] = defaultdict(list)
+    identity_trends: dict[tuple[Any, ...], Mapping[str, Any]] = {}
     for trend in trends:
         page = str(trend.get("page", ""))
-        channel_class = CHANNEL_CLASSES.get(page)
-        if channel_class is None:
+        if page not in CHANNEL_CLASSES:
+            excluded_series["unmapped_page"] += 1
             continue
+        scope = _channel_scope(trend)
+        if scope is None:
+            excluded_series[_channel_scope_exclusion_reason(trend) or "invalid_scope"] += 1
+            continue
+        identity = _channel_series_identity(trend)
+        signature = _channel_series_signature(trend)
+        identity_signatures[identity].append(signature)
+        identity_trends[identity] = trend
+
+    duplicate_series_count = 0
+    for identity, signatures in identity_signatures.items():
+        unique_signatures = set(signatures)
+        if len(unique_signatures) > 1:
+            excluded_series["ambiguous_duplicate_series_identity"] += len(
+                signatures
+            )
+            duplicate_series_count += len(signatures)
+            continue
+        duplicate_series_count += len(signatures) - 1
+        trend = identity_trends[identity]
         scope = _channel_scope(trend)
         if scope is not None:
             grouped[scope].append(trend)
 
-    findings = []
-    for scope, scope_trends in sorted(grouped.items()):
-        by_page: dict[str, Mapping[str, Any]] = {}
+    summary_counts: dict[str, int] = defaultdict(int)
+    eligible_series = sum(len(items) for items in grouped.values())
+    page_totals: dict[str, int] = defaultdict(int)
+    scoped_page_totals: dict[tuple[str, ...], dict[str, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+    for scope, scope_trends in grouped.items():
         for trend in scope_trends:
             page = str(trend["page"])
-            if page not in by_page or len(trend.get("reporting_dates", [])) > len(
-                by_page[page].get("reporting_dates", [])
-            ):
-                by_page[page] = trend
-        page_trends = list(by_page.values())
-        for index, first in enumerate(page_trends):
-            for second in page_trends[index + 1:]:
-                first_dates = {
-                    str(point["reporting_date"]): point
-                    for point in first.get("observations", [])
-                }
-                second_dates = {
-                    str(point["reporting_date"]): point
-                    for point in second.get("observations", [])
-                }
-                common_dates = sorted(set(first_dates) & set(second_dates))
-                if len(common_dates) < MIN_TREND_OBSERVATIONS:
-                    continue
-                aligned = []
-                for trend, observations_by_date in (
-                    (first, first_dates),
-                    (second, second_dates),
-                ):
-                    aligned_trend = summarize_trend([
-                        observations_by_date[reporting_date]
-                        for reporting_date in common_dates
-                    ])
-                    aligned.append({
-                        "page": trend["page"],
-                        "metric_label": trend["metric_label"],
-                        "channel_class": CHANNEL_CLASSES[str(trend["page"])],
-                        "unit": trend.get("unit", ""),
-                        "unit_status": trend.get("unit_status", ""),
-                        "direction": aligned_trend["direction"],
-                        "evidence_sufficiency_state": aligned_trend[
-                            "evidence_sufficiency_state"
-                        ],
-                        "reporting_dates": common_dates,
-                        "filters": trend["filters"],
-                        "geography_level": trend["geography_level"],
-                        "geography": trend["geography"],
-                        "source_record_ids": aligned_trend["source_record_ids"],
-                    })
-                directions = {item["direction"] for item in aligned}
-                classes = {item["channel_class"] for item in aligned}
-                physical_decrease_and_digital_increase = (
-                    aligned[0]["direction"] == "decreasing"
-                    and aligned[1]["direction"] == "increasing"
-                    or aligned[1]["direction"] == "decreasing"
-                    and aligned[0]["direction"] == "increasing"
-                ) and {
-                    item["channel_class"]: item["direction"]
-                    for item in aligned
-                } == {
-                    "physical_access": "decreasing",
-                    "digital_service_activity": "increasing",
-                }
-                if physical_decrease_and_digital_increase:
-                    pattern = "possible_channel_substitution"
-                elif directions == {"increasing"}:
-                    pattern = "complementary_growth"
-                elif directions == {"decreasing"}:
-                    pattern = "broad_contraction"
-                else:
-                    pattern = "mixed_trends"
-                findings.append({
-                    "analytical_level": scope[0],
-                    "geography": scope[1],
-                    "gender_filter": scope[2],
-                    "age_segment_filter": scope[3],
-                    "institution_type_filter": scope[4],
-                    "shared_reporting_dates": common_dates,
-                    "pattern": pattern,
-                    "channels": aligned,
-                    "missing_channel_pages": sorted(
-                        set(CHANNEL_CLASSES) - {
-                            str(trend["page"]) for trend in page_trends
+            page_totals[page] += 1
+            scoped_page_totals[scope][page] += 1
+    all_cross_page_pairs = (
+        eligible_series * eligible_series
+        - sum(count * count for count in page_totals.values())
+    ) // 2
+    same_scope_cross_page_pairs = sum(
+        (
+            sum(page_counts.values()) ** 2
+            - sum(count * count for count in page_counts.values())
+        ) // 2
+        for page_counts in scoped_page_totals.values()
+    )
+    incompatible_scope_pairs = all_cross_page_pairs - same_scope_cross_page_pairs
+    if incompatible_scope_pairs:
+        summary_counts["incompatible_scope"] = incompatible_scope_pairs
+    findings = []
+    for scope, scope_trends in sorted(grouped.items()):
+        by_page: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+        for trend in scope_trends:
+            by_page[str(trend["page"])].append(trend)
+        page_names = sorted(by_page)
+        for index, first_page in enumerate(page_names):
+            for second_page in page_names[index + 1:]:
+                for first in by_page[first_page]:
+                    for second in by_page[second_page]:
+                        summary_counts["candidate_pairs"] += 1
+                        filters_compatible, filter_policy = (
+                            _channel_filters_compatible(first, second)
+                        )
+                        if not filters_compatible:
+                            summary_counts["incompatible_filter_scope"] += 1
+                            continue
+                        first_dates_lists: dict[str, list[Mapping[str, Any]]] = (
+                            defaultdict(list)
+                        )
+                        second_dates_lists: dict[str, list[Mapping[str, Any]]] = (
+                            defaultdict(list)
+                        )
+                        for point in first.get("observations", []):
+                            first_dates_lists[str(point["reporting_date"])].append(point)
+                        for point in second.get("observations", []):
+                            second_dates_lists[str(point["reporting_date"])].append(point)
+                        duplicate_date = any(
+                            len(points) != 1
+                            for points in (
+                                *first_dates_lists.values(),
+                                *second_dates_lists.values(),
+                            )
+                        )
+                        if duplicate_date:
+                            summary_counts["duplicate_reporting_dates"] += 1
+                            continue
+                        first_dates = {
+                            day: points[0]
+                            for day, points in first_dates_lists.items()
                         }
-                    ),
-                    "interpretation": (
-                        "These two channel series moved in the stated directions "
-                        "on shared reporting dates. This pattern does not establish "
-                        "substitution, access, usage, or causality."
-                    ),
-                    "limitations": [
-                        "No counts, rates, transactions, or customers are added together.",
-                        "Only common reporting dates and compatible common filters are compared.",
-                        "Page-specific active-status and All filters remain visible per channel.",
-                        "A district or subgroup result is not generalized to other populations.",
-                    ],
-                })
+                        second_dates = {
+                            day: points[0]
+                            for day, points in second_dates_lists.items()
+                        }
+                        common_dates = sorted(set(first_dates) & set(second_dates))
+                        if len(common_dates) < MIN_TREND_OBSERVATIONS:
+                            summary_counts["insufficient_shared_dates"] += 1
+                            continue
+                        aligned = []
+                        for trend, observations_by_date in (
+                            (first, first_dates),
+                            (second, second_dates),
+                        ):
+                            aligned_trend = summarize_trend([
+                                observations_by_date[reporting_date]
+                                for reporting_date in common_dates
+                            ])
+                            aligned.append({
+                                "page": trend["page"],
+                                "metric_label": trend["metric_label"],
+                                "channel_class": CHANNEL_CLASSES[str(trend["page"])],
+                                "unit": trend.get("unit", ""),
+                                "unit_status": trend.get("unit_status", ""),
+                                "direction": aligned_trend["direction"],
+                                "evidence_sufficiency_state": aligned_trend[
+                                    "evidence_sufficiency_state"
+                                ],
+                                "reporting_dates": common_dates,
+                                "filters": trend["filters"],
+                                "filter_compatibility_policy": filter_policy,
+                                "geography_level": trend["geography_level"],
+                                "geography": trend["geography"],
+                                "source_record_ids": aligned_trend["source_record_ids"],
+                                "observations": [
+                                    {
+                                        "reporting_date": str(
+                                            observations_by_date[reporting_date][
+                                                "reporting_date"
+                                            ]
+                                        ),
+                                        "page": str(
+                                            observations_by_date[reporting_date]["page"]
+                                        ),
+                                        "metric_label": str(
+                                            observations_by_date[reporting_date][
+                                                "metric_label"
+                                            ]
+                                        ),
+                                        "observed_value": observations_by_date[
+                                            reporting_date
+                                        ]["value"],
+                                        "unit": observations_by_date[
+                                            reporting_date
+                                        ].get("unit", trend.get("unit", "")),
+                                        "filters": observations_by_date[
+                                            reporting_date
+                                        ].get("filters", trend["filters"]),
+                                        "source_record_id": str(
+                                            observations_by_date[reporting_date].get(
+                                                "source_record_id", ""
+                                            )
+                                        ),
+                                    }
+                                    for reporting_date in common_dates
+                                ],
+                            })
+                        directions = {item["direction"] for item in aligned}
+                        physical_decrease_and_digital_increase = (
+                            aligned[0]["direction"] == "decreasing"
+                            and aligned[1]["direction"] == "increasing"
+                            or aligned[1]["direction"] == "decreasing"
+                            and aligned[0]["direction"] == "increasing"
+                        ) and {
+                            item["channel_class"]: item["direction"]
+                            for item in aligned
+                        } == {
+                            "physical_access": "decreasing",
+                            "digital_service_activity": "increasing",
+                        }
+                        if physical_decrease_and_digital_increase:
+                            pattern = "possible_channel_substitution"
+                        elif directions == {"increasing"}:
+                            pattern = "complementary_growth"
+                        elif directions == {"decreasing"}:
+                            pattern = "broad_contraction"
+                        else:
+                            pattern = "mixed_trends"
+                        findings.append({
+                            "analytical_level": scope[0],
+                            "geography": scope[1],
+                            "gender_filter": scope[2],
+                            "age_segment_filter": scope[3],
+                            "institution_type_filter": scope[4],
+                            "shared_reporting_dates": common_dates,
+                            "pattern": pattern,
+                            "pair_id": hashlib.sha256(
+                                "|".join(sorted((
+                                    _channel_series_id(first),
+                                    _channel_series_id(second),
+                                ))).encode("utf-8")
+                            ).hexdigest()[:20],
+                            "channels": aligned,
+                            "missing_channel_pages": sorted(
+                                set(CHANNEL_CLASSES) - set(page_names)
+                            ),
+                            "interpretation": (
+                                "This pairwise classification describes the "
+                                "separately filtered metric series only. It does "
+                                "not establish substitution, access, usage, "
+                                "causality, or an overall financial-inclusion change."
+                            ),
+                            "limitations": [
+                                "No counts, rates, transactions, or customers are added together.",
+                                "Only common reporting dates and compatible common filters are compared.",
+                                "Distinct page-specific active-status filters are retained and are not asserted to define equivalent populations.",
+                                "A page class does not make different metric labels the same construct.",
+                                "A district or subgroup result is not generalized to other populations.",
+                            ],
+                        })
+                        summary_counts["compared"] += 1
 
     return findings, {
         "channel_series_count": sum(
             trend.get("page") in CHANNEL_CLASSES for trend in trends
         ),
+        "eligible_series_count": eligible_series,
+        "excluded_series_by_reason": dict(sorted(excluded_series.items())),
+        "duplicate_series_count": duplicate_series_count,
+        "candidate_pair_count": all_cross_page_pairs,
+        "comparison_counts_by_reason": dict(sorted(summary_counts.items())),
         "comparable_scope_count": len(findings),
         "patterns": {
             pattern: sum(item["pattern"] == pattern for item in findings)
@@ -723,6 +979,68 @@ def _suggestion_outcome(
     return "potential_deterioration", "The proxy/context indicator moved in a potentially unfavorable direction."
 
 
+def _channel_findings_for_trend(
+    trend: Mapping[str, Any],
+    findings: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    source_ids = set(str(item) for item in trend.get("source_record_ids", []))
+    if not source_ids:
+        return []
+    scope = (
+        trend.get("geography_level"),
+        trend.get("geography"),
+        str(trend.get("filters", {}).get("Gender", "All")).casefold(),
+        str(trend.get("filters", {}).get("Age Segment", "All")).casefold(),
+        str(trend.get("filters", {}).get("Institution Type", "All")).casefold(),
+    )
+    matched = []
+    for finding in findings:
+        finding_scope = (
+            finding.get("analytical_level"),
+            finding.get("geography"),
+            str(finding.get("gender_filter", "All")).casefold(),
+            str(finding.get("age_segment_filter", "All")).casefold(),
+            str(finding.get("institution_type_filter", "All")).casefold(),
+        )
+        if finding_scope != scope:
+            continue
+        for channel in finding.get("channels", []):
+            if (
+                channel.get("page") == trend.get("page")
+                and channel.get("metric_label") == trend.get("metric_label")
+                and source_ids.intersection(
+                    str(item) for item in channel.get("source_record_ids", [])
+                )
+            ):
+                matched.append(finding)
+                break
+    return matched
+
+
+def _has_conflicting_channel_direction(
+    trend: Mapping[str, Any],
+    findings: Sequence[Mapping[str, Any]],
+) -> bool:
+    direction = str(trend.get("direction", ""))
+    for finding in findings:
+        for channel in finding.get("channels", []):
+            if (
+                channel.get("page") == trend.get("page")
+                and channel.get("metric_label") == trend.get("metric_label")
+                and set(str(item) for item in trend.get("source_record_ids", []))
+                .intersection(
+                    str(item) for item in channel.get("source_record_ids", [])
+                )
+            ):
+                continue
+            other_direction = str(channel.get("direction", ""))
+            if direction == "mixed" or other_direction == "mixed":
+                return True
+            if {direction, other_direction} == {"increasing", "decreasing"}:
+                return True
+    return False
+
+
 def generate_finscope_suggestions(
     baselines: Sequence[Mapping[str, Any]],
     trends: Sequence[Mapping[str, Any]],
@@ -830,10 +1148,12 @@ def generate_finscope_suggestions(
                 continue
             for trend in matching_trends:
                 polarity = str(indicator.get("polarity", "neutral"))
-                outcome, interpretation = _suggestion_outcome(
+                channel_outcome, channel_interpretation = _suggestion_outcome(
                     polarity,
                     str(trend["direction"]),
                 )
+                outcome = channel_outcome
+                interpretation = channel_interpretation
                 if relationship["relationship"] != "contextual_indicator":
                     outcome = "insufficient_evidence"
                     interpretation = (
@@ -856,24 +1176,21 @@ def generate_finscope_suggestions(
                 if trend["quality_qualifications"]:
                     sufficiency = "limited_evidence"
 
-                scope_filters = trend["filters"]
-                group_key = (
-                    trend["geography_level"],
-                    trend["geography"],
-                    str(scope_filters.get("Gender", "All")).casefold(),
-                    str(scope_filters.get("Age Segment", "All")).casefold(),
-                    str(scope_filters.get("Institution Type", "All")).casefold(),
+                related_channel_findings = _channel_findings_for_trend(
+                    trend,
+                    cross_channel_findings,
                 )
-                related_channel_findings = [
-                    finding for finding in cross_channel_findings
-                    if (
-                        finding["analytical_level"],
-                        finding["geography"],
-                        finding["gender_filter"],
-                        finding["age_segment_filter"],
-                        finding["institution_type_filter"],
-                    ) == group_key
-                ]
+                channel_conflict = _has_conflicting_channel_direction(
+                    trend,
+                    related_channel_findings,
+                )
+                if relationship["relationship"] == "contextual_indicator" and channel_conflict:
+                    outcome = "mixed_evidence"
+                    interpretation = (
+                        "The mapped NBR channel moved in a different or mixed "
+                        "direction from another comparable channel. Neither "
+                        "movement establishes a change in the FinScope indicator."
+                    )
                 supporting = {
                     "page": trend["page"],
                     "metric_label": trend["metric_label"],
@@ -926,15 +1243,23 @@ def generate_finscope_suggestions(
                         )
                     },
                     "outcome": outcome,
+                    "nbr_channel_directional_signal": {
+                        "outcome": channel_outcome,
+                        "direction": trend["direction"],
+                        "page": trend["page"],
+                        "metric_label": trend["metric_label"],
+                    },
+                    "survey_indicator_conclusion": "not_established",
                     "evidence_sufficiency_state": sufficiency,
                     "suggested_interpretation": interpretation,
                     "supporting_evidence": [supporting],
                     "contradictory_or_missing_evidence": [
-                        finding["pattern"] for finding in related_channel_findings
-                        if finding["pattern"] in {
-                            "possible_channel_substitution",
-                            "mixed_trends",
-                        }
+                        finding["pattern"]
+                        for finding in related_channel_findings
+                        if _has_conflicting_channel_direction(
+                            trend,
+                            [finding],
+                        )
                     ],
                     "cross_channel_context": related_channel_findings,
                     "limitations": limitations,
@@ -1133,6 +1458,7 @@ def build_contextualization_report(
         "assessment": {
             "name": "FinScope contextualization and NBR cross-channel assessment",
             "model_version": MODEL_VERSION,
+            **source_revision_metadata(),
             "assessment_timestamp": assessed_at.isoformat(),
             "source_domains": ["FinScope survey", "NBR administrative observations"],
             "sources_fitted_or_evaluated_separately": True,
@@ -1165,8 +1491,15 @@ def build_contextualization_report(
             },
             "cross_channel_method": (
                 "Compare directions only on shared reporting dates and matched "
-                "geography, gender, age-segment, and institution filters. Keep "
-                "metrics separate; no combined score or causal inference."
+                "geography, gender, age-segment, and institution filters. Serialize "
+                "the exact aligned observations, including source IDs and filters. "
+                "Keep metrics separate; no combined score or causal inference."
+            ),
+            "suggestion_outcome_policy": (
+                "Unresolved proxy relationships remain insufficient_evidence. "
+                "Opposing or internally mixed comparable channel directions make "
+                "a contextual-indicator suggestion mixed_evidence. Directional "
+                "NBR channel signals are not survey-indicator conclusions."
             ),
         },
         "source_data": source_summary,
@@ -1247,6 +1580,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--review-csv", type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.output.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite existing report: {args.output}"
+        )
     runs, kpis, tables = load_mongodb_history()
     baselines = load_finscope_baselines(PROJECT_ROOT / "data" / "processed")
     from src.data_sources.mongodb_data_health import (
@@ -1274,10 +1611,10 @@ def main(argv: list[str] | None = None) -> int:
         assessed_at=assessed_at,
         data_health_report=health_report,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(report, indent=2, ensure_ascii=False, default=_json_default) + "\n",
-        encoding="utf-8",
+    write_json_report_new(
+        args.output,
+        report,
+        default=_json_default,
     )
     review_count = merge_review_queue_csv(
         _review_queue_report(report),

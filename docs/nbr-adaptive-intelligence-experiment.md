@@ -52,26 +52,28 @@ The walk-forward comparison produced:
 | Measure | Result |
 |---|---:|
 | Test cases | 9,546 |
-| Model-assessable cases | 9,462 |
+| Model-assessable cases | 6,095 |
 | Explicit zero-MAD abstentions | 84 |
+| Discordant-training-rate abstentions | 3,367 |
+| Total model abstentions | 3,451 |
 | Level-baseline-assessable cases | 9,458 |
 | Level-baseline zero-MAD abstentions | 88 |
-| Cases where both statistical methods were assessable | 9,442 |
+| Cases where both statistical methods were assessable | 6,075 |
 | Historical-level baseline flags | 588 |
-| Rate-model flags | 8,570 (90.57% of assessable cases) |
-| Both statistical methods flagged | 574 |
-| Rate-model-only flags among comparable cases | 7,986 |
-| Level-baseline-only flags among comparable cases | 14 |
+| Rate-model flags | 5,376 (88.20% of assessable cases) |
+| Both statistical methods flagged | 263 |
+| Rate-model-only flags among comparable cases | 5,103 |
+| Level-baseline-only flags among comparable cases | 1 |
 | Existing 50%/8-day rule alerts in test cases | 37 |
-| Rate-model and existing-rule alerts shared | 31 |
-| Existing-rule alerts among model abstentions | 6 |
-| Rate-model-only flags versus existing rule among assessable cases | 8,539 |
+| Rate-model and existing-rule alerts shared | 22 |
+| Existing-rule alerts among model abstentions | 15 |
+| Rate-model-only flags versus existing rule among assessable cases | 5,354 |
 | Adjudicated anomaly labels | None |
 | Measurable precision, recall, or false-alarm rate | Not available |
 
-The health report has 40 50%-change events overall. Three do not meet the experiment's minimum of four clean prior observations, so the comparable 50%/8-day baseline has 37 test-case alerts. The 84 model abstentions are not counted as either model alerts or confirmed normal observations.
+The health report has 40 50%-change events overall. Three do not meet the experiment's minimum of four clean prior observations, so the comparable 50%/8-day baseline has 37 test-case alerts. The model also abstains on 3,367 cases with discordant prior rates, in addition to 84 exact-zero-MAD cases. Neither abstention class is counted as a model alert or a confirmed normal observation.
 
-The high model-flag rate is a warning, not a success claim. For example, the rate candidate flags the Bugesera `Agents` / `Institution Type=All` observation changing from 1,550 on 2026-10-24 to 1,552 on 2026-10-27 (score 8.13 against 3.0). The level baseline score is only 0.64 and the existing rule does not flag it. The same scope has tentative KPI/table discrepancies in the historical record. Small observed changes, only three training rates, unequal intervals, and source reconciliation limitations make such candidate scores unsuitable for operational conclusions. No ground-truth labels exist to determine whether these are true anomalies or false alarms.
+The high model-flag rate is a warning, not a success claim. The current report flags 5,376 of 6,095 assessable temporal cases (88.20%) at the fixed 3.0 threshold, while 3,451 of 9,546 cases abstain. Small observed changes, only three training rates, unequal intervals, and source reconciliation limitations make candidate scores unsuitable for operational conclusions. No ground-truth labels exist to determine whether these are true anomalies or false alarms.
 
 ## Temporal scoring audit (2026-10-28)
 
@@ -226,7 +228,7 @@ git diff --check
 
 ## FinScope-aware contextualization and cross-channel assessment
 
-Version `nbr-intelligence-0.4.0` adds a separate read-only contextualization entry
+Version `nbr-intelligence-0.4.0` added a separate read-only contextualization entry
 point in [`contextualization.py`](../src/models/nbr_intelligence/contextualization.py)
 and a reusable FinScope/NBR relationship registry in
 [`indicator_mapping.py`](../src/models/nbr_intelligence/indicator_mapping.py).
@@ -352,19 +354,138 @@ Representative evidence in the pairwise report:
 - **Age, education, urban/rural:** no matching NBR category exists for the
   FinScope age bins, education levels, or area categories; suggestions abstain.
 
+### Guardrail correction and serialized assessment (0.4.1)
+
+The 2026-10-28 pairwise report was inconsistent with the proxy guard in the
+generator: its saved suggestions included directional labels for unresolved
+proxy relationships, while the current generator returned
+`insufficient_evidence` for those same records. The saved report's assessment
+timestamp (`2026-10-28T20:24:36Z`) predates the current source file modification
+time (`2026-10-28T20:56:00Z`); the report file itself was written later. This
+supports a stale, already-running report build as the likely cause. The report
+does not contain a source revision or code hash, so the exact code loaded by
+that process cannot be proven. The old report and review CSV remain preserved
+as historical artifacts and should not be used as current suggestion output.
+
+Version `nbr-intelligence-0.4.1` applies outcomes after examining cross-channel
+evidence. Only findings at the same geography and demographic/institution
+scope that include the exact mapped page, metric, and supporting source record
+IDs can affect a suggestion. Opposing or internally mixed comparable channel
+directions produce `mixed_evidence` for a contextual indicator; an unresolved
+proxy remains `insufficient_evidence` regardless of its direction or channel
+conflict. The report separates `nbr_channel_directional_signal` from
+`survey_indicator_conclusion`, which is `not_established`; neither field
+establishes causation, substitution, or a current survey estimate.
+
+The new read-only assessment was generated on 2026-10-29 and is saved separately:
+
+- JSON report:
+  [`nbr-finscope-contextualization-guardrails-0.4.1-2026-10-29.json`](../data/processed/nbr-finscope-contextualization-guardrails-0.4.1-2026-10-29.json)
+- Human-review CSV:
+  [`nbr-finscope-contextualization-review-guardrails-0.4.1-2026-10-29.csv`](../data/processed/nbr-finscope-contextualization-review-guardrails-0.4.1-2026-10-29.csv)
+
+It contains 581 suggestions: 19 national, 450 district, and 112 demographic.
+There are 93 `mixed_evidence` and 488 `insufficient_evidence` outcomes. No
+suggestion with `proxy_with_unresolved_definition` is directional. The report
+retains 427 limited-evidence and 154 not-assessable records; no record is
+classified as sufficient evidence for a survey-indicator conclusion.
+
+For Kirehe bank-account ownership, the 5.41% FinScope 2024 estimate remains
+unchanged. The active-Banks inclusion `Customers` series is 24,916, 22,862,
+22,703, 22,139, and 21,943 on 2025-02-20, 2025-11-20, 2026-08-20,
+2026-10-24, and 2026-10-27, respectively. It is a declining administrative
+count with an unresolved relationship to survey ownership and is therefore
+`insufficient_evidence`, not a finding of declining ownership. The filters are
+`Institution Type=Banks`, `Account/Policy Status=Active`, `Gender=All`,
+`Age Segment=All`, and `Location=All`; complete source runs are
+`0f82f9cbce9f` (the first four dates) and `ab7f5ea52d81` (2026-10-27). All five
+observations carry tentative geographic-coverage qualifications.
+
+For Muhanga SACCOs, active branches changed from 20 to 19 while internet-banking
+Customers changed from 104 to 152 on the four shared dates through 2026-10-24.
+The pairwise finding remains `possible_channel_substitution` only as a
+description of opposing channel movement. The related `qf4_06` and `g3a_11`
+suggestions are `mixed_evidence`; the report does not claim substitution or an
+overall change in financial inclusion. Both page runs use run ID `35e5fdf63098`.
+The branch scope is `Institution Type=Sacco`, `Branch Status=Active`,
+`Location=All`; internet banking uses `Institution Type=Sacco`,
+`Account Status=Active`, `Account Type=All`, `Gender=All`, `Age Segment=All`,
+`Location=All`. Individual observations remain separate.
+
+#### Auditability update (0.4.2)
+
+The read-only source observations reconcile the Muhanga comparison: the four
+shared dates are 2025-02-20, 2025-11-20, 2026-08-20, and 2026-10-24. Active
+SACCO branches are 20, 19, 19, and 19; internet-banking Customers are 104, 123,
+145, and 152. A fifth internet-banking observation arrived on 2026-10-27 with
+151 Customers from run `ab7f5ea52d81`. Thus, the four-date matched comparison
+is increasing through 152, while the five-date series summary ends at 151 and
+has mixed successive direction. The 151-versus-152 difference is not a
+contradictory value for the same date; the previous report omitted the matched
+per-date values, obscuring that the summaries used different windows.
+
+Version `nbr-intelligence-0.4.2` adds an `observations` array to each channel
+inside each cross-channel finding. Each aligned record contains its reporting
+date, page, metric, observed value, unit, exact filters, and source-record ID.
+The comparison window remains the intersection of dates actually observed in
+both series. Assessment metadata now includes `source_git_commit` and
+`source_worktree_dirty`; these identify the available Git revision and whether
+the worktree had uncommitted changes, not analytical validity. Review CSV
+`model_version` is populated from that assessment's metadata. No output hash
+is recorded.
+
+#### Cross-channel coverage correction (0.4.3)
+
+The previous comparison selected only the longest trend per page, which could
+discard other metrics or filter series. Version `nbr-intelligence-0.4.3`
+compares every distinct eligible series pair across different mapped pages.
+Series identity retains page, metric label, unit, unit status, full filters,
+geography, and source type. Duplicate identical series are collapsed;
+conflicting records with the same identity and duplicate reporting dates are
+excluded rather than silently selected.
+
+Comparison requires matching geography, gender, age, institution type, and
+compatible non-default filters, plus at least three exact shared reporting
+dates. Page-specific `Active` status filters are allowed as a limited
+compatibility rule, but the finding preserves those filters and explicitly
+does not claim that their definitions or populations are equivalent. Other
+non-default filters that do not match are not compared. `cross_channel_summary`
+now records eligible/excluded series, candidate pairs, and comparison/skip
+counts by reason, including incompatible scope/filter, duplicate dates, and
+insufficient shared dates. Each finding keeps the separate metric labels,
+units, and aligned observations; page classes do not establish that distinct
+metrics measure the same construct.
+
+The prior pairwise review CSV and original anomaly reports/review queues were
+not overwritten. Existing review queues contained only pending rows at this
+assessment; the new review CSV has 427 pending rows. The existing merge function
+preserves any completed reviewer fields on matching candidate IDs.
+
 ### Reproduction
 
 With the project's Python environment and MongoDB URI available:
 
 ```bash
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 .venv/bin/python -m src.models.nbr_intelligence.contextualization \
-  --output data/processed/nbr-finscope-contextualization-pairwise-2026-10-28.json \
-  --review-csv data/processed/nbr-finscope-contextualization-review-pairwise-2026-10-28.csv
+  --output "data/processed/nbr-finscope-contextualization-guardrails-0.4.4-${RUN_ID}.json" \
+  --review-csv "data/processed/nbr-finscope-contextualization-review-guardrails-0.4.4-${RUN_ID}.csv"
+.venv/bin/python -m src.models.nbr_intelligence.experiment \
+  --output "data/processed/nbr-anomaly-experiment-0.4.4-${RUN_ID}.json" \
+  --review-csv "data/processed/nbr-anomaly-review-0.4.4-${RUN_ID}.csv"
 ```
 
-Use new output filenames for subsequent assessments if an immutable report
-snapshot is required. The review CSV merge preserves saved dispositions. A
-rerun incorporates newly eligible NBR observations; it does not refit a
-supervised model, learn from its own outputs, or write anything to MongoDB.
+Version `nbr-intelligence-0.4.4` also records source Git provenance in the
+anomaly assessment metadata and refuses to replace an existing JSON report.
+The report writer creates a temporary file in the destination directory and
+atomically links it into place, so a failed generation cannot leave a
+success-shaped partial report or replace a historical JSON output. Review CSV
+merging remains intentional: matching reviewer dispositions and metadata are
+preserved while current candidates are refreshed.
+
+Use a unique run suffix for each assessment. A rerun incorporates newly
+eligible NBR observations; it does not refit a supervised model, learn from
+its own outputs, or write anything to MongoDB. Source commit and worktree state
+identify code provenance only; they do not prove analytical validity.
 Independent human verification remains required before supervised evaluation
 or any operational interpretation.

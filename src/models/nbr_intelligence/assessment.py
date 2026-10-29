@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
+import tempfile
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from src.models.nbr_intelligence import MODEL_VERSION
@@ -22,6 +26,81 @@ _PROVENANCE_EXCLUSIONS = {
     "run_filter_key_mismatch",
     "run_filter_values_mismatch",
 }
+
+
+def source_revision_metadata() -> dict[str, Any]:
+    """Return available Git provenance without making Git a runtime requirement."""
+    project_root = Path(__file__).resolve().parents[3]
+    try:
+        commit_result = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=project_root,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=project_root,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except FileNotFoundError:
+        return {
+            "source_git_commit": None,
+            "source_worktree_dirty": None,
+        }
+    return {
+        "source_git_commit": (
+            commit_result.stdout.strip()
+            if commit_result.returncode == 0
+            else None
+        ),
+        "source_worktree_dirty": (
+            bool(status_result.stdout.strip())
+            if status_result.returncode == 0
+            else None
+        ),
+    }
+
+
+def write_json_report_new(
+    output_path: Path,
+    report: Mapping[str, Any],
+    *,
+    default: Any = None,
+) -> None:
+    """Atomically create a JSON report, refusing to replace an existing file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{output_path.name}.",
+        suffix=".tmp",
+        dir=output_path.parent,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as destination:
+            json.dump(
+                report,
+                destination,
+                indent=2,
+                ensure_ascii=False,
+                default=default,
+            )
+            destination.write("\n")
+            destination.flush()
+            os.fsync(destination.fileno())
+        try:
+            os.link(temporary_name, output_path)
+        except FileExistsError as exc:
+            raise FileExistsError(
+                f"Refusing to overwrite existing report: {output_path}"
+            ) from exc
+    finally:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
 
 
 def _health_findings(
@@ -245,6 +324,7 @@ def assess_evidence(
 
     return {
         "model_version": MODEL_VERSION,
+        **source_revision_metadata(),
         "assessment_timestamp": now.isoformat(),
         "source": "NBR administrative observations only",
         "finscope_used": False,

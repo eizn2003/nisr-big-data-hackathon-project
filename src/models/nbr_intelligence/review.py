@@ -80,6 +80,7 @@ def _candidate_row(
     *,
     assessment_id: str,
     assessment_timestamp: str,
+    model_version: str,
 ) -> dict[str, str]:
     comparison_reference = {
         key: value
@@ -102,7 +103,7 @@ def _candidate_row(
     return {
         "candidate_id": _candidate_id(method, candidate),
         "assessment_id": assessment_id,
-        "model_version": str(candidate.get("model_version", "")),
+        "model_version": str(model_version),
         "evidence_sufficiency_state": str(
             candidate.get("evidence_assessment", {}).get("state", "")
         ),
@@ -178,6 +179,7 @@ def _queue_rows(report: Mapping[str, Any]) -> tuple[list[dict[str, str]], str, s
                 candidate,
                 assessment_id=assessment_id,
                 assessment_timestamp=timestamp,
+                model_version=version,
             ))
     return rows, assessment_id, timestamp
 
