@@ -301,6 +301,13 @@ def _ranking_html(district, metric, item):
 # Page
 # --------------------------------------------------------------------------
 def render_national_overview():
+    from src.nbr_dashboard import current_mode, render_combined_context, render_nbr_page
+
+    mode = current_mode()
+    if mode == "NBR Supply":
+        render_nbr_page("national")
+        return
+
     try:
         national = data.load_national()
         district = data.load_district()
@@ -517,3 +524,8 @@ def render_national_overview():
          "of access to credit.")
     render_html('<div class="src-note">Source: FinScope Rwanda 2024. See Methodology &amp; sources for '
                 "indicator definitions, data checks and limitations.</div>")
+    if mode == "Combined":
+        render_combined_context(
+            item["variable"],
+            include_map=True,
+        )

@@ -215,6 +215,16 @@ def _stability_figure(ranked, selected_district, combos):
 # Page
 # --------------------------------------------------------------------------
 def render_priority_explorer():
+    from src.nbr_dashboard import current_mode, render_combined_context, render_nbr_page
+
+    mode = current_mode()
+    if mode == "NBR Supply":
+        render_nbr_page(
+            "priority",
+            selected_district=st.session_state.get(KEY_DISTRICT),
+        )
+        return
+
     try:
         districts = data.load_district()
         national = data.load_national()
@@ -430,3 +440,9 @@ def render_priority_explorer():
                 "indicator percentages are weighted estimates. The score uses equal weighting of the chosen "
                 "normalized gaps. Margins are indicative (binomial, optional design-effect multiplier) because the "
                 "survey's design information is not available; no formal significance claims are made.</div>")
+    if mode == "Combined":
+        for component in components:
+            render_combined_context(
+                CANDIDATES[component]["variable"],
+                district=selected_district,
+            )

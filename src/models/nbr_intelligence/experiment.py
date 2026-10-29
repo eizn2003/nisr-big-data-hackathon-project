@@ -1539,12 +1539,15 @@ def _tentative_reconciliation_qualifications(
     return qualifications
 
 
-def load_mongodb_history() -> tuple[
+def load_mongodb_history(
+    *,
+    pages: Sequence[str] | None = None,
+) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
 ]:
-    """Load only the existing run and district-table records, without writes."""
+    """Load source history read-only, optionally restricting all collections by page."""
     try:
         from dotenv import load_dotenv
         from pymongo import MongoClient
@@ -1561,8 +1564,9 @@ def load_mongodb_history() -> tuple[
     try:
         client.admin.command("ping")
         database = client[DATABASE_NAME]
+        query = {"page": {"$in": list(pages)}} if pages is not None else {}
         runs = list(database[RUN_COLLECTION].find(
-            {},
+            query,
             {
                 "_id": 0,
                 "page": 1,
@@ -1581,7 +1585,7 @@ def load_mongodb_history() -> tuple[
             },
         ))
         kpis = list(database[KPI_COLLECTION].find(
-            {},
+            query,
             {
                 "_id": 0,
                 "page": 1,
@@ -1598,7 +1602,7 @@ def load_mongodb_history() -> tuple[
             },
         ))
         tables = list(database[TABLE_COLLECTION].find(
-            {},
+            query,
             {
                 "_id": 0,
                 "page": 1,

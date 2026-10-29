@@ -294,6 +294,16 @@ def _clicked_district(event, names):
 # Page
 # --------------------------------------------------------------------------
 def render_district_explorer():
+    from src.nbr_dashboard import current_mode, render_combined_context, render_nbr_page
+
+    mode = current_mode()
+    if mode == "NBR Supply":
+        render_nbr_page(
+            "district",
+            selected_district=st.session_state.get("dx_district"),
+        )
+        return
+
     try:
         district = data.load_district()
         national = data.load_national()
@@ -658,3 +668,9 @@ def render_district_explorer():
         "weighted survey results, not live measurements. Differences alone "
         "do not establish statistical significance or explain their causes.</div>"
     )
+    if mode == "Combined":
+        render_combined_context(
+            cfg["variable"],
+            district=selected_district,
+            include_map=True,
+        )

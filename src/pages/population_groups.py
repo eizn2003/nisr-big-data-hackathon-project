@@ -114,6 +114,17 @@ def _controls(indicators):
 
 
 def render_population_groups():
+    from src.nbr_dashboard import (
+        current_mode,
+        render_combined_context,
+        render_nbr_page,
+    )
+
+    mode = current_mode()
+    if mode == "NBR Supply":
+        render_nbr_page("population")
+        return
+
     try:
         frame = load_group_data()
     except (FileNotFoundError, ValueError) as error:
@@ -327,3 +338,9 @@ def render_population_groups():
                 "respondent counts are unweighted valid sample sizes. Margins are indicative (simple random "
                 "sampling) and understate design-based uncertainty. NBR context is not combined with these estimates; "
                 "Education is FinScope-only. Differences alone do not establish causation.</div>")
+    if mode == "Combined":
+        subgroup_type = "Gender" if group_type == "Gender" else group_type
+        render_combined_context(
+            item["variable"],
+            subgroup_type=subgroup_type,
+        )
