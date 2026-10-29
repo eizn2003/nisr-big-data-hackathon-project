@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from pymongo.errors import PyMongoError
 
 from src import data
 from src.indicators import BY_COLUMN, CORE, REGISTRY
-from src.pages.district_explorer import _trace_classes
+from src.pages.district_explorer import build_map
 from src.styles import (
     PALETTE,
     badge,
@@ -27,7 +28,9 @@ def _open_district_explorer():
 # --------------------------------------------------------------------------
 # Hero KPIs (core four indicators)
 # --------------------------------------------------------------------------
-def _kpi_html(national):
+def _kpi_html(national, context=None):
+    """Headline cards. `context` maps a FinScope variable to a compact NBR strip (Combined mode)."""
+    context = context or {}
     cards = []
     for item in CORE:
         row = national.loc[national["Indicator"].eq(item["national"])]
@@ -35,14 +38,14 @@ def _kpi_html(national):
             continue
         row = row.iloc[0]
         value = float(row["Estimate (%)"])
-        source = row["Source variable"] if "Source variable" in row.index else item["variable"]
         cards.append(
             f"""
             <div class="kpi" style="--accent:{item['accent']}">
               <div class="kpi-label"><i></i><span>{esc(item['kpi_label'])}</span></div>
               <div class="kpi-value">{value:.1f}<small>%</small></div>
               <div class="kpi-track"><div class="kpi-fill" style="width:{min(value, 100):.1f}%"></div></div>
-              <div class="kpi-src">Source variable: {esc(source)}</div>
+              <div class="kpi-src">Share of adults · FinScope 2024</div>
+              {context.get(item["variable"], "")}
             </div>
             """
         )
@@ -256,25 +259,43 @@ def _district_family_figure(rows):
 # --------------------------------------------------------------------------
 # District map
 # --------------------------------------------------------------------------
-def _map_figure(district, geojson, center, metric, item):
-    Choropleth, _, key = _trace_classes()
-    lo, hi = float(district[metric].min()), float(district[metric].max())
-    fig = go.Figure(Choropleth(
-        geojson=geojson, featureidkey="properties.shapeName",
-        locations=district["District"], z=district[metric], zmin=lo, zmax=hi, colorscale=item["scale"],
-        marker=dict(opacity=0.92, line=dict(color="#FFFFFF", width=0.9)),
-        hovertemplate="<b>%{location}</b><br>" + item["label"] + ": %{z:.1f}%<extra></extra>",
-        colorbar=dict(orientation="h", x=0.02, y=0.03, xanchor="left", yanchor="bottom", len=0.42,
-                      thickness=10, nticks=4, ticksuffix="%", outlinewidth=0,
-                      bgcolor="rgba(255,255,255,.88)", xpad=12, ypad=8,
-                      tickfont=dict(size=11, color=PALETTE["ink"]))))
-    fig.update_layout(**{key: dict(style="carto-positron",
-                                   center=dict(lat=center[0], lon=center[1]), zoom=6.8)})
-    fig.update_layout(height=520, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)",
-                      dragmode=False,
-                      hoverlabel=dict(bgcolor=PALETTE["ink"], bordercolor=PALETTE["ink"],
-                                      font=dict(color="#FFFFFF", size=12.5)))
-    return fig
+def _map_figure(
+    district,
+    geojson,
+    centers,
+    center,
+    metric,
+    item,
+    national_est,
+    *,
+    supply_points=(),
+):
+    frame = district.copy()
+    frame["rank"] = frame[metric].rank(ascending=False, method="min")
+    frame["diff"] = frame[metric] - national_est
+    settings = {
+        "basemap": "Light",
+        "palette": "Indicator colours",
+        "opacity": 0.92,
+        "spotlight": "Off",
+        "labels": False,
+        "tilt": 0,
+        "rotation": 0,
+        "zoom": 6.8,
+    }
+    return build_map(
+        frame,
+        geojson,
+        centers,
+        center,
+        item,
+        metric,
+        national_est,
+        str(frame["District"].iloc[0]),
+        item["short"],
+        settings,
+        supply_points=supply_points,
+    )
 
 
 def _ranking_html(district, metric, item):
@@ -301,7 +322,13 @@ def _ranking_html(district, metric, item):
 # Page
 # --------------------------------------------------------------------------
 def render_national_overview():
-    from src.nbr_dashboard import current_mode, render_combined_context, render_nbr_page
+    from src.pages.nbr_dashboard import (
+        combined_strip,
+        current_mode,
+        load_combined_context_data,
+        render_combined_context,
+        render_nbr_page,
+    )
 
     mode = current_mode()
     if mode == "NBR Supply":
@@ -319,15 +346,38 @@ def render_national_overview():
 
     nat = dict(zip(national["Indicator"], national["Estimate (%)"].astype(float)))
 
-    # ---- Hero + headline indicators (unchanged design) ------------------
+    # ---- Hero + headline indicators ----------------------------------------
+    # Combined mode: an approved, related NBR series is folded into the card it
+    # relates to. Cards with no defensible related series stay exactly as in FinScope mode.
+    kpi_context, kpi_notes = {}, []
+    if mode == "Combined":
+        for item in CORE:
+            strip, entry = combined_strip(item["variable"], scope="National")
+            if strip:
+                kpi_context[item["variable"]] = strip
+                kpi_notes.append((item["kpi_label"], entry))
     page_header(
         "Financial inclusion across Rwanda",
         "How people bank, use mobile money, borrow and save, based on "
         "weighted FinScope survey estimates.",
         pill="FinScope Rwanda 2024",
         size="tall",
-        below_html=_kpi_html(national),
+        below_html=_kpi_html(national, kpi_context),
     )
+    if kpi_notes:
+        with st.expander("About the NBR lines in these cards"):
+            st.caption(
+                "NBR figures are administrative counts or volumes in their own units. "
+                "They add supply-side context and never change the FinScope percentage."
+            )
+            for label, entry in kpi_notes:
+                st.markdown(
+                    f"**{esc(label)}** · {esc(entry['metric_label'])} "
+                    f"({esc(entry.get('unit') or 'unit not specified')}). {esc(entry['limitations'])}"
+                )
+        for item in CORE:
+            if item["kpi_label"] in {label for label, _ in kpi_notes}:
+                render_combined_context(item["variable"])
     st.markdown("")
 
     # ---- What stands out ---------------------------------------------------
@@ -369,6 +419,12 @@ def render_national_overview():
                                     for p in points))
                 render_html('<div class="micro">These are separate survey questions, so they describe '
                             "participation, not the amount saved or whether savings are adequate.</div>")
+                if mode == "Combined":
+                    for variable in ("g3a_11", "qf4_06"):
+                        strip, _ = combined_strip(variable, scope="National")
+                        if strip:
+                            render_html(strip)
+                            render_combined_context(variable)
         st.markdown("")
 
     # ---- Urban and rural ------------------------------------------------------
@@ -474,6 +530,16 @@ def render_national_overview():
             or list(options.keys())[0]
         item = options[picked]
         metric = item["column"]
+        nbr_entries = []
+        nbr_source_version = None
+        if mode == "Combined":
+            try:
+                nbr_entries, nbr_source_version = load_combined_context_data(
+                    item["variable"],
+                    geography_level="district",
+                )
+            except (RuntimeError, ValueError, OSError, PyMongoError):
+                st.caption("NBR map context is unavailable; FinScope estimates are unchanged.")
 
         low = district.loc[district[metric].idxmin()]
         high = district.loc[district[metric].idxmax()]
@@ -482,7 +548,7 @@ def render_national_overview():
 
         try:
             geojson = data.load_geojson()
-            _, center = data.geo_summary(geojson)
+            centers, center = data.geo_summary(geojson)
             map_ok = True
         except Exception:
             map_ok = False
@@ -495,12 +561,54 @@ def render_national_overview():
           <div class="gap"><span>District range</span><b>{spread:.1f} pp</b></div>
         </div>""")
 
+        selected_nbr_entry = None
+        supply_points = []
+        if mode == "Combined" and nbr_entries:
+            if len(nbr_entries) == 1:
+                selected_nbr_entry = nbr_entries[0]
+            else:
+                selected_index = st.selectbox(
+                    "NBR marker series",
+                    range(len(nbr_entries)),
+                    format_func=lambda index: (
+                        f"{nbr_entries[index]['metric_label']} · "
+                        f"{nbr_entries[index].get('unit') or 'unit not specified'} · "
+                        + " · ".join(
+                            f"{key}: {value}"
+                            for key, value in sorted(nbr_entries[index]["filters"].items())
+                        )
+                    ),
+                    key=f"overview_nbr_map_series_{item['variable']}_{nbr_source_version}",
+                )
+                selected_nbr_entry = nbr_entries[selected_index]
+            latest_date = max(
+                (str(point["reporting_date"]) for point in selected_nbr_entry["points"]),
+                default="",
+            )
+            supply_points = [
+                point for point in selected_nbr_entry["points"]
+                if str(point["reporting_date"]) == latest_date
+            ]
+
         if map_ok:
             map_col, list_col = st.columns([1.35, 1], gap="large")
             with map_col:
-                st.plotly_chart(_map_figure(district, geojson, center, metric, item),
+                card_title(
+                    "District pattern",
+                    "FinScope estimates use the shaded map; NBR supply observations, when available, use separate markers and units.",
+                )
+                st.plotly_chart(_map_figure(
+                    district,
+                    geojson,
+                    centers,
+                    center,
+                    metric,
+                    item,
+                    float(nat[item["national"]]),
+                    supply_points=supply_points,
+                ),
                                 use_container_width=True, key="ov_district_map",
-                                config={"displayModeBar": False, "scrollZoom": False})
+                                config={"displayModeBar": False, "scrollZoom": True})
             with list_col:
                 render_html(_ranking_html(district, metric, item))
                 st.button("Open the District explorer", key="ov_open_districts",
@@ -511,6 +619,30 @@ def render_national_overview():
         render_html(f'<div class="micro">A typical district estimate carries a sampling margin of about '
                     f"±{typical:.1f} pp (indicative), so gaps between neighbouring districts of that size "
                     "or smaller should not be over-interpreted.</div>")
+
+        if selected_nbr_entry is not None:
+            unit = selected_nbr_entry.get("unit") or "unit not specified"
+            filters = " · ".join(
+                f"{key}: {value}"
+                for key, value in sorted(selected_nbr_entry["filters"].items())
+            ) or "Filters not recorded"
+            with st.expander(
+                f"NBR observations · {selected_nbr_entry['metric_label']} · {unit}"
+            ):
+                st.caption(
+                    f"Administrative values on {latest_date} · {filters}. "
+                    "These are not FinScope ownership estimates."
+                )
+                st.dataframe(
+                    pd.DataFrame([{
+                        "District": point["geography"],
+                        "Observed value": point["value"],
+                        "Unit": unit,
+                        "Reporting date": point["reporting_date"],
+                    } for point in supply_points]),
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
         with st.expander("View district data"):
             show_district_table(district, sort_by=metric, key="download_district_results",
@@ -524,8 +656,3 @@ def render_national_overview():
          "of access to credit.")
     render_html('<div class="src-note">Source: FinScope Rwanda 2024. See Methodology &amp; sources for '
                 "indicator definitions, data checks and limitations.</div>")
-    if mode == "Combined":
-        render_combined_context(
-            item["variable"],
-            include_map=True,
-        )

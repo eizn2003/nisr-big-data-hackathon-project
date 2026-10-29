@@ -1,11 +1,15 @@
+import math
+
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 import streamlit as st
+from pymongo.errors import PyMongoError
 
 from src import data
 from src.briefs import district_brief
 from src.indicators import REGISTRY, available
+from src.pages.nbr_dashboard import context_strip_html, fmt_value
 from src.styles import (
     INDICATOR_THEME,
     PALETTE,
@@ -96,8 +100,21 @@ def _outline_layer(geojson, names, color, width, opacity=1.0):
     )
 
 
-def build_map(df, geojson, centers, center, cfg, metric, national_est,
-              selected, short, settings):
+def build_map(
+    df,
+    geojson,
+    centers,
+    center,
+    cfg,
+    metric,
+    national_est,
+    selected,
+    short,
+    settings,
+    *,
+    value_unit="%",
+    supply_points=(),
+):
     Choropleth, Labels, key = _trace_classes()
     base = BASEMAPS[settings["basemap"]]
     dark = base["dark"]
@@ -107,9 +124,41 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
         else settings["palette"]
     )
     lo, hi = float(df[metric].min()), float(df[metric].max())
+    if hi <= lo:
+        hi = lo + max(abs(lo) * 1e-6, 1e-6)
 
-    customdata = df[["Valid respondents", "rank", "diff"]].to_numpy()
+    respondents = (
+        df["Valid respondents"].to_numpy()
+        if "Valid respondents" in df
+        else [None] * len(df)
+    )
+    ranks = df["rank"].to_numpy() if "rank" in df else [None] * len(df)
+    differences = df["diff"].to_numpy() if "diff" in df else [None] * len(df)
+    customdata = list(zip(respondents, ranks, differences))
     n = len(df)
+    if national_est is None:
+        hovertemplate = (
+            "<b>%{location}</b><br>"
+            + esc(short)
+            + ": <b>%{z:,.4g}</b> "
+            + esc(value_unit or "unit not specified")
+            + "<br>Rank %{customdata[1]:.0f} of "
+            + str(n)
+            + "<extra></extra>"
+        )
+        colorbar_title = f"{short} · {value_unit or 'unit not specified'}"
+        colorbar_suffix = ""
+    else:
+        hovertemplate = (
+            "<b>%{location}</b><br>"
+            + short
+            + ": <b>%{z:.1f}%</b><br>"
+            + f"Rank %{{customdata[1]:.0f}} of {n} · "
+            + "%{customdata[2]:+.1f} pp vs national<br>"
+            + "%{customdata[0]:,.0f} respondents<extra></extra>"
+        )
+        colorbar_title = short
+        colorbar_suffix = "%"
 
     fig = go.Figure(
         Choropleth(
@@ -127,20 +176,13 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
             selected=dict(marker=dict(opacity=settings["opacity"])),
             unselected=dict(marker=dict(opacity=settings["opacity"])),
             customdata=customdata,
-            hovertemplate=(
-                "<b>%{location}</b><br>"
-                + short
-                + ": <b>%{z:.1f}%</b><br>"
-                + f"Rank %{{customdata[1]:.0f}} of {n} · "
-                + "%{customdata[2]:+.1f} pp vs national<br>"
-                + "%{customdata[0]:,.0f} respondents<extra></extra>"
-            ),
+            hovertemplate=hovertemplate,
             colorbar=dict(
-                title=dict(text=short, side="top", font=dict(size=11)),
+                title=dict(text=colorbar_title, side="top", font=dict(size=11)),
                 orientation="h",
                 x=0.02, y=0.04, xanchor="left", yanchor="bottom",
                 len=0.34, thickness=10, nticks=4,
-                ticksuffix="%", outlinewidth=0,
+                ticksuffix=colorbar_suffix, outlinewidth=0,
                 bgcolor="rgba(14,42,53,.78)" if dark else "rgba(255,255,255,.88)",
                 tickfont=dict(size=11, color="#FFFFFF" if dark else PALETTE["ink"]),
                 xpad=12, ypad=10,
@@ -148,7 +190,50 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
         )
     )
 
-    if settings["labels"]:
+    if supply_points:
+        marker_class = go.Scattermap if hasattr(go, "Scattermap") else go.Scattermapbox
+        visible_supply = [
+            point for point in supply_points
+            if point.get("geography") in centers
+        ]
+        if visible_supply:
+            values = [float(point["value"]) for point in visible_supply]
+            low_supply, high_supply = min(values), max(values)
+            marker_sizes = [
+                11 + (
+                    14 * math.sqrt((value - low_supply) / (high_supply - low_supply))
+                    if high_supply > low_supply else 7
+                )
+                for value in values
+            ]
+            fig.add_trace(marker_class(
+                lat=[centers[str(point["geography"])][0] for point in visible_supply],
+                lon=[centers[str(point["geography"])][1] for point in visible_supply],
+                text=[str(point["geography"]) for point in visible_supply],
+                customdata=[[
+                    point.get("metric_label", ""),
+                    fmt_value(point.get("value")),
+                    point.get("unit") or "unit not specified",
+                    point.get("reporting_date", ""),
+                    str(point["geography"]),
+                ] for point in visible_supply],
+                mode="markers",
+                marker=dict(
+                    size=marker_sizes,
+                    color=PALETTE["ink2"],
+                    opacity=0.86,
+                ),
+                selected=dict(marker=dict(opacity=0.86)),
+                unselected=dict(marker=dict(opacity=0.86)),
+                name="NBR supply · marker size",
+                hovertemplate=(
+                    "<b>%{text}</b><br>NBR · %{customdata[0]}: "
+                    "<b>%{customdata[1]} %{customdata[2]}</b><br>"
+                    "Reported %{customdata[3]}<extra>NBR supply</extra>"
+                ),
+            ))
+
+    if settings.get("labels", False):
         span = max(hi - lo, 1e-9)
         try:
             fills = sample_colorscale(scale, [(v - lo) / span for v in df[metric]])
@@ -275,6 +360,19 @@ def _jump_to(name):
     st.session_state["dx_district"] = name
 
 
+def _kpi_context(entry, district_name):
+    """NBR trend for the selected district, shown inside the primary KPI card."""
+    if not entry:
+        return ""
+    local = [p for p in entry["points"] if p.get("geography") == district_name]
+    if local:
+        return context_strip_html(entry, local)
+    return (
+        '<div class="nbr-ctx"><div class="nbr-ctx-meta">'
+        f'NBR · {esc(entry["metric_label"])}: no observation for this district</div></div>'
+    )
+
+
 def _clicked_district(event, names):
     points = []
     try:
@@ -282,10 +380,13 @@ def _clicked_district(event, names):
     except AttributeError:
         points = []
     for point in points:
-        if point.get("curve_number", 0) != 0:
-            continue
-        name = point.get("location")
-        if name in names:
+        custom = point.get("customdata")
+        name = (
+            point.get("location")
+            or point.get("text")
+            or (custom[-1] if isinstance(custom, (list, tuple)) and custom else None)
+        )
+        if isinstance(name, str) and name in names:
             return name
     return None
 
@@ -294,7 +395,12 @@ def _clicked_district(event, names):
 # Page
 # --------------------------------------------------------------------------
 def render_district_explorer():
-    from src.nbr_dashboard import current_mode, render_combined_context, render_nbr_page
+    from src.pages.nbr_dashboard import (
+        current_mode,
+        load_combined_context_data,
+        render_combined_context,
+        render_nbr_page,
+    )
 
     mode = current_mode()
     if mode == "NBR Supply":
@@ -342,6 +448,37 @@ def render_district_explorer():
     cfg = present[indicator_name]
     metric = cfg["column"]
     selected_district = st.session_state["dx_district"]
+    combined_entries = []
+    combined_version = None
+    if mode == "Combined":
+        try:
+            combined_entries, combined_version = load_combined_context_data(
+                cfg["variable"],
+                geography_level="district",
+            )
+        except (RuntimeError, ValueError, OSError, PyMongoError) as error:
+            combined_context_error = error
+        else:
+            combined_context_error = None
+    else:
+        combined_context_error = None
+    series_key = f"combined_dx_series_{cfg['variable']}_{combined_version or 'none'}"
+    if combined_entries:
+        series_index = st.session_state.get(series_key, 0)
+        if not isinstance(series_index, int) or series_index >= len(combined_entries):
+            series_index = 0
+        combined_entry = combined_entries[series_index]
+        latest_date = max(
+            (str(point["reporting_date"]) for point in combined_entry["points"]),
+            default="",
+        )
+        overlay_points = [
+            point for point in combined_entry["points"]
+            if str(point["reporting_date"]) == latest_date
+        ]
+    else:
+        combined_entry = None
+        overlay_points = []
 
     nat_hit = national.loc[
         national["Indicator"].eq(cfg["national_label"]), "Estimate (%)"
@@ -373,7 +510,8 @@ def render_district_explorer():
         below_html=kpi_grid(
             [
                 kpi_card("Selected district", f"{est:.1f}", "%", est, cfg["accent"],
-                         f"<b>{esc(selected_district)}</b> · ±{margin:.1f} pp indicative"),
+                         f"<b>{esc(selected_district)}</b> · ±{margin:.1f} pp indicative"
+                         + _kpi_context(combined_entry, selected_district)),
                 kpi_card("National estimate", f"{national_est:.1f}", "%", national_est,
                          PALETTE["ink2"], "Weighted national level"),
                 kpi_card("Difference from national", f"{diff:+.1f}", " pp",
@@ -399,6 +537,18 @@ def render_district_explorer():
             default=list(present.keys())[0],
             key="dx_indicator",
         )
+        if combined_entries and len(combined_entries) > 1:
+            st.selectbox(
+                "NBR supply series",
+                range(len(combined_entries)),
+                format_func=lambda index: (
+                    f"{combined_entries[index]['metric_label']} · "
+                    f"{combined_entries[index].get('unit') or 'unit not specified'}"
+                ),
+                key=series_key,
+            )
+        if combined_context_error is not None:
+            st.caption("NBR supply context is temporarily unavailable; FinScope estimates are unchanged.")
         c_dist, c_set = st.columns([2.2, 1], gap="medium", vertical_alignment="bottom")
         with c_dist:
             st.selectbox("District", names, key="dx_district")
@@ -449,7 +599,9 @@ def render_district_explorer():
                     <div class="ct">{esc(cfg['title'])}</div>
                     <div class="cs">Click a district to inspect it · scroll to zoom · drag to pan</div>
                   </div>
-                  <div class="chips">{legend}</div>
+                  <div class="chips">{legend}
+                    {(f'<span class="chip"><i style="background:#163D4B;border-color:#fff"></i>NBR · {esc(combined_entry["metric_label"])} · marker size</span>' if overlay_points else '')}
+                  </div>
                 </div>
                 """
             )
@@ -457,6 +609,7 @@ def render_district_explorer():
             fig = build_map(
                 df, geojson, centers, center, cfg, metric, national_est,
                 selected_district, indicator_name, settings,
+                supply_points=overlay_points,
             )
             event = st.plotly_chart(
                 fig,
@@ -482,6 +635,13 @@ def render_district_explorer():
     with insp_col:
         with st.container(key="card_inspector"):
             render_html(_inspector_html(sel, cfg, metric, national_est, lo, hi, n))
+            if combined_entry is not None:
+                render_combined_context(
+                    cfg["variable"],
+                    district=selected_district,
+                    entries=[combined_entry],
+                    source_version=combined_version,
+                )
             st.button(
                 f"Highest: {highest['District']} · {highest[metric]:.1f}%",
                 key="dx_go_high",
@@ -668,9 +828,3 @@ def render_district_explorer():
         "weighted survey results, not live measurements. Differences alone "
         "do not establish statistical significance or explain their causes.</div>"
     )
-    if mode == "Combined":
-        render_combined_context(
-            cfg["variable"],
-            district=selected_district,
-            include_map=True,
-        )

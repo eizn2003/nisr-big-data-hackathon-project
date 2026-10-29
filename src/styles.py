@@ -352,13 +352,14 @@ div[data-baseweb="select"] > div:hover{border-color:var(--teal);}
   padding:7px 13px; border-radius:999px; background:rgba(255,255,255,.10);
   border:1px solid rgba(255,255,255,.18); font-size:12.5px; font-weight:600; color:#E6F0F2;
 }
+.pg-pill .badge{font-size:10px; padding:2px 7px; background:rgba(255,243,214,.14); color:#FFE8AE; border-color:rgba(255,232,174,.32);}
 .pg-pill i{width:7px; height:7px; border-radius:50%; background:var(--sun); display:inline-block;}
 .pg-art{position:absolute; right:0; bottom:0; width:58%; height:100%; z-index:1; pointer-events:none;}
 .pg-hero.compact .pg-art{width:40%; opacity:.8;}
 
 /* ---------- KPI cards ---------- */
 .kpi-grid{
-  display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px;
+  display:grid; grid-template-columns:repeat(var(--kpi-columns,4),minmax(0,1fr)); gap:16px;
   margin:-66px 24px 0; position:relative; z-index:3;
 }
 .kpi{
@@ -626,9 +627,13 @@ def apply_global_styles():
 # --------------------------------------------------------------------------
 # Components
 # --------------------------------------------------------------------------
-def page_header(title, subtitle, pill=None, size="tall", below_html=""):
+def page_header(title, subtitle, pill=None, size="tall", below_html="", pill_badge=None):
     """Hero header. size: 'tall' (overlaps a KPI row) or 'compact'."""
-    pill_html = f'<div class="pg-pill"><i></i>{esc(pill)}</div>' if pill else ""
+    pill_badge_html = badge(pill_badge, "warn") if pill_badge else ""
+    pill_html = (
+        f'<div class="pg-pill"><i></i>{esc(pill)}{pill_badge_html}</div>'
+        if pill else ""
+    )
     render_html(
         f"""
         <div class="pg-hero {size}">
@@ -657,8 +662,8 @@ def kpi_card(label, value, small="", fill=0, accent="#1A8A7D", src=""):
     """
 
 
-def kpi_grid(cards):
-    return f'<div class="kpi-grid">{"".join(cards)}</div>'
+def kpi_grid(cards, columns=4):
+    return f'<div class="kpi-grid" style="--kpi-columns:{columns}">{"".join(cards)}</div>'
 
 
 def badge(text, tone="info"):

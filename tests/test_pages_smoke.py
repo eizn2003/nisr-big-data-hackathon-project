@@ -84,7 +84,7 @@ def test_full_app_navigation():
     script = f"import sys; sys.path.insert(0, r'{ROOT}')\n" + source
     at = AppTest.from_string(script, default_timeout=90).run()
     assert not at.exception, [e.value for e in at.exception]
-    assert at.session_state["global_dashboard_mode"] == "FinScope"
+    assert at.session_state["global_dashboard_mode"] == "Combined"
     pages = [
         "National overview",
         "District explorer",
@@ -98,7 +98,13 @@ def test_full_app_navigation():
         at.button(key=f"nav_{index}").click().run()
         assert not at.exception, (label, [e.value for e in at.exception])
         assert at.session_state["selected_page"] == label
-        assert at.session_state["global_dashboard_mode"] == "FinScope"
+        assert at.session_state["global_dashboard_mode"] == "Combined"
+
+    at.button(key="dashboard_mode_finscope").click().run()
+    at.button(key="nav_1").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state["selected_page"] == "District explorer"
+    assert at.session_state["global_dashboard_mode"] == "FinScope"
 
     at.button(key="dashboard_mode_nbr_supply").click().run()
     at.button(key="nav_4").click().run()

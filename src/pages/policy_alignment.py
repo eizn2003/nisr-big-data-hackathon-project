@@ -155,7 +155,7 @@ def _evidence_actions(nat, district, groups):
 
 
 def render_policy_alignment():
-    from src.nbr_dashboard import render_methodology_mode_note
+    from src.pages.nbr_dashboard import render_methodology_mode_note
 
     render_methodology_mode_note()
     try:

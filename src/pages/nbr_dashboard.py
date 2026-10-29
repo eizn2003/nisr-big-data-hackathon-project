@@ -26,7 +26,6 @@ from src.models.nbr_intelligence.experiment import (
 from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
 from src.styles import (
     PALETTE,
-    badge,
     card_title,
     esc,
     kpi_card,
@@ -40,6 +39,13 @@ from src.styles import (
 
 MODE_KEY = "global_dashboard_mode"
 MODES = ("Combined", "FinScope", "NBR Supply")
+DEFAULT_MODE = "Combined"
+MODE_ACCENTS = {
+    "Combined": "#1A8A7D",
+    "FinScope": "#1A8A7D",
+    "NBR Supply": "#2F6FB3",
+}
+SUPPLY_ACCENT = "#2F6FB3"
 NBR_NOTICE = (
     "This feature is in beta. Administrative trends and intelligence findings "
     "are experimental signals intended to support exploration and human review. "
@@ -62,6 +68,50 @@ NBR_PAGE_LABELS = {
     "savings": "Savings",
     "transactional": "Transactional",
 }
+NATIONAL_HEADER_KPIS = (
+    {
+        "page": "transactional",
+        "page_label": "Transactional",
+        "metric": "Total Accounts",
+        "label": "Active transactional accounts",
+        "unit": "accounts",
+        "filters": {
+            "Gender": "All",
+            "Age Segment": "All",
+            "Account Status": "Active",
+            "Account Type": "All",
+            "Institution Type": "All",
+            "Location": "All",
+        },
+        "context": "Accounts are not necessarily unique people.",
+    },
+    {
+        "page": "pos",
+        "page_label": "POS",
+        "metric": "Total POS",
+        "label": "Active POS terminals",
+        "unit": "terminals",
+        "filters": {
+            "Terminal Status": "Active",
+            "Institution Type": "All",
+            "Location": "All",
+        },
+        "context": "Terminal count; not transaction volume or service coverage.",
+    },
+    {
+        "page": "branches",
+        "page_label": "Branches",
+        "metric": "Total Branches",
+        "label": "Active branches",
+        "unit": "branches",
+        "filters": {
+            "Branch Status": "Active",
+            "Institution Type": "All",
+            "Location": "All",
+        },
+        "context": "Branch count; not a customer or inclusion measure.",
+    },
+)
 _DIMENSIONS = {
     "Gender": "Gender",
     "Age Segment": "Age Segment (NBR Youth/Non-Youth)",
@@ -69,13 +119,14 @@ _DIMENSIONS = {
 
 
 def current_mode() -> str:
-    mode = st.session_state.get(MODE_KEY, "FinScope")
-    return mode if mode in MODES else "FinScope"
+    mode = st.session_state.get(MODE_KEY, DEFAULT_MODE)
+    return mode if mode in MODES else DEFAULT_MODE
 
 
 def render_mode_selector() -> None:
     if MODE_KEY not in st.session_state:
-        st.session_state[MODE_KEY] = "FinScope"
+        st.session_state[MODE_KEY] = DEFAULT_MODE
+    inject_nbr_styles()
     st.markdown(
         '<div class="sb-mode-label">Analysis mode</div>',
         unsafe_allow_html=True,
@@ -91,7 +142,7 @@ def render_mode_selector() -> None:
                 on_click=_set_mode,
                 args=(mode,),
                 help={
-                    "Combined": "Survey results with separate NBR context.",
+                    "Combined": "FinScope survey results with NBR supply context alongside.",
                     "FinScope": "FinScope survey results only.",
                     "NBR Supply": "NBR administrative observations only.",
                 }[mode],
@@ -116,18 +167,197 @@ def _set_mode(mode: str) -> None:
     st.session_state[MODE_KEY] = mode
 
 
-def render_beta_notice() -> None:
-    render_html = (
-        '<div style="display:flex;gap:10px;align-items:flex-start;'
-        'padding:12px 15px;border:1px solid #E8C86B;border-radius:12px;'
-        'background:#FFF9E8;color:#4D421F;margin:8px 0 16px">'
-        '<span style="font-size:11px;font-weight:800;letter-spacing:.08em;'
-        'padding:3px 7px;border-radius:6px;background:#F2B84B;color:#0E2A35">'
-        'BETA</span><span style="font-size:12.5px;line-height:1.55">'
-        + esc(NBR_NOTICE)
-        + "</span></div>"
+BETA_SUMMARY = (
+    "Experimental administrative observations for exploration."
+)
+
+_NBR_CSS = """
+:root{--nbr-accent:%(supply)s;--mode-accent:%(mode)s;--nbr-ink:#163D4B;--nbr-muted:#5B7480;--nbr-line:#DCE5E8;}
+.nbr-tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:5px;background:rgba(47,111,179,.12);color:var(--nbr-accent);white-space:nowrap}
+.nbr-tag.beta{background:#FFF1CC;color:#6B4E00}
+.nbr-beta{display:flex;gap:10px;align-items:center;margin:2px 0 14px;padding:8px 12px;border-left:3px solid #E0A12F;background:#FFFAEE;color:#4D421F;font-size:12.5px;line-height:1.5;border-radius:4px}
+.nbr-ctx{margin-top:10px;padding-top:9px;border-top:1px solid var(--nbr-line);font-size:12px;color:var(--nbr-muted)}
+.nbr-ctx-top{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+.nbr-ctx-label{font-weight:600;color:var(--nbr-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nbr-ctx-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.nbr-ctx-val{font-size:17px;font-weight:700;color:var(--nbr-ink);font-variant-numeric:tabular-nums;line-height:1.2}
+.nbr-ctx-val small{font-size:11.5px;font-weight:500;color:var(--nbr-muted);margin-left:3px}
+.nbr-ctx-meta{margin-top:2px;font-size:11.5px;color:var(--nbr-muted)}
+.nbr-ctx svg{flex:none;overflow:visible}
+.nbr-ctx-stack .nbr-ctx{margin-top:0;border-top:0;padding:10px 0 2px}
+.nbr-empty{padding:22px 20px;border:1px dashed var(--nbr-line);border-radius:10px;background:rgba(255,255,255,.55);text-align:left}
+.nbr-empty b{display:block;font-size:14.5px;color:var(--nbr-ink);margin-bottom:4px}
+.nbr-empty span{font-size:13px;color:var(--nbr-muted);line-height:1.55}
+@media (max-width:640px){.nbr-ctx-val{font-size:15px}.nbr-beta{font-size:12px}}
+"""
+
+
+def inject_nbr_styles() -> None:
+    """Add the small set of NBR/Combined classes on top of the shared stylesheet."""
+    css = _NBR_CSS % {"supply": SUPPLY_ACCENT, "mode": MODE_ACCENTS[current_mode()]}
+    render_html("<style>" + " ".join(css.split()) + "</style>")
+
+
+def fmt_value(value: Any) -> str:
+    """Readable number: thousands separators for counts, 4 significant figures otherwise."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if math.isnan(number):
+        return "n/a"
+    return f"{number:,.0f}" if abs(number) >= 1000 else f"{number:,.4g}"
+
+
+def fmt_delta(value: float) -> str:
+    return ("+" if value > 0 else "-" if value < 0 else "") + fmt_value(abs(value))
+
+
+def _national_supply_header_html(
+    points: Sequence[Mapping[str, Any]],
+) -> str:
+    """Render the three approved supply KPIs from eligible normalized points."""
+    cards = []
+    for spec in NATIONAL_HEADER_KPIS:
+        series = [
+            point for point in points
+            if point.get("page") == spec["page"]
+            and point.get("metric_label") == spec["metric"]
+            and point.get("source_type") == "national_kpi"
+            and point.get("geography_level") == "national"
+            and point.get("geography") == "Rwanda"
+            and point.get("filters") == spec["filters"]
+            and point.get("unit") == "count"
+            and point.get("unit_status") == "configured_source_label"
+            and point.get("repeated_snapshot_warning") is not True
+        ]
+        latest = max(
+            series,
+            key=lambda point: str(point.get("reporting_date", "")),
+            default=None,
+        )
+        value = fmt_value(latest["value"]) if latest else "Unavailable"
+        reporting_date = (
+            esc(latest["reporting_date"]) if latest else "No eligible observation"
+        )
+        source = (
+            f"NBR {esc(spec['page_label'])} · {esc(spec['metric'])}<br>"
+            f"{reporting_date} · {esc(_filter_label(spec['filters']))}<br>"
+            f"{esc(spec['context'])}"
+        )
+        cards.append(kpi_card(
+            spec["label"],
+            esc(value),
+            spec["unit"],
+            0,
+            SUPPLY_ACCENT,
+            source,
+        ))
+    return kpi_grid(cards, columns=3)
+
+
+def kpi_trend_html(points: Sequence[Mapping[str, Any]]) -> str:
+    """Sparkline row for the primary NBR KPI, so supply mode matches Combined mode."""
+    series = sorted(points, key=lambda item: str(item.get("reporting_date", "")))
+    if len(series) < 2:
+        return ""
+    return (
+        '<div class="nbr-ctx"><div class="nbr-ctx-row"><div class="nbr-ctx-meta">'
+        f"{len(series)} reports since {esc(series[0]['reporting_date'])}</div>"
+        f"{sparkline_svg([p['value'] for p in series])}</div></div>"
     )
-    st.markdown(render_html, unsafe_allow_html=True)
+
+
+def humanize(text: Any) -> str:
+    """Turn an internal relationship code into plain words."""
+    return str(text or "").replace("_", " ").strip().capitalize()
+
+
+def empty_state(title: str, body: str) -> None:
+    render_html(
+        f'<div class="nbr-empty"><b>{esc(title)}</b><span>{esc(body)}</span></div>'
+    )
+
+
+def sparkline_svg(
+    values: Sequence[float],
+    *,
+    width: int = 104,
+    height: int = 30,
+    color: str = SUPPLY_ACCENT,
+) -> str:
+    """Tiny inline trend line. Only observed points are drawn; nothing is interpolated."""
+    numbers = [float(v) for v in values if v is not None and not math.isnan(float(v))]
+    if not numbers:
+        return ""
+    pad = 4
+    low, high = min(numbers), max(numbers)
+    span = high - low
+    inner_w, inner_h = width - 2 * pad, height - 2 * pad
+
+    def point(index: int, number: float) -> tuple[float, float]:
+        x = pad + (inner_w * index / (len(numbers) - 1) if len(numbers) > 1 else inner_w / 2)
+        y = pad + (inner_h * (1 - (number - low) / span) if span > 0 else inner_h / 2)
+        return x, y
+
+    coords = [point(i, n) for i, n in enumerate(numbers)]
+    last_x, last_y = coords[-1]
+    line = (
+        f'<polyline points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in coords)}" fill="none" '
+        f'stroke="{color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+        if len(coords) > 1 else ""
+    )
+    return (
+        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="Trend across {len(numbers)} reporting dates">{line}'
+        f'<circle cx="{last_x:.1f}" cy="{last_y:.1f}" r="3" fill="{color}" stroke="#fff" stroke-width="1.5"/></svg>'
+    )
+
+
+def context_strip_html(
+    entry: Mapping[str, Any],
+    points: Sequence[Mapping[str, Any]] | None = None,
+    *,
+    scope: str = "",
+    other_series: int = 0,
+    show_limitations: bool = False,
+) -> str:
+    """Compact NBR context for a FinScope KPI: label, latest value, trend, date."""
+    series = sorted(
+        points if points is not None else entry.get("points", []),
+        key=lambda item: str(item.get("reporting_date", "")),
+    )
+    if not series:
+        return ""
+    latest = series[-1]
+    unit = str(entry.get("unit") or "").strip()
+    count = len({str(item["reporting_date"]) for item in series})
+    meta = f"{esc(latest['reporting_date'])}"
+    if scope:
+        meta += f" · {esc(scope)}"
+    meta += f" · {count} report{'s' if count != 1 else ''} · context only"
+    if other_series:
+        meta += f" · {other_series} related series in the detail view"
+    return (
+        f'<div class="nbr-ctx" title="{esc(entry.get("limitations", ""))}">'
+        f'<div class="nbr-ctx-top"><span class="nbr-tag">NBR supply</span>'
+        f'<span class="nbr-ctx-label">{esc(entry["metric_label"])}</span></div>'
+        f'<div class="nbr-ctx-row"><div class="nbr-ctx-val">{esc(fmt_value(latest["value"]))}'
+        f'<small>{esc(unit)}</small></div>{sparkline_svg([p["value"] for p in series])}</div>'
+        f'<div class="nbr-ctx-meta">{meta}</div>'
+        + (
+            f'<div class="nbr-ctx-meta">{esc(entry.get("limitations", ""))}</div>'
+            if show_limitations and entry.get("limitations") else ""
+        )
+        + "</div>"
+    )
+
+
+def render_beta_notice() -> None:
+    render_html(
+        f'<div class="nbr-beta" title="{esc(NBR_NOTICE)}"><span class="nbr-tag beta">Beta</span>'
+        f"<span>{esc(BETA_SUMMARY)}</span></div>"
+    )
 
 
 @st.cache_data(ttl=900, show_spinner="Loading validated NBR observations...")
@@ -184,16 +414,6 @@ def _load_nbr_source_documents(
     """Cache a read-only source snapshot, optionally scoped to selected pages."""
     del model_version  # Version is part of the cache key for safe invalidation.
     return load_mongodb_history(pages=pages)
-
-
-@st.cache_data
-def _load_nbr_geo_data() -> tuple[
-    dict[str, Any],
-    dict[str, tuple[float, float]],
-    tuple[float, float],
-]:
-    geojson, centers, center = _load_nbr_geo_data()
-    return geojson, centers, center
 
 
 def _filters_key(filters: Mapping[str, Any]) -> str:
@@ -339,12 +559,12 @@ def _series_label(entry: Mapping[str, Any]) -> str:
         f"{key}={value}" for key, value in sorted(entry["filters"].items())
     )
     relation = ", ".join(
-        sorted({str(item["relationship"]) for item in entry.get("mappings", [])})
+        sorted({humanize(item["relationship"]) for item in entry.get("mappings", [])})
     )
     return (
         f"{entry['display_label']} · {unit} · {entry['geography_level']} · "
         f"{scope or 'filters not recorded'}"
-        + (f" · FinScope mapping: {relation}" if relation else "")
+        + (f" · FinScope link: {relation.lower()}" if relation else "")
     )
 
 
@@ -394,9 +614,18 @@ def _review_candidate_row(
     }
 
 
-def _render_trend(points: Sequence[Mapping[str, Any]], *, title: str) -> None:
+def _render_trend(
+    points: Sequence[Mapping[str, Any]],
+    *,
+    title: str,
+    compact: bool = False,
+    key_suffix: str | None = None,
+) -> None:
     if not points:
-        st.info("No observations are available for this exact series and scope.")
+        empty_state(
+            "No observations to chart",
+            "NBR has not reported this measure for the selected scope. Missing dates are not treated as zero.",
+        )
         return
     ordered = sorted(points, key=lambda point: str(point["reporting_date"]))
     unit = str(ordered[0].get("unit") or "unit not specified")
@@ -404,33 +633,23 @@ def _render_trend(points: Sequence[Mapping[str, Any]], *, title: str) -> None:
         x=[item["reporting_date"] for item in ordered],
         y=[item["value"] for item in ordered],
         mode="lines+markers+text",
-        text=[f"{item['value']:,.4g}" for item in ordered],
+        text=[f"{fmt_value(item['value'])}" for item in ordered],
         textposition="top center",
         marker=dict(size=9, color=PALETTE["blue"]),
         line=dict(color=PALETTE["blue"], width=2.5),
-        customdata=[
-            [
-                item.get("source_record_id", ""),
-                item.get("run_id", ""),
-                item.get("collected_at", ""),
-            ]
-            for item in ordered
-        ],
         hovertemplate=(
-            "<b>%{x}</b><br>Observed: %{y:,.4g} "
+            "<b>%{x}</b><br>Observed: %{y:,.7~r} "
             + esc(unit)
-            + "<br>Source record: %{customdata[0]}"
-            + "<br>Run: %{customdata[1]}"
-            + "<br>Collected: %{customdata[2]}<extra></extra>"
+            + f"<extra>{esc(title)}</extra>"
         ),
     ))
-    fig.update_xaxes(title="NBR reporting date", showgrid=False)
-    fig.update_yaxes(title=f"{title} · {unit}", gridcolor=PALETTE["grid"], rangemode="tozero")
+    fig.update_xaxes(title=None, showgrid=False, type="category")
+    fig.update_yaxes(title=unit, gridcolor=PALETTE["grid"], rangemode="tozero")
     st.plotly_chart(
-        style_chart(fig, 310),
+        style_chart(fig, 170 if compact else 310),
         use_container_width=True,
         config={"displayModeBar": False},
-        key=f"nbr_trend_{hashlib.sha1(title.encode()).hexdigest()[:10]}",
+        key=f"nbr_trend_{hashlib.sha1((key_suffix or title).encode()).hexdigest()[:10]}",
     )
 
 
@@ -443,12 +662,7 @@ def _render_observation_table(points: Sequence[Mapping[str, Any]]) -> None:
             "Metric": point.get("metric_label", ""),
             "Value": point.get("value"),
             "Unit": point.get("unit") or "Not specified",
-            "Unit metadata": point.get("unit_status") or "Unresolved",
-            "Source page": point.get("page", ""),
-            "Source type": point.get("source_type", ""),
-            "Filters": _filters_key(point.get("filters", {})),
-            "Run ID": point.get("run_id", ""),
-            "Source record ID": point.get("source_record_id", ""),
+            "Filters": _filter_label(point.get("filters", {})),
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
@@ -461,6 +675,7 @@ def _mapped_series(
     geography: str | None,
     subgroup_type: str = "",
     subgroup: str = "",
+    relationships: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     if subgroup_type and subgroup_type not in {"Gender"}:
         return []
@@ -469,7 +684,13 @@ def _mapped_series(
         return []
     entries: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     for relationship in mapping["nbr_relationships"]:
-        if relationship["relationship"] == "unsuitable":
+        if (
+            relationship["relationship"] == "unsuitable"
+            or (
+                relationships is not None
+                and relationship["relationship"] not in relationships
+            )
+        ):
             continue
         labels = (
             relationship["national_kpi_labels"]
@@ -514,226 +735,54 @@ def _mapped_series(
                 "limitations": relationship["limitations"],
                 "points": [],
             })
-            entry["points"].append(dict(point))
+            point_id = (
+                str(point.get("source_record_id", "")),
+                str(point.get("reporting_date", "")),
+                str(point.get("geography", "")),
+            )
+            if point_id not in entry.setdefault("_point_ids", set()):
+                entry["points"].append(dict(point))
+                entry["_point_ids"].add(point_id)
     for entry in entries.values():
         entry["points"].sort(key=lambda item: str(item["reporting_date"]))
+        entry.pop("_point_ids", None)
     return list(entries.values())
 
 
-def _render_marker_map(
-    points: Sequence[Mapping[str, Any]],
+def load_combined_context_data(
+    indicator_variable: str,
     *,
-    selected_date: str,
-    title: str,
-) -> None:
-    if not points:
-        st.info("No district-level observations are available to map for this series.")
-        return
-    try:
-        centers, center = data.geo_summary(data.load_geojson())
-    except (FileNotFoundError, ValueError, KeyError) as error:
-        st.warning("The NBR map is unavailable because district boundaries could not be loaded.")
-        st.caption(str(error))
-        return
-    selected = [
-        point for point in points
-        if str(point.get("reporting_date")) == selected_date
-        and point.get("geography") in centers
+    geography_level: str,
+    geography: str | None = None,
+    subgroup_type: str = "",
+    subgroup: str = "",
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Load only explicitly relevant source relationships for a survey view."""
+    mapping = MAPPING_BY_VARIABLE.get(indicator_variable)
+    if mapping is None:
+        return [], None
+    relationships = [
+        item for item in mapping["nbr_relationships"]
+        if item["relationship"] == "contextual_indicator"
+        and geography_level in item["available_levels"]
     ]
-    if not selected:
-        st.info(f"No map-ready district observations are available for {selected_date}.")
-        return
-    values = [float(point["value"]) for point in selected]
-    low, high = min(values), max(values)
-    lat, lon, sizes, hover, custom = [], [], [], [], []
-    for point in selected:
-        latitude, longitude = centers[str(point["geography"])]
-        lat.append(latitude)
-        lon.append(longitude)
-        value = float(point["value"])
-        ratio = (
-            math.sqrt(max(0.0, value - low) / (high - low))
-            if high > low else 0.5
-        )
-        sizes.append(10 + ratio * 22)
-        hover.append(str(point["geography"]))
-        custom.append([
-            value,
-            point.get("metric_label", ""),
-            point.get("unit") or "unit not specified",
-            point.get("page", ""),
-            point.get("source_record_id", ""),
-        ])
-    scatter_class = go.Scattermap if hasattr(go, "Scattermap") else go.Scattermapbox
-    map_key = "map" if hasattr(go, "Scattermap") else "mapbox"
-    fig = go.Figure(scatter_class(
-        lat=lat,
-        lon=lon,
-        text=hover,
-        customdata=custom,
-        mode="markers",
-        marker=dict(size=sizes, color=PALETTE["ink2"], opacity=0.76),
-        name="NBR marker size · selected metric",
-        hovertemplate=(
-            "<b>%{text}</b><br>%{customdata[1]}: %{customdata[0]:,.4g} "
-            "%{customdata[2]}<br>Page: %{customdata[3]}<br>"
-            f"Reporting date: {esc(selected_date)}<br>"
-            "Source record: %{customdata[4]}<extra></extra>"
-        ),
-    ))
-    fig.update_layout(**{
-        map_key: dict(
-            style="carto-positron",
-            center={"lat": center[0], "lon": center[1]},
-            zoom=6.7,
-        )
-    })
-    fig.update_layout(
-        height=510,
-        margin=dict(l=0, r=0, t=0, b=0),
-        paper_bgcolor="rgba(0,0,0,0)",
-        legend=dict(orientation="h"),
+    pages = tuple(sorted({str(item["page"]) for item in relationships}))
+    if not pages:
+        return [], None
+    points, _, _, source_version = load_nbr_dashboard_data(
+        "nbr-dashboard-v2",
+        pages,
     )
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={"displayModeBar": False, "scrollZoom": True},
-        key=f"nbr_map_{hashlib.sha1((title + selected_date).encode()).hexdigest()[:10]}",
+    entries = _mapped_series(
+        points,
+        indicator_variable,
+        geography_level=geography_level,
+        geography=geography,
+        subgroup_type=subgroup_type,
+        subgroup=subgroup,
+        relationships={"contextual_indicator"},
     )
-    st.caption(
-        f"Marker size compares {title} values only within this selected series and date. "
-        "It is not a FinScope color scale, access score, or inclusion measure."
-    )
-
-
-def _nbr_district_map(
-    frame: pd.DataFrame,
-    *,
-    geojson: Mapping[str, Any],
-    centers: Mapping[str, tuple[float, float]],
-    center: tuple[float, float],
-    selected_district: str,
-    metric_label: str,
-    unit: str,
-    reporting_date: str,
-    settings: Mapping[str, Any],
-) -> go.Figure:
-    from src.pages.district_explorer import (
-        BASEMAPS,
-        FEATURE_KEY,
-        _outline_layer,
-        _trace_classes,
-    )
-
-    choropleth, _, map_key = _trace_classes()
-    base = BASEMAPS[settings["basemap"]]
-    values = frame["Value"].astype(float)
-    low, high = float(values.min()), float(values.max())
-    if high == low:
-        high = low + max(abs(low) * 1e-9, 1e-9)
-    colorscale = (
-        [[0, "#EAF6F3"], [0.35, "#9FD3CB"], [0.7, "#3AA597"], [1, "#0E2A35"]]
-        if settings["palette"] == "Indicator colours"
-        else settings["palette"]
-    )
-    layers = []
-    if base.get("tiles"):
-        layers.append({
-            "below": "traces",
-            "sourcetype": "raster",
-            "source": [base["tiles"]],
-            "sourceattribution": "Imagery © Esri",
-        })
-    ordered = frame.sort_values("Value", ascending=False)["District"].tolist()
-    if settings["spotlight"] in {"Top 5", "Both"}:
-        layers.append(_outline_layer(
-            dict(geojson),
-            ordered[:5],
-            PALETTE["ink"],
-            2.4,
-        ))
-    if settings["spotlight"] in {"Bottom 5", "Both"}:
-        layers.append(_outline_layer(
-            dict(geojson),
-            ordered[-5:],
-            PALETTE["coral"],
-            2.4,
-        ))
-    layers.append(_outline_layer(
-        dict(geojson), [selected_district], PALETTE["ink"], 7, 0.55
-    ))
-    layers.append(_outline_layer(
-        dict(geojson), [selected_district], PALETTE["sun"], 3.4
-    ))
-    fig = go.Figure(choropleth(
-        geojson=dict(geojson),
-        featureidkey=FEATURE_KEY,
-        locations=frame["District"],
-        z=frame["Value"],
-        zmin=low,
-        zmax=high,
-        colorscale=colorscale,
-        marker=dict(
-            opacity=settings["opacity"],
-            line=dict(color="#FFFFFF", width=0.9),
-        ),
-        customdata=frame[["Unit", "Source record ID", "Run ID"]].to_numpy(),
-        hovertemplate=(
-            "<b>%{location}</b><br>"
-            + esc(metric_label)
-            + ": <b>%{z:,.4g}</b> %{customdata[0]}<br>"
-            + f"Reporting date: {esc(reporting_date)}<br>"
-            + "Source record: %{customdata[1]}<br>"
-            + "Run: %{customdata[2]}<extra></extra>"
-        ),
-        colorbar=dict(
-            title=dict(text=f"{metric_label} · {unit}", side="top", font=dict(size=11)),
-            orientation="h",
-            x=0.02,
-            y=0.04,
-            xanchor="left",
-            yanchor="bottom",
-            len=0.48,
-            thickness=10,
-            nticks=4,
-            outlinewidth=0,
-            bgcolor="rgba(255,255,255,.9)",
-            tickfont=dict(size=11, color=PALETTE["ink"]),
-        ),
-        selected=dict(marker=dict(opacity=settings["opacity"])),
-        unselected=dict(marker=dict(opacity=settings["opacity"])),
-    ))
-    fig.update_layout(**{
-        map_key: {
-            "style": base["style"],
-            "center": {"lat": center[0], "lon": center[1]},
-            "zoom": settings["zoom"],
-            "pitch": settings["tilt"],
-            "bearing": settings["rotation"],
-            "layers": layers,
-        }
-    })
-    fig.update_layout(
-        height=700,
-        margin=dict(l=0, r=0, t=0, b=0),
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Plus Jakarta Sans, Arial, sans-serif", color=PALETTE["ink"]),
-        hoverlabel=dict(
-            bgcolor=PALETTE["ink"],
-            bordercolor=PALETTE["ink"],
-            font=dict(
-                family="Plus Jakarta Sans, Arial, sans-serif",
-                color="#FFFFFF",
-                size=12.5,
-            ),
-        ),
-        uirevision=(
-            f"{settings['basemap']}-{settings['tilt']}-{settings['rotation']}-"
-            f"{reporting_date}"
-        ),
-        dragmode="pan",
-    )
-    return fig
+    return entries, source_version
 
 
 def _district_series_table(
@@ -769,55 +818,34 @@ def _render_nbr_district_page(
         PALETTE_CHOICES,
         SPOTLIGHTS,
         _clicked_district,
+        build_map,
     )
-
-    title = "Priority Explorer · NBR Supply" if priority_view else "District Explorer · NBR Supply"
-    description = (
-        "Explore observed administrative values by district, with source-specific "
-        "units, reporting dates, filters, and provenance. Values are not FinScope estimates."
-    )
-
-    def render_empty_header() -> None:
-        page_header(
-            title,
-            description,
-            pill="NBR Supply · BETA",
-            size="tall",
-        )
 
     district_options = [
         item for item in registry if item.get("geography_level") == "district"
     ]
     if not district_options:
-        render_empty_header()
         with st.container(key="card_nbr_unavailable"):
-            card_title("District data unavailable", "No validated district-level NBR series is currently available.")
-            st.info(
-                "The source did not provide an eligible district series. This is unavailable evidence, "
-                "not a zero value or a negative finding."
-            )
-            st.caption(
-                f"Eligible normalized observations: "
-                f"{summary.get('eligible_source_point_count', 0):,}."
+            empty_state(
+                "No district data for this service",
+                "NBR has not provided a validated district-level series here. "
+                "Unavailable is not zero and is not a negative finding.",
             )
         return
 
-    st.session_state.pop("_nbr_dx_pending_district", None)
     page = source_page
     page_entries = [item for item in district_options if item["source_page"] == page]
     if not page_entries:
-        render_empty_header()
         with st.container(key="card_nbr_unavailable"):
-            card_title("No district series on this page")
-            st.info("This NBR page has no eligible district series in the current read-only source snapshot.")
+            empty_state(
+                "No district comparison for this service",
+                "Try another service area, or use the National overview for national measures.",
+            )
         return
 
     with st.container(key="card_controls"):
-        card_title("Choose an NBR series", "Every choice is limited to a source-observed page, metric, and exact filter scope.")
-        page_col, metric_col = st.columns([1, 1.4], gap="medium")
-        with page_col:
-            st.caption("NBR page")
-            st.markdown(f"**{NBR_PAGE_LABELS.get(page, page)}**")
+        card_title("District measure", "Choose a measure, who it covers, and the reporting date.")
+        metric_col, filter_col, date_col = st.columns([1.5, 1.5, 1], gap="medium")
         metric_options = sorted({
             (str(item["metric_label"]), str(item.get("unit", "")))
             for item in page_entries
@@ -832,7 +860,7 @@ def _render_nbr_district_page(
             current_metric = metric_labels[0]
         with metric_col:
             metric_label = st.selectbox(
-                "Administrative metric",
+                "Measure",
                 metric_labels,
                 index=metric_labels.index(current_metric),
                 key=metric_key,
@@ -849,10 +877,9 @@ def _render_nbr_district_page(
         selected_filter = st.session_state.get(filter_key, filter_keys[0])
         if selected_filter not in filter_options:
             selected_filter = filter_keys[0]
-        filter_col, date_col = st.columns([1.5, 1], gap="medium")
         with filter_col:
             selected_filter = st.selectbox(
-                "Exact observed filter combination",
+                "Coverage",
                 filter_keys,
                 index=filter_keys.index(selected_filter),
                 format_func=lambda value: _filter_label(filter_options[value]["filters"]),
@@ -884,10 +911,11 @@ def _render_nbr_district_page(
                 reporting_date = ""
 
     if not series or not reporting_date:
-        render_empty_header()
         with st.container(key="card_nbr_unavailable"):
-            card_title("No observations for this series", "Try another exact metric or filter combination.")
-            st.info("Missing observations remain unavailable; they are not interpolated or set to zero.")
+            empty_state(
+                "No observations for this measure",
+                "Try another measure or coverage. Missing observations are not interpolated or set to zero.",
+            )
         return
 
     dated = [point for point in series if str(point["reporting_date"]) == reporting_date]
@@ -896,15 +924,19 @@ def _render_nbr_district_page(
     }
     names = sorted(district_values)
     if not names:
-        render_empty_header()
-        st.info("No district observations are available for this reporting date.")
+        empty_state(
+            "No district observations on this date",
+            "Pick another reporting date to see districts NBR reported.",
+        )
         return
     if selected_district not in names:
         selected_district = names[0]
+    district_key = f"nbr_district_selected_{source_version}"
+    # A map click is applied here, before the District selector is created.
+    # Writing a widget's key after it exists in the same run raises an error.
     pending = st.session_state.pop("_nbr_dx_pending_district", None)
     if pending in names:
-        selected_district = pending
-    district_key = f"nbr_district_selected_{source_version}"
+        st.session_state[district_key] = pending
     if st.session_state.get(district_key) not in names:
         st.session_state[district_key] = selected_district
     with st.container(key="card_controls_district"):
@@ -916,8 +948,11 @@ def _render_nbr_district_page(
     selected_district = st.session_state[district_key]
     selected_point = district_values.get(selected_district)
     if selected_point is None:
-        render_empty_header()
-        st.info(f"No {metric} observation is available for {selected_district} on {reporting_date}.")
+        empty_state(
+            f"No {metric.lower()} for {selected_district}",
+            f"NBR did not report this measure for {selected_district} on {reporting_date}. "
+            "Choose another district or date; the gap is not treated as zero.",
+        )
         return
     ranked = pd.DataFrame([{
         "District": name,
@@ -950,26 +985,32 @@ def _render_nbr_district_page(
     value = float(selected_point["value"])
     low, high = float(ranked["Value"].min()), float(ranked["Value"].max())
     value_fill = ((value - low) / (high - low) * 100) if high > low else 50
-    try:
-        geojson = data.load_geojson()
-        centers, center = data.geo_summary(geojson)
-        mapped_district_count = len(geojson["features"])
-        map_error = None
-    except (FileNotFoundError, ValueError, KeyError) as error:
+    if priority_view:
         geojson, centers, center = None, {}, (None, None)
         mapped_district_count = len(ranked)
-        map_error = error
+        map_error = None
+    else:
+        try:
+            geojson = data.load_geojson()
+            centers, center = data.geo_summary(geojson)
+            mapped_district_count = len(geojson["features"])
+            map_error = None
+        except (FileNotFoundError, ValueError, KeyError) as error:
+            geojson, centers, center = None, {}, (None, None)
+            mapped_district_count = len(ranked)
+            map_error = error
     change_html = (
-        f"{delta:+,.4g}" if delta is not None else "Unavailable"
+        fmt_delta(delta) if delta is not None else "Unavailable"
     )
     cards = [
         kpi_card(
             "Selected district value",
-            f"{value:,.4g}",
+            f"{fmt_value(value)}",
             f" {unit or 'unit not specified'}",
             value_fill,
             PALETTE["teal"],
-            f"{esc(selected_district)} · {esc(reporting_date)}",
+            f"<b>{esc(selected_district)}</b> · {esc(reporting_date)}"
+            + kpi_trend_html(selected_history),
         ),
         kpi_card(
             "Change from prior observation",
@@ -989,122 +1030,167 @@ def _render_nbr_district_page(
             f" of {len(ranked)}",
             (len(ranked) - int(rank_row["Rank"]) + 1) / max(len(ranked), 1) * 100,
             PALETTE["sun"],
-            "Descriptive ranking within this metric, date, and filter scope",
+            "Descriptive ranking for this measure and date",
         ),
         kpi_card(
-            "District observations",
+            "Districts with data",
             f"{len(ranked)}",
-            f" / {mapped_district_count}",
+            "" if priority_view else f" / {mapped_district_count}",
             len(ranked) / max(mapped_district_count, 1) * 100,
             PALETTE["ink2"],
             (
-                "Observed districts / Rwanda district boundaries"
-                if map_error is None
-                else "Observed districts; boundary coverage unavailable"
+                "Districts in this selected comparison"
+                if priority_view
+                else (
+                    "Out of all Rwandan districts"
+                    if map_error is None
+                    else "Map boundaries unavailable"
+                )
             ),
         ),
     ]
-    page_header(
-        title,
-        f"{entry['display_label']} · {unit or 'unit not specified'} · {reporting_date}",
-        pill="NBR Supply · BETA",
-        size="tall",
-        below_html=kpi_grid(cards),
-    )
+    render_html(kpi_grid(cards))
     note(
         "Administrative evidence only",
         "Values and rankings describe the selected NBR metric and exact source filters. "
         "They do not measure household ownership, population access, or a change in financial inclusion.",
         tone="info",
     )
-    controls, settings_col = st.columns([2.4, 1], gap="medium")
-    with settings_col:
-        with st.popover("Map settings", icon=":material/tune:", use_container_width=True):
-            basemap = st.selectbox("Basemap", list(BASEMAPS), key="nbr_dx_basemap")
-            palette = st.selectbox("Colours", PALETTE_CHOICES, key="nbr_dx_palette")
-            opacity = st.slider("Fill opacity", 0.3, 1.0, 0.85, 0.05, key="nbr_dx_opacity")
-            spotlight = st.selectbox("Outline extremes", SPOTLIGHTS, key="nbr_dx_spotlight")
-            tilt = st.slider("Tilt", 0, 60, 0, key="nbr_dx_tilt")
-            rotation = st.slider("Rotation", -90, 90, 0, key="nbr_dx_rotation")
-    with controls:
-        st.caption(
-            f"Source page: {NBR_PAGE_LABELS.get(page, page)} · "
-            f"Filters: {_filter_label(entry['filters'])}"
-        )
-    settings = {
-        "basemap": basemap,
-        "palette": palette,
-        "opacity": opacity,
-        "spotlight": spotlight,
-        "tilt": tilt,
-        "rotation": rotation,
-        "zoom": 7.3,
-    }
-    map_col, inspector_col = st.columns([2.85, 1], gap="medium")
-    with map_col:
-        with st.container(key="card_nbr_map"):
-            render_html(
-                f'<div class="map-strip"><div><div class="ct">{esc(metric)}</div>'
-                '<div class="cs">District values for the selected reporting date · '
-                'click a district to inspect it</div></div>'
-                '<div class="chips"><span class="chip">Observed NBR values</span>'
-                '<span class="chip">No data is not zero</span></div></div>'
+    if priority_view:
+        with st.container(key="card_nbr_priority_comparison"):
+            card_title(
+                "Observed values by district",
+                f"{metric} on {reporting_date} · {unit or 'unit not specified'} · "
+                "descriptive comparison only; no priority score is calculated.",
             )
-            if map_error is not None:
-                st.warning("The NBR map is unavailable because district boundaries could not be loaded.")
-                st.caption(str(map_error))
-            if geojson is not None:
-                map_frame = ranked.rename(columns={"Value": "Value"}).copy()
-                map_frame["Unit"] = unit or "unit not specified"
-                event = st.plotly_chart(
-                    _nbr_district_map(
-                        map_frame,
-                        geojson=geojson,
-                        centers=centers,
-                        center=center,
-                        selected_district=selected_district,
-                        metric_label=metric,
-                        unit=unit or "unit not specified",
-                        reporting_date=reporting_date,
-                        settings=settings,
-                    ),
-                    use_container_width=True,
-                    key="nbr_dx_map",
-                    on_select="rerun",
-                    selection_mode="points",
-                    config={
-                        "scrollZoom": True,
-                        "displaylogo": False,
-                        "modeBarButtonsToRemove": ["select2d", "lasso2d"],
-                    },
-                )
-                clicked = _clicked_district(event, names)
-                if clicked and clicked != selected_district:
-                    st.session_state["_nbr_dx_pending_district"] = clicked
-                    st.session_state[district_key] = clicked
-                    st.rerun()
-    with inspector_col:
-        with st.container(key="card_nbr_inspector"):
-            rank = int(rank_row["Rank"])
-            meter = (value - low) / (high - low) * 100 if high > low else 50
-            render_html(
-                f'<div class="insp-top"><div class="insp-name">{esc(selected_district)}</div>'
-                f'<div class="insp-rank">#{rank} of {len(ranked)}</div></div>'
-                f'<div class="insp-value">{value:,.4g}<span> {esc(unit or "unit not specified")}</span></div>'
-                f'<div class="insp-sub">{esc(metric)} · reporting date {esc(reporting_date)}</div>'
-                f'<div class="meter"><div class="meter-track"></div>'
-                f'<div class="meter-dot" style="left:{meter:.1f}%"></div></div>'
-                f'<div class="meter-ends"><span>Lowest {low:,.4g}</span>'
-                f'<span>Highest {high:,.4g}</span></div>'
-                f'<div class="insp-note"><b>Observed administrative value</b><br>'
-                f'{esc(_filter_label(entry["filters"]))}<br>'
-                'This comparison does not imply a survey-measured access or ownership gap.</div>'
+            comparison = ranked.sort_values("Value", ascending=True)
+            figure = go.Figure(go.Bar(
+                x=comparison["Value"],
+                y=comparison["District"],
+                orientation="h",
+                marker=dict(color=PALETTE["teal"]),
+                text=comparison["Value"],
+                texttemplate="%{text:,.4g}",
+                textposition="outside",
+                cliponaxis=False,
+                hovertemplate=(
+                    "<b>%{y}</b><br>%{x:,.4g} "
+                    f"{esc(unit or 'unit not specified')}<extra></extra>"
+                ),
+            ))
+            figure.update_xaxes(
+                title=f"{metric} · {unit or 'unit not specified'}",
+                gridcolor=PALETTE["grid"],
+                zeroline=False,
             )
-            if previous is not None:
-                st.caption(
-                    f"Previous observation: {previous['value']:,.4g} {unit} "
-                    f"on {previous['reporting_date']}."
+            figure.update_yaxes(title=None, showgrid=False, automargin=True)
+            st.plotly_chart(
+                style_chart(figure, max(320, min(600, len(comparison) * 28 + 80))),
+                use_container_width=True,
+                key="nbr_priority_observed_values",
+                config={"displayModeBar": False},
+            )
+    else:
+        controls, settings_col = st.columns([2.4, 1], gap="medium")
+        with settings_col:
+            with st.popover("Map settings", icon=":material/tune:", use_container_width=True):
+                basemap = st.selectbox("Basemap", list(BASEMAPS), key="nbr_dx_basemap")
+                palette = st.selectbox("Colours", PALETTE_CHOICES, key="nbr_dx_palette")
+                opacity = st.slider("Fill opacity", 0.3, 1.0, 0.85, 0.05, key="nbr_dx_opacity")
+                spotlight = st.selectbox("Outline extremes", SPOTLIGHTS, key="nbr_dx_spotlight")
+                tilt = st.slider("Tilt", 0, 60, 0, key="nbr_dx_tilt")
+                rotation = st.slider("Rotation", -90, 90, 0, key="nbr_dx_rotation")
+        with controls:
+            st.caption(
+                f"{NBR_PAGE_LABELS.get(page, page)} · {_filter_label(entry['filters'])}"
+            )
+        settings = {
+            "basemap": basemap,
+            "palette": palette,
+            "opacity": opacity,
+            "spotlight": spotlight,
+            "tilt": tilt,
+            "rotation": rotation,
+            "zoom": 7.3,
+            "labels": False,
+        }
+        map_col, inspector_col = st.columns([2.85, 1], gap="medium")
+        with map_col:
+            with st.container(key="card_nbr_map"):
+                render_html(
+                    f'<div class="map-strip"><div><div class="ct">{esc(metric)}</div>'
+                    '<div class="cs">District values for the selected reporting date · '
+                    'click a district to inspect it</div></div>'
+                    f'<div class="chips"><span class="chip">{esc(unit or "Unit not specified")}</span>'
+                    '<span class="chip">Districts without data are left blank</span></div></div>'
                 )
+                if map_error is not None:
+                    st.warning("The NBR map is unavailable because district boundaries could not be loaded.")
+                    st.caption(str(map_error))
+                if geojson is not None:
+                    map_frame = ranked.copy()
+                    map_frame["rank"] = map_frame["Rank"]
+                    map_frame["Valid respondents"] = None
+                    map_frame["diff"] = None
+                    map_cfg = {
+                        "scale": (
+                            [[0, "#EAF6F3"], [0.35, "#9FD3CB"], [0.7, "#3AA597"], [1, "#0E2A35"]]
+                            if settings["palette"] == "Indicator colours"
+                            else settings["palette"]
+                        ),
+                        "accent": PALETTE["teal"],
+                    }
+                    event = st.plotly_chart(
+                        build_map(
+                            map_frame,
+                            geojson,
+                            centers,
+                            center,
+                            map_cfg,
+                            "Value",
+                            None,
+                            selected_district,
+                            metric,
+                            settings,
+                            value_unit=unit,
+                        ),
+                        use_container_width=True,
+                        key="nbr_dx_map",
+                        on_select="rerun",
+                        selection_mode="points",
+                        config={
+                            "scrollZoom": True,
+                            "displaylogo": False,
+                            "modeBarButtonsToRemove": ["select2d", "lasso2d"],
+                        },
+                    )
+                    clicked = _clicked_district(event, names)
+                    if clicked and clicked != selected_district:
+                        st.session_state["_nbr_dx_pending_district"] = clicked
+                        st.rerun()
+    if not priority_view:
+        with inspector_col:
+            with st.container(key="card_nbr_inspector"):
+                rank = int(rank_row["Rank"])
+                meter = (value - low) / (high - low) * 100 if high > low else 50
+                render_html(
+                    f'<div class="insp-top"><div class="insp-name">{esc(selected_district)}</div>'
+                    f'<div class="insp-rank">#{rank} of {len(ranked)}</div></div>'
+                    f'<div class="insp-value">{fmt_value(value)}<span> {esc(unit or "unit not specified")}</span></div>'
+                    f'<div class="insp-sub">{esc(metric)} · reporting date {esc(reporting_date)}</div>'
+                    f'<div class="meter"><div class="meter-track"></div>'
+                    f'<div class="meter-dot" style="left:{meter:.1f}%"></div></div>'
+                    f'<div class="meter-ends"><span>Lowest {fmt_value(low)}</span>'
+                    f'<span>Highest {fmt_value(high)}</span></div>'
+                    f'<div class="insp-note"><b>Observed administrative value</b><br>'
+                    f'{esc(_filter_label(entry["filters"]))}<br>'
+                    'This comparison does not imply a survey-measured access or ownership gap.</div>'
+                )
+                if previous is not None:
+                    st.caption(
+                        f"Previous observation: {fmt_value(previous['value'])} {unit} "
+                        f"on {previous['reporting_date']}."
+                    )
     trend_col, distribution_col = st.columns([1.45, 1], gap="medium")
     with trend_col:
         with st.container(key="card_nbr_trend"):
@@ -1131,7 +1217,7 @@ def _render_nbr_district_page(
                     line=dict(color="#FFFFFF", width=1.5),
                 ),
                 showlegend=False,
-                hovertemplate=f"%{{x:,.4g}} {esc(unit)}<br>%{{y}} districts<extra></extra>",
+                hovertemplate=f"%{{x:,.7~r}} {esc(unit)}<br>%{{y}} districts<extra></extra>",
             ))
             histogram.add_vline(
                 x=value,
@@ -1159,27 +1245,25 @@ def _render_nbr_district_page(
         ).sort_values("Rank")
         st.dataframe(
             table[[
-                "Rank", "District", "Value", "Unit", "Reporting date",
-                "Filters", "Source page", "Metric", "Run ID", "Source record ID",
+                "Rank", "District", "Value", "Unit", "Reporting date", "Filters",
             ]],
             hide_index=True,
             use_container_width=True,
             height=440,
         )
-    with st.expander("Source observations, limitations, and mapping"):
+    with st.expander("Observations, limitations and FinScope links"):
         st.caption(
-            f"Normalized observations loaded: {summary.get('eligible_source_point_count', 0):,} · "
-            f"Source snapshot: {source_version}"
+            f"{summary.get('eligible_source_point_count', 0):,} NBR observations available "
+            f"for {NBR_PAGE_LABELS.get(page, page).lower()}."
         )
         if entry.get("mappings"):
             for mapping in entry["mappings"]:
                 st.markdown(
-                    f"- **{esc(mapping['indicator_label'])}** "
-                    f"(`{esc(mapping['indicator_variable'])}`): "
-                    f"{esc(mapping['relationship'])}. {esc(mapping['limitations'])}"
+                    f"- **{esc(mapping['indicator_label'])}**: "
+                    f"{esc(humanize(mapping['relationship']))}. {esc(mapping['limitations'])}"
                 )
         else:
-            st.info("No approved FinScope relationship is configured for this exact series.")
+            st.caption("No approved FinScope relationship is configured for this series.")
         _render_observation_table(selected_history)
     if priority_view:
         _render_priority_review_panel(
@@ -1230,16 +1314,14 @@ def _render_priority_review_panel(
             filters=entry["filters"],
         )
         st.caption(
-            f"Assessment {assessment['assessment_id']} · {assessment['model_version']} · "
-            f"{assessment['assessment_timestamp']} · source commit "
-            f"{assessment.get('source_git_commit') or 'unavailable'} · "
-            f"page scope {', '.join(assessment.get('pages', []))} · "
-            f"source data {source_version} · {len(scoped_candidates)} candidate(s)."
+            f"Assessed {assessment['assessment_timestamp']} · "
+            f"{len(scoped_candidates)} candidate{'s' if len(scoped_candidates) != 1 else ''} "
+            "for this measure and district."
         )
         if not scoped_candidates:
-            st.info(
-                "No candidate is recorded for this exact series. This does not establish that the series "
-                "is normal or that no data-quality issue exists."
+            empty_state(
+                "No review candidates for this measure",
+                "That does not establish that the series is normal or free of data-quality issues.",
             )
             return
         source_by_identity = {
@@ -1262,16 +1344,35 @@ def _render_priority_review_panel(
                 unit=str(entry.get("unit") or "unit not specified"),
                 source_record_id=str(source_point.get("source_record_id", "")),
             ))
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-        with st.expander("Candidate evidence qualifications"):
-            for candidate in scoped_candidates:
-                st.markdown(
-                    f"**{candidate['method']} · {candidate.get('reporting_date', '')}** — "
-                    f"{candidate.get('reason', 'No reason recorded')}"
-                )
+        review_table = (
+            pd.DataFrame(rows)
+            .drop(columns=["Run ID", "Source record ID"], errors="ignore")
+            .rename(columns={"Method rank": "Rank in method"})
+        )
+        review_table["Method"] = review_table["Method"].map(humanize)
+        review_table["Evidence state"] = review_table["Evidence state"].map(humanize)
+        st.dataframe(review_table, hide_index=True, use_container_width=True)
+        st.markdown("**Evidence behind each candidate**")
+        for candidate in scoped_candidates:
+            st.markdown(
+                f"**{humanize(candidate['method'])} · {candidate.get('reporting_date', '')}** — "
+                f"{candidate.get('reason', 'No reason recorded')}"
+            )
+            evidence = candidate.get("evidence_assessment", {})
+            state = evidence.get("state") if isinstance(evidence, Mapping) else None
+            qualifications = candidate.get("quality_qualifications", []) or []
+            facts = [
+                f"Evidence: {humanize(state)}" if state else "",
+                f"Score {candidate['score']:,.4g}" if isinstance(candidate.get("score"), (int, float)) else "",
+                f"Threshold {candidate['threshold']:,.4g}" if isinstance(candidate.get("threshold"), (int, float)) else "",
+            ]
+            st.caption(" · ".join(fact for fact in facts if fact) or "No score recorded.")
+            for item in qualifications:
+                st.markdown(f"- {esc(item) if isinstance(item, str) else esc(json.dumps(item, default=str))}")
+            with st.popover("Full detector output"):
                 st.json({
-                    "evidence_assessment": candidate.get("evidence_assessment", {}),
-                    "quality_qualifications": candidate.get("quality_qualifications", []),
+                    "evidence_assessment": evidence,
+                    "quality_qualifications": qualifications,
                     "score": candidate.get("score"),
                     "threshold": candidate.get("threshold"),
                 })
@@ -1284,149 +1385,103 @@ def _render_combined_context(
     district: str | None = None,
     subgroup_type: str = "",
     subgroup: str = "",
-    include_map: bool = False,
     source_version: str | None = None,
 ) -> None:
     source_version = source_version or _source_data_version(points)
     level = "district" if district else "national"
-    if subgroup_type == "Gender" and not subgroup:
-        mapping = MAPPING_BY_VARIABLE.get(indicator_variable, {})
-        gender_options = set()
-        for relationship in mapping.get("nbr_relationships", []):
-            labels = (
-                relationship["district_table_labels"]
-                if level == "district"
-                else relationship["national_kpi_labels"]
-            )
-            expected_filters = {
-                key: value
-                for key, value in relationship["filter_scope"].items()
-                if key != "Gender"
-            }
-            gender_options.update(
-                str(point["filters"]["Gender"])
-                for point in points
-                if point.get("page") == relationship["page"]
-                and point.get("metric_label") in labels
-                and point.get("geography_level") == level
-                and (district is None or point.get("geography") == district)
-                and isinstance(point.get("filters"), Mapping)
-                and point["filters"].get("Gender", "All").casefold() != "all"
-                and _filters_match(point["filters"], expected_filters)
-            )
-        if gender_options:
-            subgroup = st.selectbox(
-                "Observed NBR gender filter",
-                sorted(gender_options),
-                key=(
-                    f"combined_nbr_gender_{indicator_variable}_"
-                    f"{district or 'national'}_{source_version}"
-                ),
-            )
-        else:
-            st.info(
-                "No NBR observations match an observed gender category for this "
-                "indicator and exact geographic scope."
-            )
-            return
     entries = _mapped_series(
         points,
         indicator_variable,
         geography_level=level,
-        geography=district,
+        geography= district,
         subgroup_type=subgroup_type,
         subgroup=subgroup,
+        relationships={"contextual_indicator"},
     )
-    with st.container(key="nbr_context_card"):
-        render_html(badge("NBR Supply · BETA", "warn"))
-        card_title(
-            "NBR administrative context",
-            "Separate administrative observations; they do not update the FinScope estimate.",
-        )
-        if not entries:
-            st.info(
-                "No eligible NBR series is available for this FinScope indicator and exact scope. "
-                "This is unavailable evidence, not a negative finding."
-            )
-            return
+    if not entries:
+        return
+    with st.expander(
+        f"NBR supply context · "
+        f"{MAPPING_BY_VARIABLE[indicator_variable]['original_indicator_label']}",
+        expanded=False,
+    ):
+        render_html('<span class="nbr-tag">NBR supply</span> <span class="nbr-tag beta">Beta</span>')
         labels = [_series_label(entry) for entry in entries]
-        selected_label = st.selectbox(
-            "NBR series",
-            labels,
-            key=(
-                f"combined_nbr_series_{indicator_variable}_"
-                f"{district or 'national'}_{subgroup or 'all'}_{source_version}"
-            ),
-        )
-        entry = entries[labels.index(selected_label)]
+        if len(entries) > 1:
+            selected_label = st.selectbox(
+                "Observed supply series",
+                labels,
+                key=(
+                    f"combined_nbr_series_{indicator_variable}_"
+                    f"{district or 'national'}_{subgroup or 'all'}_{source_version}"
+                ),
+            )
+            entry = entries[labels.index(selected_label)]
+        else:
+            entry = entries[0]
         series_points = entry["points"]
         dates = sorted({str(point["reporting_date"]) for point in series_points})
+        if not dates:
+            empty_state("No NBR observations", "NBR has not reported this series for the selected geography.")
+            return
         latest_date = dates[-1]
-        latest = [point for point in series_points if point["reporting_date"] == latest_date]
-        if district:
-            _render_trend(
-                series_points,
-                title=f"{entry['page']} · {entry['metric_label']}",
-            )
-        else:
-            _render_trend(
-                series_points,
-                title=f"{entry['page']} · {entry['metric_label']}",
-            )
-        relation_label = (
-            "Contextual indicator" if entry["relationship"] == "contextual_indicator"
-            else "Proxy with unresolved definition"
+        latest = next(
+            (point for point in series_points if str(point["reporting_date"]) == latest_date),
+            None,
         )
+        geography_label = f" in {district}" if district else " nationally"
         st.caption(
-            f"{relation_label} · {entry['page']} · {entry['metric_label']} · "
-            f"{entry.get('unit') or 'unit not specified'} · {len(dates)} observed dates · "
-            f"latest reporting date {latest_date} · source: NBR administrative dashboard."
+            f"{entry['metric_label']}{geography_label}: "
+            f"{fmt_value(latest['value'])} {entry.get('unit') or 'unit not specified'} "
+            f"on {latest_date}. Administrative context only; it does not change "
+            "the FinScope estimate."
+            if latest else
+            f"Observed source dates: {len(dates)} · latest reporting date {latest_date}."
         )
         st.warning(entry["limitations"])
-        with st.expander("Source observations and filters"):
+        _render_trend(
+            series_points,
+            title=f"{entry['metric_label']} · {entry.get('unit') or 'unit not specified'}",
+            compact=True,
+            key_suffix=(
+                f"{indicator_variable}_{district or 'national'}_"
+                f"{subgroup_type}_{subgroup}_{source_version}"
+            ),
+        )
+        with st.popover("View observations", icon=":material/table:"):
             _render_observation_table(series_points)
-        if include_map:
-            with st.expander("Show NBR supply locations"):
-                map_dates = sorted({
-                    str(point["reporting_date"])
-                    for point in points
-                    if point.get("page") == entry["page"]
-                    and point.get("metric_label") == entry["metric_label"]
-                    and point.get("geography_level") == "district"
-                    and point.get("filters") == entry["filters"]
-                })
-                if map_dates:
-                    map_date = st.selectbox(
-                        "NBR map reporting date",
-                        map_dates,
-                        index=map_dates.index(latest_date)
-                        if latest_date in map_dates else len(map_dates) - 1,
-                        key=(
-                            f"combined_nbr_map_date_{entry['page']}_"
-                            f"{indicator_variable}_{source_version}"
-                        ),
-                    )
-                    map_points = _series_points(
-                        points,
-                        page=entry["page"],
-                        metric=entry["metric_label"],
-                        geography_level="district",
-                        filters=entry["filters"],
-                    )
-                    _render_marker_map(
-                        map_points,
-                        selected_date=map_date,
-                        title=(
-                            f"{entry['page']} · {entry['metric_label']} · "
-                            f"{entry.get('unit') or 'unit not specified'}"
-                        ),
-                    )
-                else:
-                    st.info(
-                        "This mapped FinScope context has no district-level NBR series "
-                        "with the same exact filters."
-                    )
-        del latest
+
+
+def combined_strip(
+    indicator_variable: str,
+    *,
+    district: str | None = None,
+    scope: str = "",
+    show_limitations: bool = False,
+) -> tuple[str, Mapping[str, Any] | None]:
+    """Compact NBR strip and its series, or ("", None) when no approved related series exists."""
+    try:
+        entries, _ = load_combined_context_data(
+            indicator_variable,
+            geography_level="district" if district else "national",
+            geography=district,
+        )
+    except (RuntimeError, ValueError, OSError, PyMongoError):
+        return "", None
+    entries = [entry for entry in entries if entry.get("points")]
+    if not entries:
+        return "", None
+    entry = entries[0]
+    return context_strip_html(
+        entry,
+        scope=scope,
+        other_series=len(entries) - 1,
+        show_limitations=show_limitations,
+    ), entry
+
+
+def combined_strip_html(indicator_variable: str, **kwargs: Any) -> str:
+    return combined_strip(indicator_variable, **kwargs)[0]
 
 
 def render_combined_context(
@@ -1435,50 +1490,30 @@ def render_combined_context(
     district: str | None = None,
     subgroup_type: str = "",
     subgroup: str = "",
-    include_map: bool = False,
+    entries: Sequence[Mapping[str, Any]] | None = None,
+    source_version: str | None = None,
 ) -> None:
-    mapping = MAPPING_BY_VARIABLE.get(indicator_variable)
-    if mapping is None:
-        st.warning(
-            "NBR administrative context is unavailable for this indicator; "
-            "FinScope results remain unchanged."
-        )
-        return
-    pages = tuple(sorted({
-        str(relationship["page"])
-        for relationship in mapping["nbr_relationships"]
-        if relationship.get("relationship") != "unsuitable"
-    }))
-    if not pages:
-        st.info("No NBR page is configured for this FinScope indicator.")
-        return
-    page_key = (
-        f"combined_nbr_page_{indicator_variable}_{district or 'national'}_"
-        f"{subgroup_type or 'all'}_{subgroup or 'all'}"
-    )
-    source_page = st.selectbox(
-        "NBR source page",
-        pages,
-        format_func=lambda page: NBR_PAGE_LABELS.get(page, page),
-        key=page_key,
-        help="Choose one configured NBR page. Only its observations are loaded for this context.",
-    )
-    try:
-        points, _, _, source_version = load_nbr_dashboard_data(
-            "nbr-dashboard-v2",
-            (source_page,),
-        )
-    except (RuntimeError, ValueError, OSError, PyMongoError) as error:
-        st.warning("NBR administrative context is unavailable; FinScope results remain unchanged.")
-        st.caption(str(error))
+    if entries is None:
+        try:
+            entries, source_version = load_combined_context_data(
+                indicator_variable,
+                geography_level="district" if district else "national",
+                geography=district,
+                subgroup_type=subgroup_type,
+                subgroup=subgroup,
+            )
+        except (RuntimeError, ValueError, OSError, PyMongoError) as error:
+            st.warning("NBR context could not be loaded. FinScope results are unchanged.")
+            st.caption(str(error))
+            return
+    if not entries:
         return
     _render_combined_context(
-        points,
+        [point for entry in entries for point in entry["points"]],
         indicator_variable=indicator_variable,
         district=district,
         subgroup_type=subgroup_type,
         subgroup=subgroup,
-        include_map=include_map,
         source_version=source_version,
     )
 
@@ -1535,17 +1570,18 @@ def _render_population_context(
 ) -> None:
     with st.container(key="card_nbr_population_comparison"):
         card_title(
-            "NBR population-filter context",
-            "Only observed NBR filters are shown; NBR Age Segment is Youth/Non-Youth, not FinScope age bands.",
+            "Gender and age segments in NBR data",
+            "Only categories NBR reports are shown. Age segment is Youth/Non-Youth, not FinScope age bands.",
         )
         dimensions = [
             dimension for dimension in _DIMENSIONS
             if _group_families(points, dimension)
         ]
         if not dimensions:
-            st.info(
-                "No NBR demographic comparison with multiple observed categories is available. "
-                "Education and urban/rural breakdowns are not provided by this NBR dataset."
+            empty_state(
+                "No comparable NBR breakdown",
+                "NBR does not report education or urban/rural breakdowns, and its Youth/Non-Youth "
+                "split does not match FinScope age bands. Use FinScope mode for those comparisons.",
             )
             return
         dimension = st.selectbox(
@@ -1595,13 +1631,12 @@ def _render_population_context(
                     "Reporting date": point["reporting_date"],
                     "Geography": point.get("geography", ""),
                     "Filters": _filter_label(point.get("filters", {})),
-                    "Source page": point.get("page", ""),
-                    "Source record ID": point.get("source_record_id", ""),
+                    "Source": NBR_PAGE_LABELS.get(str(point.get("page", "")), point.get("page", "")),
                 })
         if rows:
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         else:
-            st.info("No NBR category observations exist for this exact reporting date.")
+            empty_state("No observations on this date", "Pick another NBR reporting date.")
         category_figure = go.Figure()
         for group, group_points in sorted(family["groups"].items()):
             ordered = sorted(
@@ -1614,13 +1649,10 @@ def _render_population_context(
                 name=group,
                 mode="lines+markers",
                 connectgaps=False,
-                customdata=[
-                    point.get("source_record_id", "") for point in ordered
-                ],
                 hovertemplate=(
-                    "<b>%{x}</b><br>%{y:,.4g} "
+                    "<b>%{x}</b><br>%{y:,.7~r} "
                     + esc(family.get("unit") or "unit not specified")
-                    + "<br>Source record: %{customdata}<extra>%{fullData.name}</extra>"
+                    + "<extra>%{fullData.name}</extra>"
                 ),
             ))
         category_figure.update_xaxes(title="NBR reporting date", showgrid=False)
@@ -1660,7 +1692,7 @@ def _page_series_selection(
     page = pages[0]
     if len(pages) > 1:
         page = st.selectbox(
-            "NBR source page",
+            "Service area",
             pages,
             format_func=lambda value: NBR_PAGE_LABELS.get(value, value),
             key=f"nbr_{view}_page_{source_version}",
@@ -1672,7 +1704,7 @@ def _page_series_selection(
     })
     metric_keys = [f"{label} · {unit or 'unit not specified'}" for label, unit in metrics]
     metric_key = st.selectbox(
-        "Administrative metric",
+        "Measure",
         metric_keys,
         key=f"nbr_{view}_metric_{source_version}",
     )
@@ -1687,7 +1719,7 @@ def _page_series_selection(
     }
     filter_keys = sorted(filter_options)
     selected_filters_key = st.selectbox(
-        "Exact observed filter combination",
+        "Coverage",
         filter_keys,
         format_func=lambda value: _filter_label(filter_options[value]["filters"]),
         key=f"nbr_{view}_filters_{source_version}",
@@ -1714,11 +1746,10 @@ def _render_nbr_national_page(
     source_version: str,
     source_page: str,
 ) -> None:
-    page_title = "National Overview · NBR Supply"
     with st.container(key="card_controls"):
         card_title(
-            "Choose a national series",
-            "Metric and filter selections come from validated observations on this NBR page.",
+            "National measure",
+            "Choose a measure, who it covers, and the reporting date.",
         )
         entry, series = _page_series_selection(
             points,
@@ -1728,14 +1759,17 @@ def _render_nbr_national_page(
             view="national",
         )
         if entry is None:
-            st.info(
-                f"No validated national series is currently available on "
-                f"{NBR_PAGE_LABELS.get(source_page, source_page)}."
+            empty_state(
+                f"No national series for {NBR_PAGE_LABELS.get(source_page, source_page).lower()}",
+                "NBR has not provided a validated national measure here. "
+                "Unavailable is not zero and is not a negative finding. Try the District explorer.",
             )
-            st.caption("Unavailable data is not treated as a zero or negative finding.")
             return
         if not series:
-            st.info("No observations match the selected metric and exact filter combination.")
+            empty_state(
+                "No observations for this selection",
+                "Try another measure or coverage.",
+            )
             return
         dates = sorted({str(point["reporting_date"]) for point in series})
         date_key = f"nbr_national_date_{source_version}"
@@ -1756,99 +1790,171 @@ def _render_nbr_national_page(
         None,
     )
     if selected is None:
-        st.info("No national observation is recorded for the selected date.")
+        empty_state(
+            "No national observation on this date",
+            "Pick another reporting date from the list above.",
+        )
         return
     ordered = sorted(series, key=lambda point: str(point["reporting_date"]))
-    index = next(
-        index for index, point in enumerate(ordered)
-        if point.get("source_record_id") == selected.get("source_record_id")
-    )
-    previous = ordered[index - 1] if index else None
     unit = str(entry.get("unit") or "unit not specified")
-    value = float(selected["value"])
-    delta = value - float(previous["value"]) if previous else None
-    cards = [
-        kpi_card(
-            "Observed national value",
-            f"{value:,.4g}",
-            f" {unit}",
-            50,
-            PALETTE["teal"],
-            f"{reporting_date} · {entry['metric_label']}",
-        ),
-        kpi_card(
-            "Change from prior observation",
-            f"{delta:+,.4g}" if delta is not None else "Unavailable",
-            f" {unit}",
-            min(100, abs(delta or 0) / max(abs(value), 1) * 100),
-            PALETTE["blue"] if (delta or 0) >= 0 else PALETTE["coral"],
-            f"Prior date: {previous['reporting_date']}" if previous else "No earlier observation",
-        ),
-        kpi_card(
-            "Observed dates",
-            f"{len(ordered)}",
-            "",
-            min(len(ordered) / 5 * 100, 100),
-            PALETTE["sun"],
-            "Recorded dates in this exact series",
-        ),
-        kpi_card(
-            "Source record",
-            "Available",
-            "",
-            100,
-            PALETTE["ink2"],
-            esc(selected.get("source_record_id", "")),
-        ),
-    ]
-    page_header(
-        page_title,
-        f"{entry['display_label']} · {unit} · {reporting_date}",
-        pill="NBR Supply · BETA",
-        size="tall",
-        below_html=kpi_grid(cards),
+    district_series = _series_points(
+        points,
+        page=source_page,
+        metric=str(entry["metric_label"]),
+        geography_level="district",
+        filters=entry["filters"],
     )
-    note(
-        "Administrative evidence only",
-        "Customer counts, service activity, and infrastructure measures retain their NBR units and filters. "
-        "They are not converted into FinScope ownership percentages or conclusions about population access.",
-        tone="info",
-    )
+    district_values = {
+        str(point["geography"]): point
+        for point in district_series
+        if str(point["reporting_date"]) == reporting_date
+        and str(point.get("unit") or "unit not specified") == unit
+    }
+    if district_values:
+        from src.pages.district_explorer import (
+            _clicked_district,
+            build_map,
+        )
+
+        with st.container(key="card_nbr_national_map"):
+            card_title(
+                "District pattern",
+                "Same measure, unit, coverage, and reporting date as the national value. Districts without data are left blank.",
+            )
+            try:
+                geojson = data.load_geojson()
+                centers, center = data.geo_summary(geojson)
+            except (FileNotFoundError, ValueError, KeyError) as error:
+                st.info("A district map is unavailable because boundary data could not be loaded.")
+                st.caption(str(error))
+            else:
+                district_frame = pd.DataFrame([
+                    {
+                        "District": geography,
+                        "Value": point["value"],
+                        "Unit": point.get("unit") or unit,
+                        "Source record ID": point.get("source_record_id", ""),
+                        "Run ID": point.get("run_id", ""),
+                    }
+                    for geography, point in district_values.items()
+                ])
+                district_frame["rank"] = district_frame["Value"].rank(
+                    ascending=False,
+                    method="min",
+                )
+                district_frame["Valid respondents"] = None
+                district_frame["diff"] = None
+                settings = {
+                    "basemap": "Light",
+                    "palette": "Viridis",
+                    "opacity": 0.9,
+                    "spotlight": "Off",
+                    "labels": False,
+                    "tilt": 0,
+                    "rotation": 0,
+                    "zoom": 6.8,
+                }
+                map_figure = build_map(
+                    district_frame,
+                    geojson,
+                    centers,
+                    center,
+                    {
+                        "scale": [
+                            [0, "#EAF6F3"],
+                            [0.35, "#9FD3CB"],
+                            [0.7, "#3AA597"],
+                            [1, "#0E2A35"],
+                        ],
+                        "accent": PALETTE["blue"],
+                    },
+                    "Value",
+                    None,
+                    str(district_frame["District"].iloc[0]),
+                    str(entry["metric_label"]),
+                    settings,
+                    value_unit=unit,
+                )
+                event = st.plotly_chart(
+                    map_figure,
+                    use_container_width=True,
+                    key=f"nbr_national_map_{source_version}",
+                    on_select="rerun",
+                    selection_mode="points",
+                    config={"scrollZoom": True, "displaylogo": False},
+                )
+                clicked = _clicked_district(event, list(district_values))
+                if clicked:
+                    st.caption(
+                        f"{clicked}: "
+                        f"{fmt_value(district_values[clicked]['value'])} {unit} "
+                        f"on {reporting_date}."
+                    )
+    else:
+        with st.container(key="card_nbr_national_map"):
+            card_title("District pattern")
+            empty_state(
+                "No district map for this measure and date",
+                "NBR did not report district observations with the selected measure, coverage, and date.",
+            )
     chart_col, summary_col = st.columns([1.5, 1], gap="medium")
     with chart_col:
         with st.container(key="card_nbr_national_trend"):
             card_title(
-                "Observed national trend",
-                "Only source-reported dates are plotted; no interpolation is applied.",
+                "National trend",
+                "Reported dates only; gaps between reports are not interpolated.",
             )
             _render_trend(ordered, title=f"{entry['metric_label']} · {unit}")
     with summary_col:
         with st.container(key="card_nbr_national_context"):
-            card_title("Selected series", "Scope and measurement details")
+            card_title("About this measure", "What it covers and how to read it")
             render_html(
                 f'<div class="insp-note"><b>{esc(entry["metric_label"])}</b><br>'
-                f'Unit: {esc(unit)}<br>Page: {esc(NBR_PAGE_LABELS.get(source_page, source_page))}<br>'
-                f'Filters: {esc(_filter_label(entry["filters"]))}<br>'
-                f'Reporting date: {esc(reporting_date)}<br>'
-                f'Source record: {esc(selected.get("source_record_id", ""))}</div>'
+                f'Unit: {esc(unit)}<br>Service: {esc(NBR_PAGE_LABELS.get(source_page, source_page))}<br>'
+                f'Coverage: {esc(_filter_label(entry["filters"]))}<br>'
+                f'Reporting date: {esc(reporting_date)}</div>'
             )
             mappings = entry.get("mappings", [])
             if mappings:
                 for mapping in mappings:
                     st.warning(
-                        f"{mapping['relationship']}: {mapping['limitations']}"
+                        f"{humanize(mapping['relationship'])}: {mapping['limitations']}"
                     )
             else:
-                st.caption("No approved FinScope relationship is configured for this exact series.")
+                st.caption("No approved FinScope relationship is configured for this measure.")
     with st.container(key="card_nbr_national_table"):
-        card_title("National observations", "Values, dates, and provenance for this exact source series.")
+        card_title("National observations", "Every reported value for this measure and coverage.")
         _render_observation_table(ordered)
-    with st.expander("Source assessment"):
+    with st.expander("About the data"):
         st.caption(
-            f"Eligible normalized NBR observations on this page: "
-            f"{summary.get('eligible_source_point_count', 0):,} · source snapshot {source_version}"
+            f"{summary.get('eligible_source_point_count', 0):,} NBR observations available "
+            f"for {NBR_PAGE_LABELS.get(source_page, source_page).lower()}."
         )
-        st.caption(f"Unit metadata: {entry.get('unit_status') or 'unresolved'}.")
+        st.caption(f"Unit confirmation: {humanize(entry.get('unit_status')) or 'Unresolved'}.")
+
+
+def _render_service_area_selector(view: str) -> str:
+    source_pages = sorted(NBR_PAGE_LABELS)
+    page_labels = [NBR_PAGE_LABELS[page] for page in source_pages]
+    page_key = f"nbr_source_page_{view}"
+    default_page = "inclusion" if view in {"national", "population"} else "branches"
+    initial_page = st.session_state.get(page_key, default_page)
+    if initial_page not in source_pages:
+        initial_page = default_page
+        st.session_state[page_key] = initial_page
+    with st.container(key="card_nbr_page_selector"):
+        card_title(
+            "Service area",
+            "NBR reports administrative data by service. Pick one to explore.",
+        )
+        selected_label = st.selectbox(
+            "Service area",
+            page_labels,
+            index=source_pages.index(initial_page),
+            key=page_key,
+            label_visibility="collapsed",
+        )
+    return source_pages[page_labels.index(selected_label)]
 
 
 def render_nbr_page(
@@ -1859,49 +1965,94 @@ def render_nbr_page(
     """Render source-aware NBR views from one cached, page-scoped snapshot."""
     if view not in {"national", "district", "population", "priority"}:
         raise ValueError(f"Unknown NBR dashboard view: {view}")
-    render_beta_notice()
     title = {
-        "national": "National overview · NBR Supply",
-        "district": "District explorer · NBR Supply",
-        "population": "Population groups · NBR Supply",
-        "priority": "Priority explorer · NBR Supply",
+        "national": "NBR Financial Inclusion Overview",
+        "district": "District explorer",
+        "population": "Population groups",
+        "priority": "Priority explorer",
     }[view]
-    with st.container(key="card_nbr_page_selector"):
-        card_title(
-            "NBR administrative source",
-            "Select a page to load only its validated observations and exact filters.",
+    description = {
+        "national": (
+            "Explore Rwanda’s financial inclusion landscape through administrative "
+            "data on transactional accounts and financial service infrastructure."
+        ),
+        "district": "Explore district-level measures using the reporting scope and units provided by NBR.",
+        "population": "Compare only demographic breakdowns reported for the selected NBR measure.",
+        "priority": "Review observed district measures; no FinScope-derived priority score is applied.",
+    }[view]
+
+    if view == "national":
+        page_key = "nbr_source_page_national"
+        source_page = st.session_state.get(page_key, "inclusion")
+        if source_page not in NBR_PAGE_LABELS:
+            source_page = "inclusion"
+        header_pages = tuple(
+            spec["page"] for spec in NATIONAL_HEADER_KPIS
         )
-        source_pages = sorted(NBR_PAGE_LABELS)
-        page_labels = [NBR_PAGE_LABELS[page] for page in source_pages]
-        page_key = f"nbr_source_page_{view}"
-        initial_page = st.session_state.get(
-            page_key,
-            "inclusion" if view in {"national", "population"} else "branches",
+        pages = tuple(sorted(set((*header_pages, source_page))))
+        try:
+            points, summary, registry, source_version = load_nbr_dashboard_data(
+                "nbr-dashboard-v2",
+                pages,
+            )
+        except (RuntimeError, ValueError, OSError, PyMongoError) as error:
+            page_header(
+                title,
+                description,
+                pill="NBR Supply",
+                pill_badge="BETA",
+                size="tall",
+                below_html=_national_supply_header_html([]),
+            )
+            _render_service_area_selector(view)
+            with st.container(key="card_nbr_unavailable"):
+                card_title("NBR data could not be loaded")
+                st.error(
+                    "NBR administrative observations are unavailable right now. "
+                    "Use Refresh NBR observations in the sidebar to try again; "
+                    "FinScope modes are unaffected."
+                )
+                st.caption(str(error))
+            return
+
+        page_header(
+            title,
+            description,
+            pill="NBR Supply",
+            pill_badge="BETA",
+            size="tall",
+            below_html=_national_supply_header_html(points),
         )
-        if initial_page not in source_pages:
-            initial_page = source_pages[0]
-        selected_label = st.selectbox(
-            "NBR page",
-            page_labels,
-            index=source_pages.index(initial_page),
-            key=page_key,
+        source_page = _render_service_area_selector(view)
+        _render_nbr_national_page(
+            points,
+            summary,
+            registry,
+            source_version,
+            source_page,
         )
-        source_page = source_pages[page_labels.index(selected_label)]
+        return
+
+    page_header(
+        title,
+        description,
+        pill="NBR Supply",
+        size="tall",
+    )
+    render_beta_notice()
+    source_page = _render_service_area_selector(view)
     try:
         points, summary, registry, source_version = load_nbr_dashboard_data(
             "nbr-dashboard-v2",
             (source_page,),
         )
     except (RuntimeError, ValueError, OSError, PyMongoError) as error:
-        page_header(
-            title,
-            "Read-only NBR administrative evidence",
-            pill="NBR Supply · BETA",
-            size="compact",
-        )
         with st.container(key="card_nbr_unavailable"):
             card_title("NBR data could not be loaded")
-            st.error("NBR administrative observations are currently unavailable.")
+            st.error(
+                "NBR administrative observations are unavailable right now. "
+                "Use Refresh NBR observations in the sidebar to try again; FinScope modes are unaffected."
+            )
             st.caption(str(error))
         return
 
@@ -1914,15 +2065,6 @@ def render_nbr_page(
             source_page=source_page,
             selected_district=selected_district,
             priority_view=view == "priority",
-        )
-        return
-    if view == "national":
-        _render_nbr_national_page(
-            points,
-            summary,
-            registry,
-            source_version,
-            source_page,
         )
         return
 
@@ -1939,13 +2081,7 @@ def render_nbr_page(
         for dimension in _DIMENSIONS
         for family in _group_families(points, dimension)
     )
-    page_header(
-        title,
-        "Compare only demographic categories explicitly observed in the selected NBR source page. "
-        "These source filters are not assumed to match FinScope categories.",
-        pill="NBR Supply · BETA",
-        size="tall",
-        below_html=kpi_grid([
+    render_html(kpi_grid([
             kpi_card(
                 "Observed NBR dimensions",
                 f"{len(dimensions)}",
@@ -1971,15 +2107,14 @@ def render_nbr_page(
                 "NBR labels retained as collected",
             ),
             kpi_card(
-                "Eligible source points",
+                "Available observations",
                 f"{summary.get('eligible_source_point_count', 0):,}",
                 "",
                 100,
                 PALETTE["ink2"],
-                f"{NBR_PAGE_LABELS.get(source_page, source_page)} page · {source_version}",
+                f"{NBR_PAGE_LABELS.get(source_page, source_page)} · selected source area",
             ),
-        ]),
-    )
+        ]))
     with st.container(key="card_nbr_population"):
         _render_population_context(points, source_version=source_version)
     note(

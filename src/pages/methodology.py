@@ -89,7 +89,7 @@ def _checks_panel(results):
 
 
 def render_methodology():
-    from src.nbr_dashboard import render_methodology_mode_note
+    from src.pages.nbr_dashboard import render_methodology_mode_note
 
     render_methodology_mode_note()
     try:

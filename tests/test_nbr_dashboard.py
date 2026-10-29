@@ -1,16 +1,22 @@
 import json
+import re
 
+import pandas as pd
 import pytest
 import pymongo
 from streamlit.testing.v1 import AppTest
 
-from src.nbr_dashboard import (
+from src.pages.district_explorer import build_map
+from src.pages.nbr_dashboard import (
     _group_families,
     _mapped_series,
+    _national_supply_header_html,
     _review_candidate_row,
     _source_data_version,
+    NATIONAL_HEADER_KPIS,
     build_nbr_indicator_registry,
     load_mongodb_history,
+    render_nbr_page,
     select_review_candidates,
 )
 
@@ -73,6 +79,105 @@ def test_nbr_registry_uses_only_observed_series_and_preserves_filter_identity():
     )
     assert all(item["reporting_dates"] for item in registry)
     assert all(item["geographies"] == ["Kirehe"] for item in registry)
+
+
+def _header_point(spec, reporting_date, value, **overrides):
+    return {
+        "page": spec["page"],
+        "metric_label": spec["metric"],
+        "source_type": "national_kpi",
+        "geography_level": "national",
+        "geography": "Rwanda",
+        "filters": spec["filters"],
+        "unit": "count",
+        "unit_status": "configured_source_label",
+        "reporting_date": reporting_date,
+        "value": value,
+        **overrides,
+    }
+
+
+def test_nbr_supply_header_has_only_approved_latest_eligible_cards():
+    points = [
+        _header_point(NATIONAL_HEADER_KPIS[0], "2026-10-24", 17_386_969),
+        _header_point(NATIONAL_HEADER_KPIS[0], "2026-10-27", 17_449_006),
+        _header_point(NATIONAL_HEADER_KPIS[0], "2026-10-27", 999, filters={
+            **NATIONAL_HEADER_KPIS[0]["filters"],
+            "Institution Type": "Banks",
+        }),
+        _header_point(NATIONAL_HEADER_KPIS[1], "2026-10-27", 6_482),
+        _header_point(NATIONAL_HEADER_KPIS[2], "2026-10-24", 1_991),
+        _header_point(
+            NATIONAL_HEADER_KPIS[2],
+            "2026-10-27",
+            1_991,
+            repeated_snapshot_warning=True,
+        ),
+    ]
+
+    html = _national_supply_header_html(points)
+
+    assert html.count('class="kpi"') == 3
+    assert "17,449,006" in html
+    assert "6,482" in html
+    assert "1,991" in html
+    assert "2026-10-27" in html
+    assert "2026-10-24" in html
+    branch_card = re.search(r"Active branches.*?kpi-src\">(.*?)</div>", html, re.S)
+    assert branch_card
+    assert "2026-10-24" in branch_card.group(1)
+    assert "999" not in html
+    assert "Observed national value" not in html
+    assert "Change from prior observation" not in html
+    assert "Reporting dates" not in html
+    assert "Coverage" not in html
+
+
+def test_nbr_supply_header_shows_missing_observations_as_unavailable():
+    html = _national_supply_header_html([])
+
+    assert html.count('class="kpi"') == 3
+    assert html.count("Unavailable") == 3
+    assert "No eligible observation" in html
+    assert ">0<" not in html
+
+
+def test_nbr_national_header_uses_shared_hero_and_exactly_three_kpis():
+    points = [
+        _header_point(spec, "2026-10-27", index + 1)
+        for index, spec in enumerate(NATIONAL_HEADER_KPIS[:2])
+    ]
+    points.append(_header_point(NATIONAL_HEADER_KPIS[2], "2026-10-24", 3))
+    script = (
+        "import src.pages.nbr_dashboard as dashboard\n"
+        f"points = {json.dumps(points)}\n"
+        "requested_pages = []\n"
+        "def test_loader(version, pages=None):\n"
+        "    requested_pages.extend(pages or ())\n"
+        "    return points, {'eligible_source_point_count': len(points)}, [], 'test-version'\n"
+        "dashboard.load_nbr_dashboard_data = test_loader\n"
+        "dashboard._render_nbr_national_page = lambda *args: None\n"
+        "dashboard.render_nbr_page('national')\n"
+    )
+    app = AppTest.from_string(script, default_timeout=30).run()
+
+    assert not app.exception, [error.value for error in app.exception]
+    rendered = " ".join(item.value for item in app.markdown)
+    assert rendered.count("pg-hero") == 1
+    assert rendered.count('class="kpi"') == 3
+    assert rendered.count('class="kpi-grid"') == 1
+    assert "NBR Financial Inclusion Overview" in rendered
+    assert (
+        "Explore Rwanda’s financial inclusion landscape through administrative data "
+        "on transactional accounts and financial service infrastructure."
+    ) in rendered
+    assert "--kpi-columns:3" in rendered
+    assert "NBR Supply" in rendered
+    assert "BETA" in rendered
+    assert "Active transactional accounts" in rendered
+    assert "Active POS terminals" in rendered
+    assert "Active branches" in rendered
+    assert "Observed national value" not in rendered
 
 
 def test_nbr_registry_attaches_only_approved_relationships():
@@ -172,7 +277,7 @@ def test_mode_selector_persists_selected_value_in_streamlit_session():
         "render_mode_selector()"
     ).run()
     assert not app.exception
-    assert app.session_state["global_dashboard_mode"] == "FinScope"
+    assert app.session_state["global_dashboard_mode"] == "Combined"
     assert len(app.radio) == 0
     assert {
         app.button(key=f"dashboard_mode_{mode.lower().replace(' ', '_')}").label
@@ -257,6 +362,69 @@ def test_source_data_version_is_deterministic_and_changes_with_observations():
 
     assert _source_data_version([second, first]) == version
     assert _source_data_version([first, {**second, "value": 7}]) != version
+
+
+def test_shared_district_map_keeps_choropleth_and_adds_nbr_markers():
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "properties": {"shapeName": "Kirehe"},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[
+                    29.7, -2.5
+                ], [29.8, -2.5], [29.8, -2.4], [29.7, -2.4], [29.7, -2.5]]],
+            },
+        }],
+    }
+    frame = pd.DataFrame([{
+        "District": "Kirehe",
+        "Owns a bank account (%)": 5.4,
+        "Valid respondents": 464,
+        "rank": 30,
+        "diff": -14.8,
+    }])
+    settings = {
+        "basemap": "Light",
+        "palette": "Indicator colours",
+        "opacity": 0.85,
+        "spotlight": "Off",
+        "labels": False,
+        "tilt": 0,
+        "rotation": 0,
+        "zoom": 7.3,
+    }
+
+    figure = build_map(
+        frame,
+        geojson,
+        {"Kirehe": (-2.45, 29.75)},
+        (-2.45, 29.75),
+        {"scale": ["#EAF6F3", "#0E2A35"], "accent": "#1A8A7D"},
+        "Owns a bank account (%)",
+        20.2,
+        "Kirehe",
+        "Bank account",
+        settings,
+        supply_points=[{
+            "geography": "Kirehe",
+            "metric_label": "Branches",
+            "value": 3,
+            "unit": "branches",
+            "reporting_date": "2026-10-24",
+        }],
+    )
+
+    assert [trace.type for trace in figure.data] == ["choroplethmap", "scattermap"]
+    assert figure.data[1].name == "NBR supply · marker size"
+    assert [str(value) for value in figure.data[1].customdata[0]] == [
+        "Branches",
+        "3",
+        "branches",
+        "2026-10-24",
+        "Kirehe",
+    ]
 
 
 def test_review_candidates_match_exact_series_scope_only():
@@ -354,6 +522,8 @@ def test_nbr_supply_pages_render_with_observed_synthetic_points(view, expected_t
         "import json\n"
         "import src.nbr_dashboard as dashboard\n"
         f"points = json.loads({json.dumps(json.dumps(points))})\n"
+        "_original_dashboard_loader = dashboard.load_nbr_dashboard_data\n"
+        "_original_review_loader = dashboard.load_nbr_review_candidates\n"
         "def dashboard_test_loader(version, pages=None):\n"
         "    selected = [point for point in points if pages is None or point['page'] in pages]\n"
         "    return selected, {'eligible_source_point_count': len(selected)}, "
@@ -364,12 +534,32 @@ def test_nbr_supply_pages_render_with_observed_synthetic_points(view, expected_t
         "{'assessment_id': 'test-assessment', 'assessment_timestamp': "
         "'2026-10-29T00:00:00+00:00', 'model_version': 'test-model', "
         "'source_git_commit': None})\n"
-        f"dashboard.render_nbr_page({view!r}, selected_district='Kirehe')\n"
+        "try:\n"
+        f"    dashboard.render_nbr_page({view!r}, selected_district='Kirehe')\n"
+        "finally:\n"
+        "    dashboard.load_nbr_dashboard_data = _original_dashboard_loader\n"
+        "    dashboard.load_nbr_review_candidates = _original_review_loader\n"
     )
     app = AppTest.from_string(script, default_timeout=30).run()
 
     assert not app.exception, [error.value for error in app.exception]
     assert any(expected_text.casefold() in markdown.value.casefold() for markdown in app.markdown)
+    map_keys = {
+        chart.key
+        for chart in app.get("plotly_chart")
+        if chart.key in {"nbr_dx_map", "nbr_national_map"}
+    }
+    if view == "district":
+        assert "nbr_dx_map" in map_keys
+    if view == "population":
+        assert map_keys == set()
+    if view == "priority":
+        assert not any(selectbox.label == "Basemap" for selectbox in app.selectbox)
+        assert map_keys == set()
+        assert any(
+            "Observed values by district" in markdown.value
+            for markdown in app.markdown
+        )
 
 
 def test_combined_context_renders_separately_from_survey_data():
@@ -380,6 +570,7 @@ def test_combined_context_renders_separately_from_survey_data():
         "import src.nbr_dashboard as dashboard\n"
         f"points = json.loads({json.dumps(json.dumps(points))})\n"
         "st.session_state.setdefault('requested_pages', [])\n"
+        "_original_dashboard_loader = dashboard.load_nbr_dashboard_data\n"
         "def dashboard_test_loader(version, pages=None):\n"
         "    st.session_state['requested_pages'].append(pages)\n"
         "    selected = [point for point in points if pages is None or point['page'] in pages]\n"
@@ -387,20 +578,193 @@ def test_combined_context_renders_separately_from_survey_data():
         "dashboard.build_nbr_indicator_registry(selected), "
         "dashboard._source_data_version(selected)\n"
         "dashboard.load_nbr_dashboard_data = dashboard_test_loader\n"
-        "dashboard.render_combined_context('k1', district='Kirehe')\n"
+        "try:\n"
+        "    dashboard.render_combined_context('k1', district='Kirehe')\n"
+        "finally:\n"
+        "    dashboard.load_nbr_dashboard_data = _original_dashboard_loader\n"
     )
     app = AppTest.from_string(script, default_timeout=30).run()
 
     assert not app.exception, [error.value for error in app.exception]
     assert app.session_state["requested_pages"] == [("branches",)]
-    assert any("NBR administrative context" in markdown.value for markdown in app.markdown)
-    assert any("NBR Supply · BETA" in markdown.value for markdown in app.markdown)
-    assert any(selectbox.label == "NBR source page" for selectbox in app.selectbox)
+    assert any(
+        "NBR supply context · Bank-account ownership" in expander.label
+        for expander in app.expander
+    )
+    assert not any(selectbox.label == "NBR source page" for selectbox in app.selectbox)
 
-    app.selectbox(key="combined_nbr_page_k1_Kirehe_all_all").set_value("inclusion").run()
+
+def test_combined_national_context_uses_existing_reading_card():
+    points = _dashboard_points()
+    script = (
+        "import json\n"
+        "import streamlit as st\n"
+        "import src.nbr_dashboard as dashboard\n"
+        "st.session_state['global_dashboard_mode'] = 'Combined'\n"
+        f"points = json.loads({json.dumps(json.dumps(points))})\n"
+        "st.session_state.setdefault('requested_pages', [])\n"
+        "_original_dashboard_loader = dashboard.load_nbr_dashboard_data\n"
+        "def dashboard_test_loader(version, pages=None):\n"
+        "    st.session_state['requested_pages'].append(pages)\n"
+        "    selected = [point for point in points if pages is None or point['page'] in pages]\n"
+        "    return selected, {'eligible_source_point_count': len(selected)}, "
+        "dashboard.build_nbr_indicator_registry(selected), "
+        "dashboard._source_data_version(selected)\n"
+        "dashboard.load_nbr_dashboard_data = dashboard_test_loader\n"
+        "from src.pages.national_overview import render_national_overview\n"
+        "try:\n"
+        "    render_national_overview()\n"
+        "finally:\n"
+        "    dashboard.load_nbr_dashboard_data = _original_dashboard_loader\n"
+    )
+    app = AppTest.from_string(script, default_timeout=45).run()
 
     assert not app.exception, [error.value for error in app.exception]
-    assert app.session_state["requested_pages"] == [
-        ("branches",),
-        ("inclusion",),
+    assert app.session_state["requested_pages"]
+    assert all(pages == ("branches",) for pages in app.session_state["requested_pages"])
+    assert any(
+        "About the NBR lines in these cards" in expander.label
+        for expander in app.expander
+    )
+    assert any(
+        "NBR supply context · Bank-account ownership" in expander.label
+        for expander in app.expander
+    )
+
+
+def test_national_overview_selects_one_nbr_series_for_shared_map():
+    filters = {"Institution Type": "Banks", "Location": "All"}
+    entries = [
+        {
+            "metric_label": "Branches",
+            "unit": "branches",
+            "filters": filters,
+            "points": [{
+                "geography": "Kirehe",
+                "value": 5,
+                "reporting_date": "2026-10-24",
+            }],
+        },
+        {
+            "metric_label": "Customers",
+            "unit": "customers",
+            "filters": {**filters, "Account Status": "Active"},
+            "points": [{
+                "geography": "Kirehe",
+                "value": 9,
+                "reporting_date": "2026-10-24",
+            }],
+        },
     ]
+    app = AppTest.from_string(
+        "import plotly.graph_objects as go\n"
+        "import streamlit as st\n"
+        "import src.nbr_dashboard as dashboard\n"
+        "import src.pages.national_overview as overview\n"
+        "st.session_state['global_dashboard_mode'] = 'Combined'\n"
+        "st.session_state['overview_district_indicator'] = 'Bank account'\n"
+        "_original_context_loader = dashboard.load_combined_context_data\n"
+        "_original_strip = dashboard.combined_strip\n"
+        "_original_map_figure = overview._map_figure\n"
+        f"entries = {entries!r}\n"
+        "dashboard.load_combined_context_data = lambda *args, **kwargs: (entries, 'fixture')\n"
+        "dashboard.combined_strip = lambda *args, **kwargs: ('', None)\n"
+        "def capture_map(*args, supply_points=(), **kwargs):\n"
+        "    st.session_state['map_values'] = [point['value'] for point in supply_points]\n"
+        "    return go.Figure()\n"
+        "overview._map_figure = capture_map\n"
+        "try:\n"
+        "    overview.render_national_overview()\n"
+        "finally:\n"
+        "    dashboard.load_combined_context_data = _original_context_loader\n"
+        "    dashboard.combined_strip = _original_strip\n"
+        "    overview._map_figure = _original_map_figure\n"
+    ).run()
+
+    assert not app.exception, [error.value for error in app.exception]
+    selector = app.selectbox(key="overview_nbr_map_series_k1_fixture")
+    assert selector.options[0].startswith("Branches · branches")
+    assert selector.options[1].startswith("Customers · customers")
+    assert app.session_state["map_values"] == [5]
+
+    selector.select(selector.options[1]).run()
+
+    assert not app.exception, [error.value for error in app.exception]
+    assert app.session_state["map_values"] == [9]
+
+
+def test_nbr_national_map_uses_only_exact_unit_and_reporting_date(monkeypatch):
+    filters = {
+        "Institution Type": "Banks",
+        "Branch Status": "Active",
+        "Location": "All",
+    }
+    points = [
+        _point(
+            metric="Customer accounts",
+            level="national",
+            geography="Rwanda",
+            date="2026-10-24",
+            value=100,
+            filters=filters,
+            unit="count",
+        ),
+        _point(
+            metric="Customer accounts",
+            geography="Kirehe",
+            date="2026-10-24",
+            value=20,
+            filters=filters,
+            unit="count",
+        ),
+        _point(
+            metric="Customer accounts",
+            geography="Muhanga",
+            date="2026-10-24",
+            value=2,
+            filters=filters,
+            unit="thousands",
+        ),
+        _point(
+            metric="Customer accounts",
+            geography="Rwamagana",
+            date="2026-10-23",
+            value=30,
+            filters=filters,
+            unit="count",
+        ),
+    ]
+    app = AppTest.from_string(
+        "import json\n"
+        "import streamlit as st\n"
+        "import plotly.graph_objects as go\n"
+        "import src.nbr_dashboard as dashboard\n"
+        f"points = json.loads({json.dumps(json.dumps(points))})\n"
+        "geojson = {'type': 'FeatureCollection', 'features': []}\n"
+        "_original_geojson_loader = dashboard.data.load_geojson\n"
+        "_original_geo_summary = dashboard.data.geo_summary\n"
+        "dashboard.data.load_geojson = lambda: geojson\n"
+        "dashboard.data.geo_summary = lambda _: ({}, (None, None))\n"
+        "import src.pages.district_explorer as district_page\n"
+        "_original_build_map = district_page.build_map\n"
+        "def capture_map(frame, *args, **kwargs):\n"
+        "    st.session_state['mapped_values'] = frame[['District', 'Value', 'Unit']].to_dict('records')\n"
+        "    return go.Figure()\n"
+        "district_page.build_map = capture_map\n"
+        "registry = dashboard.build_nbr_indicator_registry(points)\n"
+        "try:\n"
+        "    dashboard._render_nbr_national_page(\n"
+        "        points, {'eligible_source_point_count': len(points)}, registry, 'fixture', 'branches'\n"
+        "    )\n"
+        "finally:\n"
+        "    dashboard.data.load_geojson = _original_geojson_loader\n"
+        "    dashboard.data.geo_summary = _original_geo_summary\n"
+        "    district_page.build_map = _original_build_map\n"
+    ).run()
+
+    assert not app.exception, [error.value for error in app.exception]
+    assert app.session_state["mapped_values"] == [{
+        "District": "Kirehe",
+        "Value": 20,
+        "Unit": "count",
+    }]

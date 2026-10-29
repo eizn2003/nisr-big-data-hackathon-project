@@ -43,7 +43,7 @@ selected_page = st.session_state.get("selected_page", "National overview")
 with st.sidebar:
     sidebar_brand()
     render_html('<div class="sb-section">Explore</div>')
-    from src.nbr_dashboard import render_mode_selector
+    from src.pages.nbr_dashboard import render_mode_selector
 
     render_mode_selector()
     st.divider()

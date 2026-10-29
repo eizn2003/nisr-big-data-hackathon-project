@@ -106,7 +106,7 @@ def _jump_to(name):
     st.session_state[KEY_DISTRICT] = name
 
 
-def _evidence_html(row, nat, frame, item, deff):
+def _evidence_html(row, nat, frame, item, deff, context=""):
     col = item["column"]
     national_value = float(nat[item["national"]])
     value = row[col]
@@ -139,6 +139,7 @@ def _evidence_html(row, nat, frame, item, deff):
         <div class="meter-mark" style="left:{_meter_pos(national_value, lo, hi):.1f}%">National</div>
         <div class="meter-dot" style="left:{_meter_pos(value, lo, hi):.1f}%"></div></div>
       <div class="meter-ends"><span>Lowest district {lo:.1f}%</span><span>Highest {hi:.1f}%</span></div>
+      {context}
     </div>
     """
 
@@ -215,7 +216,12 @@ def _stability_figure(ranked, selected_district, combos):
 # Page
 # --------------------------------------------------------------------------
 def render_priority_explorer():
-    from src.nbr_dashboard import current_mode, render_combined_context, render_nbr_page
+    from src.pages.nbr_dashboard import (
+        combined_strip_html,
+        current_mode,
+        render_combined_context,
+        render_nbr_page,
+    )
 
     mode = current_mode()
     if mode == "NBR Supply":
@@ -289,7 +295,9 @@ def render_priority_explorer():
     st.markdown("")
     note("About the screening score",
          "This is not an official poverty ranking. It compares FinScope Rwanda 2024 estimates with national "
-         "estimates and does not establish causation or current conditions.", tone="info")
+         "estimates and does not establish causation or current conditions."
+         + (" NBR supply context appears inside each indicator for reference only; it is never part of the score."
+            if mode == "Combined" else ""), tone="info")
     st.markdown("")
 
     # ---- Controls -----------------------------------------------------------------
@@ -319,7 +327,22 @@ def render_priority_explorer():
                        "Each chosen indicator against the national estimate. The yellow dot is this district; "
                        "the tick is the national level.")
             for s in components:
-                render_html(_evidence_html(sel, nat, ranked, CANDIDATES[s], deff))
+                # Combined mode: related NBR supply context sits inside the evidence it relates to.
+                # It is shown for reference only and is never part of the score.
+                context = (
+                    combined_strip_html(
+                        CANDIDATES[s]["variable"],
+                        district=selected_district,
+                        show_limitations=True,
+                    )
+                    if mode == "Combined" else ""
+                )
+                render_html(_evidence_html(sel, nat, ranked, CANDIDATES[s], deff, context))
+                if mode == "Combined" and context:
+                    render_combined_context(
+                        CANDIDATES[s]["variable"],
+                        district=selected_district,
+                    )
             borrow = BY_COLUMN["Borrowed in the past 12 months (%)"]
             if borrow["column"] in ranked.columns and borrow["national"] in nat:
                 render_html(
@@ -440,9 +463,3 @@ def render_priority_explorer():
                 "indicator percentages are weighted estimates. The score uses equal weighting of the chosen "
                 "normalized gaps. Margins are indicative (binomial, optional design-effect multiplier) because the "
                 "survey's design information is not available; no formal significance claims are made.</div>")
-    if mode == "Combined":
-        for component in components:
-            render_combined_context(
-                CANDIDATES[component]["variable"],
-                district=selected_district,
-            )

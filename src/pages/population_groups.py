@@ -114,7 +114,7 @@ def _controls(indicators):
 
 
 def render_population_groups():
-    from src.nbr_dashboard import (
+    from src.pages.nbr_dashboard import (
         current_mode,
         render_combined_context,
         render_nbr_page,
@@ -324,6 +324,23 @@ def render_population_groups():
                            data=table.round(2).to_csv(index=False).encode("utf-8"),
                            file_name=f"population_groups_{group_type.lower().replace(' ', '_')}.csv",
                            mime="text/csv", key="population_groups_download", icon=":material/download:")
+        if mode == "Combined":
+            scope_copy = {
+                "Gender": "NBR reports some measures by gender. Each series below keeps NBR's own units and is not "
+                          "comparable with the FinScope percentages above.",
+                "Age group": "NBR reports Youth and Non-Youth only, which does not map to FinScope age groups. "
+                             "This comparison uses FinScope alone.",
+                "Education": "NBR has no education breakdown. This comparison uses FinScope alone.",
+                "Area": "NBR has no urban/rural breakdown. This comparison uses FinScope alone.",
+            }[group_type]
+            note("NBR context for this comparison", scope_copy, tone="info")
+            if group_type == "Gender":
+                for subgroup in shown["Group"].astype(str):
+                    render_combined_context(
+                        item["variable"],
+                        subgroup_type="Gender",
+                        subgroup=subgroup,
+                    )
     st.markdown("")
 
     note("About this indicator", item["interpretation"])
@@ -338,9 +355,3 @@ def render_population_groups():
                 "respondent counts are unweighted valid sample sizes. Margins are indicative (simple random "
                 "sampling) and understate design-based uncertainty. NBR context is not combined with these estimates; "
                 "Education is FinScope-only. Differences alone do not establish causation.</div>")
-    if mode == "Combined":
-        subgroup_type = "Gender" if group_type == "Gender" else group_type
-        render_combined_context(
-            item["variable"],
-            subgroup_type=subgroup_type,
-        )
