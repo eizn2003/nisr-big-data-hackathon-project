@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src import data
+from src.data_sources.mongodb_population_groups import load_population_group_results
 from src.indicators import available
 from src.styles import (
     PALETTE,
@@ -28,7 +29,7 @@ KEY_GROUP, KEY_IND = "population_groups_type", "population_groups_indicator"
 
 @st.cache_data
 def load_group_data():
-    frame = data.read_population_groups()
+    frame = load_population_group_results().observations
     needed = {"Group type", "Group", "Valid respondents"}
     missing = needed.difference(frame.columns)
     if missing:
@@ -113,6 +114,17 @@ def _controls(indicators):
 
 
 def render_population_groups():
+    from src.pages.nbr_dashboard import (
+        current_mode,
+        render_combined_context,
+        render_nbr_page,
+    )
+
+    mode = current_mode()
+    if mode == "NBR Supply":
+        render_nbr_page("population")
+        return
+
     try:
         frame = load_group_data()
     except (FileNotFoundError, ValueError) as error:
@@ -312,6 +324,23 @@ def render_population_groups():
                            data=table.round(2).to_csv(index=False).encode("utf-8"),
                            file_name=f"population_groups_{group_type.lower().replace(' ', '_')}.csv",
                            mime="text/csv", key="population_groups_download", icon=":material/download:")
+        if mode == "Combined":
+            scope_copy = {
+                "Gender": "NBR reports some measures by gender. Each series below keeps NBR's own units and is not "
+                          "comparable with the FinScope percentages above.",
+                "Age group": "NBR reports Youth and Non-Youth only, which does not map to FinScope age groups. "
+                             "This comparison uses FinScope alone.",
+                "Education": "NBR has no education breakdown. This comparison uses FinScope alone.",
+                "Area": "NBR has no urban/rural breakdown. This comparison uses FinScope alone.",
+            }[group_type]
+            note("NBR context for this comparison", scope_copy, tone="info")
+            if group_type == "Gender":
+                for subgroup in shown["Group"].astype(str):
+                    render_combined_context(
+                        item["variable"],
+                        subgroup_type="Gender",
+                        subgroup=subgroup,
+                    )
     st.markdown("")
 
     note("About this indicator", item["interpretation"])
@@ -324,4 +353,5 @@ def render_population_groups():
              tone="warn")
     render_html('<div class="src-note">Source: FinScope Rwanda 2024. Percentages are weighted survey estimates; '
                 "respondent counts are unweighted valid sample sizes. Margins are indicative (simple random "
-                "sampling) and understate design-based uncertainty. Differences alone do not establish causation.</div>")
+                "sampling) and understate design-based uncertainty. NBR context is not combined with these estimates; "
+                "Education is FinScope-only. Differences alone do not establish causation.</div>")
