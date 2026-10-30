@@ -159,6 +159,13 @@ def render_population_groups():
     clear = gap > combined
     count = len(subset)
     total = float(subset["Valid respondents"].sum(skipna=True))
+    value_direction = (
+        "A higher value indicates more reported access or resilience."
+        if item["polarity"] == "positive"
+        else "A higher value indicates greater vulnerability for this measure."
+        if item["polarity"] == "negative"
+        else "Higher and lower values are descriptive; neither is inherently better."
+    )
 
     # ---- Hero + headline cards -------------------------------------------
     page_header(
@@ -167,17 +174,21 @@ def render_population_groups():
         pill="FinScope Rwanda 2024",
         size="tall",
         below_html=kpi_grid([
-            kpi_card("Highest group", f"{hi_row[metric]:.1f}", "%", hi_row[metric], item["accent"],
+            kpi_card("Highest value", f"{hi_row[metric]:.1f}", "%", hi_row[metric], item["accent"],
                      f"<b>{esc(hi_row['Group'])}</b>"),
-            kpi_card("Lowest group", f"{lo_row[metric]:.1f}", "%", lo_row[metric], PALETTE["ink2"],
+            kpi_card("Lowest value", f"{lo_row[metric]:.1f}", "%", lo_row[metric], PALETTE["ink2"],
                      f"<b>{esc(lo_row['Group'])}</b>"),
             kpi_card("Gap between groups", f"{gap:.1f}", " pp", gap, PALETTE["sun"],
-                     "Larger than the sampling margin" if clear else "Within the sampling margin"),
+                     "Exceeds combined illustrative margin" if clear else "Within combined illustrative margin"),
             kpi_card("Groups compared", f"{count}", "", 100, "#5FB8AB",
                      f"{total:,.0f} respondents across groups"),
         ]),
     )
     st.markdown("")
+    st.caption(
+        f"Highest and lowest refer to the displayed indicator value, not an overall group ranking. "
+        f"{value_direction} These are national group summaries, not district-by-group estimates."
+    )
     _controls(indicators)
     st.markdown("")
 
@@ -188,10 +199,12 @@ def render_population_groups():
                    "gap between the highest and the lowest.")
         st.plotly_chart(_spread_figure(subset, metric, item), use_container_width=True,
                         key="population_groups_spread", config={"displayModeBar": False})
-        verdict = (badge("The gap is larger than the combined sampling margin", "ok") if clear
-                   else badge("The gap is within the combined sampling margin: treat it as uncertain", "warn"))
+        verdict = (badge("Observed gap exceeds the combined illustrative margin", "info") if clear
+                   else badge("Gap is within the combined illustrative margin", "warn"))
         render_html(f'<div class="micro" style="margin-top:0">{verdict} Combined indicative margin '
-                    f"of the two extreme groups: ±{combined:.1f} pp (simple random sampling; the true margin is larger).</div>")
+                    f"of the two extreme groups: ±{combined:.1f} pp (simple-random-sample approximation only; "
+                    "not a formal test of the group difference because the survey design is unavailable. "
+                    "The margin is an interpretation aid, not evidence that the observed difference is significant.</div>")
     st.markdown("")
 
     # ---- Group by group --------------------------------------------------------------
@@ -208,8 +221,8 @@ def render_population_groups():
     with left:
         with st.container(key="card_group_compare"):
             card_title(f"{item['label']} by {group_type.lower()}",
-                       "Whiskers show the indicative 95% sampling margin. Differences describe the observed gap "
-                       "and do not establish causation.")
+                       "Whiskers show an indicative simple-random-sample margin, not a design-correct confidence "
+                       "interval. Differences are descriptive and do not establish significance or causation.")
             margins = [data.moe_pp(v, n) for v, n in zip(shown[metric], shown["Valid respondents"])]
             fig = go.Figure(go.Bar(
                 x=shown[metric], y=shown["Group"], orientation="h", marker=dict(color=item["accent"]),
@@ -260,7 +273,7 @@ def render_population_groups():
         with st.container(key="card_group_matrix"):
             card_title(f"Every indicator by {group_type.lower()}",
                        "Shading compares groups within each column, so the darkest cell marks the highest "
-                       "group for that indicator.")
+                       "value; whether that is favourable depends on the indicator.")
             norm = real.copy()
             for j in range(norm.shape[1]):
                 col = norm[:, j]
@@ -304,7 +317,9 @@ def render_population_groups():
 
     # ---- Table -----------------------------------------------------------------------------
     with st.container(key="card_group_table"):
-        card_title("Detailed results", "Every indicator for each group, with the sampling margin for the selected indicator.")
+        card_title("Detailed results",
+                   "Every indicator for each group. The selected-indicator margin is an illustrative "
+                   "simple-random-sample calculation, not a design-correct uncertainty interval.")
         table = shown[["Group", "Valid respondents"]].copy()
         table["Margin (±pp)"] = [round(data.moe_pp(v, n), 1) for v, n in zip(shown[metric], shown["Valid respondents"])]
         for it in items:

@@ -182,11 +182,12 @@ def render_methodology():
             st.latex(r"\text{margin} = 1.96\sqrt{\frac{d\,\hat{p}(1-\hat{p})}{n}}\times 100")
             render_html("""<p class="mc-p"><b>n</b> is the number of respondents, <b>p̂</b> the estimate and
               <b>d</b> a design-effect multiplier (1.0 unless the user selects a higher assumption). The survey's
-              strata and cluster identifiers are not in the supplied dataset, so the formula assumes simple random
-              sampling. The true design-based margin is therefore <b>larger</b>, and every margin shown is a
-              minimum.</p>
-              <p class="mc-p" style="margin-top:10px">Where a gap is smaller than the margin, the dashboard labels it
-              as within the margin and does not treat it as a real difference.</p>""")
+              strata and cluster identifiers are not in the supplied dataset. This illustrative binomial calculation
+              uses a simple-random-sample assumption and does not account for the full survey design or weighting
+              variance; actual design-based uncertainty may differ.</p>
+              <p class="mc-p" style="margin-top:10px">A margin comparison is an illustrative caution flag only.
+              It is not a confidence interval for the district-versus-national difference and does not establish
+              whether that difference is statistically meaningful.</p>""")
     with u_right:
         rows = "".join(
             f"<tr><td><b>{n:,}</b></td><td>±{data.moe_pp(20, n):.1f} pp</td><td>±{data.moe_pp(20, n, 2):.1f} pp</td>"
@@ -209,9 +210,10 @@ def render_methodology():
           <div class="mcard"><div class="mc-ic">↔</div><div class="mc-t">Gap is not spread</div>
             <p class="mc-p">A district's gap from the national estimate is not the same as the spread between the
             highest and lowest districts.</p></div>
-          <div class="mcard"><div class="mc-ic">±</div><div class="mc-t">Compare with the margin</div>
-            <p class="mc-p">A difference smaller than the indicative margin should not be read as real. Ranks of
-            neighbouring districts are often not meaningfully different.</p></div>
+          <div class="mcard"><div class="mc-ic">±</div><div class="mc-t">Margins are caution flags</div>
+            <p class="mc-p">Displayed margins use district sample sizes and a simple-random-sample approximation.
+            They are not confidence intervals for the district-versus-national difference and do not establish
+            statistical significance.</p></div>
           <div class="mcard"><div class="mc-ic">≈</div><div class="mc-t">Descriptive only</div>
             <p class="mc-p">Comparisons are descriptive and do not establish why a difference exists.</p></div>
         </div>""")
@@ -222,15 +224,16 @@ def render_methodology():
     render_html("""
         <div class="pipe">
           <div class="step"><div class="step-n">1</div><div class="mc-t">Measure the gap</div>
-            <p class="mc-p">Compare each district with the national estimate, in the direction that signals a
-            need. Only positive gaps count.</p></div>
+            <p class="mc-p">Compare each district with the national survey estimate, a descriptive reference rather
+            than a policy target. Only positive gaps in the selected direction count.</p></div>
           <div class="step"><div class="step-n">2</div><div class="mc-t">Normalize</div>
-            <p class="mc-p">Scale each gap against the largest observed gap for that indicator.</p></div>
+            <p class="mc-p">Scale each gap against the largest observed district gap for that indicator.</p></div>
           <div class="step"><div class="step-n">3</div><div class="mc-t">Average</div>
-            <p class="mc-p">The chosen components receive equal weight in the score (0 to 100).</p></div>
+            <p class="mc-p">The fixed baseline equally weights four indicators across access/use and resilience.
+            What-if scenarios equally weight their selected indicators. Scores are relative points, not percentages.</p></div>
           <div class="step"><div class="step-n">4</div><div class="mc-t">Test the choices</div>
             <p class="mc-p">Recompute the rank under every combination of two or more indicators and report how
-            stable each district's rank is.</p></div>
+            sensitive each district's position is to indicator choice. This is not a probability or confidence interval.</p></div>
         </div>""")
     st.markdown("")
     cards = "".join(f"""
@@ -243,8 +246,12 @@ def render_methodology():
     render_html(f'<div class="mgrid">{cards}</div>')
     st.markdown("")
     note("A relative screening measure",
-         "The priority score is an exploratory, relative screening measure. It is not an official poverty index, "
-         "a probability, or a measure of the number of people in need.", tone="warn")
+         "The fixed baseline combines access/use (bank-account ownership and registered mobile-money use) with "
+         "resilience (not saving and emergency funds). The national survey estimate is a descriptive comparator, "
+         "not a policy target. Scores are exploratory relative points—not an official poverty index, probability, "
+         "absolute population need, or estimate of investment returns. Use them to identify where to investigate; "
+         "assess population reach, service availability, costs, intervention suitability, and current local context "
+         "separately before allocating investment.", tone="warn")
 
     # ---- 7. Barriers & group use ------------------------------------------------------------------------
     _section("sec-barriers", 7, "Barriers and community channels",
@@ -312,10 +319,14 @@ def render_methodology():
     limitations = [
         ("Not a live picture", "FinScope 2024 does not provide a live picture of financial inclusion."),
         ("Survey uncertainty", "Survey estimates may be affected by sampling and measurement uncertainty."),
-        ("Margins are minimums", "The dataset lacks the survey-design information (strata and clusters) needed "
-         "for design-correct confidence intervals, so the margins shown assume simple random sampling and understate "
-         "true uncertainty. Formal significance testing is not claimed."),
+        ("Margins are not a difference test", "The dataset lacks the survey-design information (strata and clusters) "
+         "needed for design-correct uncertainty. Displayed district-only margins are illustrative caution flags, "
+         "not confidence intervals for comparisons with the national estimate. Formal significance testing is not claimed."),
         ("Smaller samples", "District and group estimates are less stable when based on fewer respondents."),
+        ("Population reach and investment", "Respondent counts are survey sample sizes, not the number of people "
+         "who could benefit from investment. The dashboard does not estimate district population reach, costs, or "
+         "returns. Before allocating funds, combine the screening with current population, service availability, "
+         "intervention-eligibility data, and local validation."),
         ("No causation", "Differences between groups do not establish causation."),
         ("Mobile-money definition", "The mobile-money indicator is stricter than the published registered-wallet "
          "headline and should not be compared with it directly."),

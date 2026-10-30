@@ -91,10 +91,11 @@ def _evidence_actions(nat, district, groups):
                              + data.moe_pp(f, g.loc["Female", "Valid respondents"]) ** 2)
         verdict = "larger than" if abs(m - f) > combined else "within"
         actions.append((
-            "Close the gender gap in bank accounts",
+            "Investigate the observed gender difference in bank-account ownership",
             f"{f:.1f}% of women own a bank account against {m:.1f}% of men, a gap of {abs(m - f):.1f} pp that is "
-            f"{verdict} the sampling margin (±{combined:.1f} pp). Women are named as a priority group in national "
-            "financial inclusion planning.",
+            f"{verdict} an illustrative combined margin (±{combined:.1f} pp). This is a descriptive comparison, "
+            "not a design-correct significance test or causal finding. Women are named as a priority group in "
+            "national financial inclusion planning.",
             "Population groups › Gender › Bank account", "Population groups"))
     except Exception:
         pass
@@ -106,10 +107,11 @@ def _evidence_actions(nat, district, groups):
         top2 = a[col].sort_values(ascending=False).head(2)
         nat_ns = nat.get("Does not save")
         actions.append((
-            "Build saving habits where saving is weakest",
+            "Investigate saving constraints for groups with higher non-saving estimates",
             f"The share who do not save is highest among adults aged {top2.index[0]} ({top2.iloc[0]:.1f}%) and "
             f"{top2.index[1]} ({top2.iloc[1]:.1f}%), against {nat_ns:.1f}% nationally. Young adults are a named "
-            "priority in national financial inclusion planning.",
+            "priority in national financial inclusion planning. These descriptive results do not identify the "
+            "reasons; validate barriers and intervention suitability with further evidence.",
             "Population groups › Age group › Doesn't save", "Population groups"))
     except Exception:
         pass
@@ -118,11 +120,12 @@ def _evidence_actions(nat, district, groups):
     gs, bank, sacco = nat.get("Saves with a group"), nat.get("Own bank account"), nat.get("Currently uses Umurenge SACCO")
     if gs is not None and bank is not None:
         actions.append((
-            "Build on the channels people already use",
+            "Explore how existing community channels could support access",
             f"{gs:.1f}% of adults save with a group"
             + (f" and {sacco:.1f}% currently use an Umurenge SACCO" if sacco is not None else "")
-            + f", compared with {bank:.1f}% who own a bank account. Linking group and SACCO saving to formal, "
-              "safe products reaches people where they already are.",
+            + f", compared with {bank:.1f}% who own a bank account. This pattern may warrant exploring how "
+              "community channels relate to access to suitable formal products; the survey does not establish "
+              "that a particular linkage would increase inclusion.",
             "National overview › How people save and cope", "National overview"))
 
     # 4. Districts
@@ -132,10 +135,11 @@ def _evidence_actions(nat, district, groups):
         robust = top[top["Top-10 combos"] >= round(0.8 * combos)].head(3)["District"].tolist()
         if robust:
             actions.append((
-                "Target the districts that stay on the list however you score",
+                "Investigate districts that stay near the top across scoring scenarios",
                 f"{', '.join(robust)} remain in the top 10 under at least 80% of the indicator combinations tested, "
-                "which makes them the most defensible starting point for district-level attention. Other districts move a lot "
-                "depending on which indicators are used.",
+                "so their relative positions are less sensitive to indicator choice. This does not establish greater "
+                "absolute need or justify investment on its own. Other districts move more depending on which "
+                "indicators are used.",
                 "Priority explorer › Rank stability", "Priority explorer"))
     except Exception:
         pass
@@ -146,10 +150,11 @@ def _evidence_actions(nat, district, groups):
         fam = data.barrier_family_shares(barriers).set_index("Barrier family")["Weighted share (%)"]
         need = fam.get("No need or too little income", 0.0)
         actions.append((
-            "Match the response to the barrier",
+            "Investigate reported barriers before designing a response",
             f"{need:.1f}% of adults without an account say they do not need one or that their income is too "
-            "limited to justify it. Beyond income, cost and distance are the largest identifiable barriers, which suggests "
-            "low-cost entry products and livelihood-linked saving may matter more than branch coverage alone.",
+            "limited to justify it. Cost and distance are also reported barriers. These responses can inform "
+            "follow-up research into product affordability, access and suitability; they do not prove which "
+            "intervention would be effective.",
             "National overview › Why do people lack a bank account?", "National overview"))
     return actions
 
@@ -248,8 +253,9 @@ def render_policy_alignment():
          _link("NST2 summary", SOURCES[2][1])),
         ("District-level planning and targeting",
          "National targets are delivered locally. District planning needs evidence on where gaps are largest "
-         "and how reliable the estimates are.",
-         "Priority explorer (rank stability, sampling margins) and a downloadable profile for every district.",
+         "and what additional evidence is needed before choosing an intervention.",
+         "Priority explorer comparisons and sensitivity analysis, plus a downloadable district profile. "
+         "These support investigation; they do not allocate funds or estimate investment reach.",
          "FinScope 2024 · NISR"),
     ]
     with st.container(key="card_alignment"):
@@ -273,22 +279,24 @@ def render_policy_alignment():
     section_title("Who can use this, and for what", "Each audience can start from a different page.")
     users = [
         ("Policy makers and regulators", "MINECOFIN, BNR, sector regulators",
-         ["Which districts and groups fall furthest behind?", "Is a gap larger than sampling noise?",
-          "Does the conclusion hold under different indicator choices?"], "Priority explorer"),
+         ["Which districts and groups show comparatively large gaps?", "Which estimates and findings need validation?",
+          "Does the relative pattern change under different indicator choices?"], "Priority explorer"),
         ("District authorities", "Local government and planning teams",
          ["How does my district compare with the national level?", "What do people without an account say locally?",
           "Download a profile to support planning discussions."], "District explorer"),
         ("Financial service providers", "Banks, SACCOs, MFIs, mobile operators",
-         ["Where is entry-level demand likely to be largest?", "Where do cost or distance barriers dominate?",
-          "How much saving already happens in groups?"], "National overview"),
+         ["Where do survey indicators and reported barriers suggest questions to investigate?",
+          "Which access, affordability or service questions need local validation?",
+          "How common are community saving channels?"], "National overview"),
         ("Development partners and civil society", "Programme design and monitoring",
-         ["Which women, youth and rural groups are most behind?", "Where should limited resources go first?",
-          "What is the evidence base and how reliable is it?"], "Population groups"),
+         ["Which women, youth and rural groups show comparatively low estimates?",
+          "What additional evidence is needed before selecting an intervention?",
+          "What is the evidence base and what are its limitations?"], "Population groups"),
         ("Researchers and statisticians", "NISR and academic users",
          ["How is each indicator defined and weighted?", "Which automated data checks pass?",
           "What are the known limitations?"], "Methodology & sources"),
         ("Citizens and journalists", "Anyone curious about their area",
-         ["How does my district compare?", "Which groups are most behind?",
+         ["How does my district compare?", "Which groups have lower estimates on this indicator?",
           "What does the survey actually measure?"], "District explorer"),
     ]
     cards = "".join(
@@ -308,7 +316,9 @@ def render_policy_alignment():
                   "Starting points drawn directly from the data. They indicate where to look, not why gaps exist.")
     note("How to interpret these results",
          "Estimates come from one survey, carry sampling uncertainty, and describe differences rather than causes. "
-         "The priority score is an exploratory screening tool, not an official ranking.", tone="info")
+         "The priority score is an exploratory screening tool, not an official ranking. The dashboard does not "
+         "measure investment demand, readiness, beneficiary counts, costs, or returns; use the findings to guide "
+         "local validation, not as a funding allocation.", tone="info")
     st.markdown("")
     actions = _evidence_actions(nat, district, groups)
     with st.container(key="card_actions"):

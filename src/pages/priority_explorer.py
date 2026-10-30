@@ -33,7 +33,8 @@ DEFF_OPTIONS = {
     "Strong clustering (×2.0)": 2.0,
 }
 CANDIDATES = {it["short"]: it for it in PRIORITY_CANDIDATES}
-DEFAULT_COMPONENTS = [it["short"] for it in PRIORITY_CANDIDATES if it["priority_default"]]
+BASELINE_COMPONENTS = tuple(it["short"] for it in PRIORITY_CANDIDATES if it["priority_default"])
+DEFAULT_COMPONENTS = list(BASELINE_COMPONENTS)
 TOP_N_STABILITY = 10
 
 
@@ -41,12 +42,13 @@ TOP_N_STABILITY = 10
 # Scoring (same method as before, generalised to user-selected components)
 # --------------------------------------------------------------------------
 def build_scores(districts, nat, components, deff):
-    """Score districts on the chosen components.
+    """Score districts on the chosen components using comparative gap points.
 
     For each candidate indicator the gap is measured in the direction that
     signals a need (below national for positive indicators, above national for
     vulnerability indicators), floored at zero, and scaled by the largest gap
     among districts. The score is the equal-weight mean of the chosen components.
+    It is a relative 0–100 point scale, not a percentage or an estimate of need.
     """
     df = districts.copy()
     for item in PRIORITY_CANDIDATES:
@@ -70,7 +72,7 @@ def build_scores(districts, nat, components, deff):
         df[f"contrib::{item_col}"] = df[f"norm::{item_col}"] / len(chosen)
     df["Indicators available"] = df[[f"gap::{c}" for c in chosen]].notna().sum(axis=1)
     df["Screening status"] = np.where(df["Indicators available"] == len(chosen), "Complete", "Incomplete evidence")
-    df["Gaps beyond margin"] = df[[f"signal::{c}" for c in chosen]].sum(axis=1).astype(int)
+    df["Gaps exceeding district-only margin"] = df[[f"signal::{c}" for c in chosen]].sum(axis=1).astype(int)
 
     # robustness: rank under every combination of 2+ candidate indicators
     all_cols = [it["column"] for it in PRIORITY_CANDIDATES]
@@ -123,15 +125,15 @@ def _evidence_html(row, nat, frame, item, deff, context=""):
     if gap <= 0:
         chip = '<span class="ev-chip ok">At or better than national</span>'
     elif gap > margin:
-        chip = '<span class="ev-chip flag">Gap larger than the sampling margin</span>'
+        chip = '<span class="ev-chip flag">Gap exceeds district-only illustrative margin</span>'
     else:
-        chip = '<span class="ev-chip na">Gap within the sampling margin</span>'
+        chip = '<span class="ev-chip na">Gap within district-only illustrative margin</span>'
     return f"""
     <div class="ev" style="--accent:{item['accent']}">
       <div class="ev-top"><div class="ev-name"><i></i>{esc(item['label'])}</div>{chip}</div>
       <div class="ev-why">{explanation}</div>
       <div class="ev-nums">
-        <div><b>{value:.1f}%</b><span>{esc(row['District'])} · ±{margin:.1f} pp</span></div>
+        <div><b>{value:.1f}%</b><span>{esc(row['District'])} · district-only ±{margin:.1f} pp</span></div>
         <div><b>{national_value:.1f}%</b><span>National</span></div>
         <div><b>{gap:.1f} pp</b><span>Gap toward priority</span></div>
       </div>
@@ -158,7 +160,7 @@ def _donut(row, components):
                      hovertemplate="<b>%{label}</b><br>%{value:.1f} of 100 points<extra></extra>")
     fig = go.Figure(pie)
     fig.add_annotation(text=f"<b style='font-size:34px'>{score:.1f}</b><br>"
-                            f"<span style='font-size:12px;color:{PALETTE['muted']}'>out of 100</span>",
+                            f"<span style='font-size:12px;color:{PALETTE['muted']}'>relative points</span>",
                        showarrow=False, font=dict(color=PALETTE["ink"], size=16))
     return style_chart(fig, 280, margin=dict(l=4, r=4, t=4, b=4))
 
@@ -182,7 +184,8 @@ def _ranking_figure(ranked, selected_district, show, components):
                              textfont=dict(size=12, color=PALETTE["ink"]), hoverinfo="skip",
                              showlegend=False, cliponaxis=False))
     fig.update_layout(barmode="stack", bargap=0.3)
-    fig.update_xaxes(title=None, range=[0, min(100, float(chart["Priority score"].max()) + 10)],
+    fig.update_xaxes(title="Relative screening points (0–100)",
+                     range=[0, min(100, float(chart["Priority score"].max()) + 10)],
                      gridcolor=PALETTE["grid"], zeroline=False)
     fig.update_yaxes(title=None, showgrid=False, tickfont=dict(size=11.5))
     return style_chart(fig, max(380, 34 * len(chart) + 70), margin=dict(l=4, r=24, t=34, b=4))
@@ -249,12 +252,25 @@ def render_priority_explorer():
     components = DEFAULT_COMPONENTS if too_few else [s for s in CANDIDATES if s in chosen]
     deff = DEFF_OPTIONS.get(st.session_state.get(KEY_DEFF), 1.0)
 
-    scored, combos = build_scores(districts, nat, components, deff)
+    baseline_scored, combos = build_scores(districts, nat, BASELINE_COMPONENTS, deff)
+    if tuple(components) == BASELINE_COMPONENTS:
+        scored = baseline_scored
+    else:
+        scored, _ = build_scores(districts, nat, components, deff)
+    baseline = baseline_scored.loc[baseline_scored["Screening status"].eq("Complete")].copy()
+    baseline = baseline.sort_values("Priority score", ascending=False).reset_index(drop=True)
+    baseline_total = len(baseline)
+    baseline_by_district = baseline.set_index("District")[["Priority score"]].rename(
+        columns={"Priority score": "Baseline score"})
+    baseline_by_district["Baseline rank"] = (
+        baseline_by_district["Baseline score"].rank(ascending=False, method="min").astype(int))
+
     ranked = scored.loc[scored["Screening status"].eq("Complete")].copy()
     if ranked.empty:
         st.warning("There are no districts with complete indicator data.")
         return
     ranked = ranked.sort_values("Priority score", ascending=False).reset_index(drop=True)
+    ranked = ranked.join(baseline_by_district, on="District")
     ranked["Rank"] = ranked["Priority score"].rank(ascending=False, method="min").astype(int)
     total = len(ranked)
 
@@ -265,6 +281,7 @@ def render_priority_explorer():
     selected_district = st.session_state[KEY_DISTRICT]
     sel = ranked.loc[ranked["District"].eq(selected_district)].iloc[0]
     score = float(sel["Priority score"])
+    baseline_score = float(sel["Baseline score"])
     k = int(sel["Top-10 combos"])
 
     contribs = {s: float(sel[f"contrib::{CANDIDATES[s]['column']}"]) for s in components}
@@ -278,26 +295,36 @@ def render_priority_explorer():
     # ---- Hero ---------------------------------------------------------------
     page_header(
         "Priority explorer",
-        "Screen districts whose results fall behind national estimates, see what drives each score, "
-        "and check whether the ranking holds up.",
-        pill="Exploratory screening",
+        "Compare district-level access and resilience gaps, explore what drives them, and identify where "
+        "further investigation may be useful before investment decisions.",
+        pill="Decision-support screening · FinScope Rwanda 2024",
         size="tall",
         below_html=kpi_grid([
-            kpi_card("Relative priority score", f"{score:.1f}", "/100", score, PALETTE["sun"],
-                     f"<b>{esc(selected_district)}</b> · rank {int(sel['Rank'])} of {total}"),
-            kpi_card("Screening rank", f"#{int(sel['Rank'])}", f" of {total}",
-                     (total - int(sel["Rank"]) + 1) / total * 100, PALETTE["ink2"], "Rank 1 = largest relative gaps"),
-            kpi_card("Largest driver", driver_html, "", driver_fill, CANDIDATES[driver]["accent"], driver_src),
-            kpi_card("Rank stability", f"{k}/{combos}", "", k / combos * 100, "#5FB8AB",
-                     f"Top 10 in {k} of {combos} indicator combinations"),
+            kpi_card("Baseline score", f"{baseline_score:.1f}", "relative points",
+                     baseline_score, PALETTE["sun"],
+                     f"<b>{esc(selected_district)}</b> · baseline rank {int(sel['Baseline rank'])} of {baseline_total}"),
+            kpi_card("What-if scenario rank", f"#{int(sel['Rank'])}", f" of {total}",
+                     (total - int(sel["Rank"]) + 1) / total * 100, PALETTE["ink2"],
+                     f"Scenario score: {score:.1f} relative points"),
+            kpi_card("Largest scenario driver", driver_html, "", driver_fill,
+                     CANDIDATES[driver]["accent"], driver_src),
+            kpi_card("Top-10 sensitivity", f"{k}/{combos}", "", k / combos * 100, "#5FB8AB",
+                     f"Top 10 across {k} of {combos} indicator combinations"),
         ]),
     )
     st.markdown("")
     note("About the screening score",
-         "This is not an official poverty ranking. It compares FinScope Rwanda 2024 estimates with national "
-         "estimates and does not establish causation or current conditions."
-         + (" NBR supply context appears inside each indicator for reference only; it is never part of the score."
-            if mode == "Combined" else ""), tone="info")
+         "The fixed baseline equally averages four normalized gaps: bank-account ownership and current "
+         "registered mobile-money use (access/use), plus not saving and emergency funds (resilience). Each "
+         "district is compared with the national survey estimate, which is a descriptive reference, not a policy "
+         "target. Scores are relative points (not percentages, probabilities, or counts of people in need). "
+         "Use them to identify where to investigate, not as a stand-alone investment allocation or proof of cause.",
+         tone="info")
+    st.caption(
+        "**For investment planning:** Survey respondent counts are sample sizes, not beneficiaries. "
+        "Estimate potential reach using current district population, service availability, and intervention "
+        "eligibility, then validate locally."
+    )
     st.markdown("")
 
     # ---- Controls -----------------------------------------------------------------
@@ -306,17 +333,22 @@ def render_priority_explorer():
         with c1:
             st.selectbox("Explore a district", names, key=KEY_DISTRICT)
         with c2:
-            st.pills("Indicators in the score (choose at least two)", list(CANDIDATES.keys()),
+            st.pills("What-if scenario indicators (baseline remains fixed)", list(CANDIDATES.keys()),
                      selection_mode="multi", default=DEFAULT_COMPONENTS, key=KEY_COMPS)
         c3, c4 = st.columns([1.2, 2.2], gap="large", vertical_alignment="bottom")
         with c3:
             show = st.segmented_control("Districts shown in the ranking", SHOW_OPTIONS,
                                         default=SHOW_OPTIONS[1], key=KEY_SHOW) or SHOW_OPTIONS[1]
         with c4:
-            st.segmented_control("Sampling assumption for margins", list(DEFF_OPTIONS.keys()),
+            st.segmented_control("Illustrative margin assumption (not a significance test)", list(DEFF_OPTIONS.keys()),
                                  default=list(DEFF_OPTIONS.keys())[0], key=KEY_DEFF)
     if too_few:
-        st.warning("Choose at least two indicators; showing the three documented components instead.")
+        st.warning("A what-if scenario needs at least two indicators. Showing the fixed four-indicator baseline.")
+    if tuple(components) != BASELINE_COMPONENTS:
+        note("What-if scenario",
+             f"The ranking below uses {', '.join(components)} with equal indicator weights. It is a scenario "
+             "comparison; the fixed four-indicator baseline score and rank above remain unchanged.",
+             tone="info")
     st.markdown("")
 
     # ---- Evidence + composition ---------------------------------------------------------
@@ -324,7 +356,7 @@ def render_priority_explorer():
     with left:
         with st.container(key="card_priority_evidence"):
             card_title(f"Why {selected_district} appears on the screen",
-                       "Each chosen indicator against the national estimate. The yellow dot is this district; "
+                       "The selected scenario indicators against the national estimate. The yellow dot is this district; "
                        "the tick is the national level.")
             for s in components:
                 # Combined mode: related NBR supply context sits inside the evidence it relates to.
@@ -351,7 +383,8 @@ def render_priority_explorer():
                     "Borrowing is not treated as inherently good or bad.</div>")
     with right:
         with st.container(key="card_priority_drivers"):
-            card_title("What drives the score", "Each chosen indicator contributes an equal share of the 100 points.")
+            card_title("What drives the score",
+                       "Indicators have equal weight; their point contributions vary with the observed gaps.")
             st.plotly_chart(_donut(sel, components), use_container_width=True, key="priority_donut",
                             config={"displayModeBar": False})
             legend = "".join(
@@ -359,10 +392,11 @@ def render_priority_explorer():
                 f'height:9px;border-radius:50%;background:{CANDIDATES[s]["accent"]};margin-right:7px"></i>'
                 f'{esc(CANDIDATES[s]["label"])}</span><b>{contribs[s]:.1f} pts</b></div>' for s in components)
             render_html(legend)
-            beyond = int(sel["Gaps beyond margin"])
-            render_html(f'<div class="rank-hint">{beyond} of {len(components)} gaps are larger than the indicative '
-                        "sampling margin. Scores are comparative within this dataset, not probabilities or "
-                        "percentages of people in need.</div>")
+            beyond = int(sel["Gaps exceeding district-only margin"])
+            render_html(f'<div class="rank-hint">{beyond} of {len(components)} gaps exceed the district-only '
+                        "illustrative margin. This is not a test of the difference from the national estimate: "
+                        "the survey design is unavailable, and the two estimates are not independent. Scores "
+                        "are not percentages or counts of people in need.</div>")
     st.markdown("")
 
     # ---- Barriers for this district --------------------------------------------------------
@@ -396,29 +430,36 @@ def render_priority_explorer():
     rank_col, top_col = st.columns([1.6, 1], gap="medium")
     with rank_col:
         with st.container(key="card_priority_ranking"):
-            card_title("Screening ranking", "Bars are split by indicator so you can see what builds each score. "
-                                            "The selected district has a yellow outline.")
+            card_title("What-if scenario ranking",
+                       "Bars show the chosen indicators' contributions to the scenario score. "
+                       "Baseline rank is shown separately in the results table.")
             st.plotly_chart(_ranking_figure(ranked, selected_district, show, components), use_container_width=True,
                             key="priority_explorer_ranking", config={"displayModeBar": False})
     with top_col:
         with st.container(key="card_priority_top"):
-            card_title("Highest screening scores", "Jump straight to the districts with the largest relative gaps.")
+            card_title("Highest scenario scores",
+                       "These districts have the largest relative gaps under the selected what-if indicators.")
             for _, r in ranked.head(5).iterrows():
                 st.button(f"{int(r['Rank'])}  ·  {r['District']}  ·  {r['Priority score']:.1f}",
                           key=f"pe_jump_{r['District']}", on_click=_jump_to, args=(r["District"],),
                           use_container_width=True)
             render_html(
                 '<div class="build"><b>How the score is built.</b><br>For each chosen indicator, the gap to the '
-                "national estimate is measured in the direction that signals a need (below national for banking, "
-                "mobile money and emergency funds; above national for not saving). Each gap is scaled by the "
-                "largest gap among districts, and the scaled gaps are averaged with equal weight.</div>")
+                "national estimate is measured in the direction that signals a gap (below national for positive "
+                "indicators; above national for not saving). Each gap is floored at zero, scaled against the "
+                "largest district gap for that indicator, then averaged equally. This is a relative point score; "
+                "it does not measure absolute need, population reach, or investment return. Indicator choice "
+                "changes the scenario ranking, not the fixed baseline.</div>")
             st.download_button(
                 "Download district profile",
                 data=district_brief(
                     selected_district, districts, nat, barriers=barriers,
                     priority=dict(score=score, rank=int(sel["Rank"]), total=total,
-                                  robust_text=f"Top 10 in {k} of {combos} indicator combinations "
-                                              f"({_stability_label(k, combos).lower()}).",
+                                  baseline_score=baseline_score, baseline_rank=int(sel["Baseline rank"]),
+                                  baseline_total=baseline_total, components=components,
+                                  robust_text=f"Top 10 across {k} of {combos} indicator combinations "
+                                              f"({_stability_label(k, combos).lower()}); this is sensitivity to "
+                                              "indicator choice, not a probability.",
                                   drivers=", ".join(f"{s} {v:.1f} pts" for s, v in
                                                     sorted(contribs.items(), key=lambda x: -x[1])))),
                 file_name=f"{selected_district.lower().replace(' ', '_')}_priority_profile.md",
@@ -428,38 +469,72 @@ def render_priority_explorer():
     # ---- Stability ----------------------------------------------------------------------------------
     with st.container(key="card_priority_stability"):
         card_title("How stable is each district's rank?",
-                   f"The bar spans the best and worst rank a district gets across {combos} combinations of the "
-                   "four candidate indicators. The dot is its rank with your current choice.")
+                   f"The bar spans the best and worst rank across all {combos} combinations of two or more "
+                   "candidate indicators. The dot is the rank under your current what-if scenario.")
         st.plotly_chart(_stability_figure(ranked, selected_district, combos), use_container_width=True,
                         key="priority_stability", config={"displayModeBar": False})
-        render_html('<div class="micro">A short bar means the district is a priority however the score is built. '
-                    "A long bar means the conclusion depends on which indicators you include.</div>")
+        render_html('<div class="micro">The bar is a rank range, not a confidence interval. A district ranked in '
+                    "the top 10 across many combinations is less sensitive to indicator choice; a wide range or "
+                    "low top-10 frequency means its position is more choice-sensitive. This is not a probability "
+                    "that the district needs investment.</div>")
     st.markdown("")
 
     # ---- Table -----------------------------------------------------------------------------------------
     with st.container(key="card_priority_table"):
-        card_title("Ranked results", "All districts with complete indicator data, from the largest to the smallest relative gap.")
-        table = ranked[["Rank", "District", "Priority score", "Top-10 combos", "Valid respondents"]].copy()
+        card_title("Scenario results with fixed-baseline comparison",
+                   "Scenario rank follows the selected indicators. Baseline rank always uses the four documented "
+                   "access/use and resilience indicators; sample counts are not population totals.")
+        table = ranked[["Rank", "District", "Priority score", "Baseline rank", "Baseline score",
+                        "Best rank", "Worst rank", "Top-10 combos", "Valid respondents"]].copy()
+        table = table.rename(columns={
+            "Rank": "Scenario rank",
+            "Priority score": "Scenario score (points)",
+            "Baseline score": "Baseline score (points)",
+            "Valid respondents": "Survey respondents (n)",
+        })
         table["Stability"] = [_stability_label(v, combos) for v in table["Top-10 combos"]]
-        table["Gaps beyond margin"] = ranked["Gaps beyond margin"].astype(int)
+        table["Rank range across indicator sets"] = (
+            table["Best rank"].astype(int).astype(str) + "–" + table["Worst rank"].astype(int).astype(str))
+        table["Top-10 indicator sets"] = table["Top-10 combos"].astype(int).astype(str) + f" of {combos}"
+        table["Gaps exceeding district-only illustrative margin"] = (
+            ranked["Gaps exceeding district-only margin"].astype(int))
         for short, it in CANDIDATES.items():
             table[short] = ranked[it["column"]].round(2)
-        table["Priority score"] = table["Priority score"].round(1)
-        table = table.drop(columns=["Top-10 combos"])
+        table["Scenario score (points)"] = table["Scenario score (points)"].round(1)
+        table["Baseline score (points)"] = table["Baseline score (points)"].round(1)
+        table = table.drop(columns=["Best rank", "Worst rank", "Top-10 combos"])
         cfg = {
-            "Priority score": st.column_config.ProgressColumn("Priority score", format="%.1f", min_value=0, max_value=100),
-            "Valid respondents": st.column_config.NumberColumn("Respondents", format="%d"),
-            "Gaps beyond margin": st.column_config.NumberColumn(f"Gaps > margin (of {len(components)})", format="%d"),
+            "Scenario score (points)": st.column_config.ProgressColumn(
+                "Scenario score (relative points)", format="%.1f", min_value=0, max_value=100),
+            "Baseline score (points)": st.column_config.ProgressColumn(
+                "Baseline score (relative points)", format="%.1f", min_value=0, max_value=100),
+            "Survey respondents (n)": st.column_config.NumberColumn("Survey sample n", format="%d"),
+            "Gaps exceeding district-only illustrative margin": st.column_config.NumberColumn(
+                f"District-only margin flags (of {len(components)})", format="%d"),
         }
         for short in CANDIDATES:
             cfg[short] = st.column_config.ProgressColumn(short, format="%.1f%%", min_value=0, max_value=100)
         st.dataframe(table, hide_index=True, use_container_width=True, height=440, column_config=cfg)
+        download_table = table.copy()
+        download_table.insert(0, "Scenario indicators", ", ".join(components))
+        download_table.insert(1, "Fixed baseline indicators", ", ".join(BASELINE_COMPONENTS))
+        download_table.insert(
+            2, "Score interpretation",
+            "Relative normalized gap points; not population need, probability, target attainment, or investment advice")
+        download_table.insert(
+            3, "Population reach",
+            "Not estimated. Respondent counts are sample sizes, not beneficiaries; use current district population, "
+            "service availability, intervention eligibility, costs, and local validation before estimating reach or returns.")
         st.download_button("Download priority screening results (CSV)",
-                           data=table.to_csv(index=False).encode("utf-8"),
+                           data=download_table.to_csv(index=False).encode("utf-8"),
                            file_name="district_priority_screening.csv", mime="text/csv",
                            key="priority_explorer_download", icon=":material/download:")
 
     render_html('<div class="src-note">Source: FinScope Rwanda 2024. Respondent counts are unweighted sample sizes; '
-                "indicator percentages are weighted estimates. The score uses equal weighting of the chosen "
-                "normalized gaps. Margins are indicative (binomial, optional design-effect multiplier) because the "
-                "survey's design information is not available; no formal significance claims are made.</div>")
+                "indicator percentages are weighted estimates. The fixed baseline equally weights four normalized "
+                "gaps across access/use and resilience; the what-if score equally weights only its selected indicators. "
+                "Scores are relative points, not percentages, population counts, or investment recommendations. "
+                "Margins are district-only illustrative binomial margins with an optional design-effect assumption; "
+                "the survey design is unavailable, so these do not test the district-versus-national difference or "
+                "support formal significance claims. Validate current population reach, costs, service availability, "
+                "and local context before investment decisions.</div>")

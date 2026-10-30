@@ -310,10 +310,17 @@ def _ranking_html(district, metric, item):
         )
 
     n = len(ordered)
+    direction = (
+        "Higher values indicate greater vulnerability." if item["polarity"] == "negative"
+        else "Higher values indicate greater reported access or resilience."
+        if item["polarity"] == "positive"
+        else "This indicator has no inherently favourable direction."
+    )
     return f"""
     <div style="--accent:{item['accent']}">
-      <div class="rk-h">Highest five districts</div><div class="rk">{rows(ordered.head(5), 1)}</div>
-      <div class="rk-h">Lowest five districts</div><div class="rk">{rows(ordered.tail(5), n - 4)}</div>
+      <div class="rk-h">Highest five values</div><div class="rk">{rows(ordered.head(5), 1)}</div>
+      <div class="rk-h">Lowest five values</div><div class="rk">{rows(ordered.tail(5), n - 4)}</div>
+      <div class="micro">{direction} Lists rank this indicator only, not overall financial inclusion.</div>
     </div>
     """
 
@@ -384,12 +391,17 @@ def render_national_overview():
     section_title("What stands out",
                   "Four patterns in the data, worked out from the estimates on this page.")
     render_html(_insights_html(nat, district, urban_rural))
+    st.caption(
+        "**Why district comparisons matter:** A high national inclusion headline can coexist with "
+        "substantial differences between districts and between types of services. The comparisons below "
+        "show where estimates diverge from the national reference; they describe gaps, not their causes."
+    )
     st.markdown("")
 
     # ---- Saving landscape ---------------------------------------------------
     if sum(1 for n in LANDSCAPE if n in nat) >= 4:
         section_title("How people save and cope",
-                      "Community channels reach far more adults than banks, but few hold an emergency buffer.")
+                      "Community saving is commonly reported, but few adults have an emergency buffer.")
         left, right = st.columns([1.5, 1], gap="medium")
         with left:
             with st.container(key="card_landscape"):
@@ -403,7 +415,7 @@ def render_national_overview():
                 points = []
                 g, b = nat.get("Saves with a group"), nat.get("Own bank account")
                 if g and b:
-                    points.append(f"Group saving reaches <b>{g:.1f}%</b> of adults, about "
+                    points.append(f"<b>{g:.1f}%</b> of adults report saving with a group, about "
                                   f"<b>{g / b:.1f} times</b> the share who own a bank account ({b:.1f}%).")
                 ns, em = nat.get("Does not save"), nat.get("Has emergency funds")
                 if ns is not None and em is not None:
@@ -412,7 +424,7 @@ def render_national_overview():
                 sc = nat.get("Currently uses Umurenge SACCO")
                 if sc is not None:
                     points.append(f"<b>{sc:.1f}%</b> currently use an Umurenge SACCO, so the sector-level "
-                                  "network reaches roughly as many adults as banks do.")
+                                  "reported use is similar to the share who own a bank account.")
                 render_html("".join(f'<div class="act" style="grid-template-columns:12px 1fr;padding:12px 0">'
                                     f'<div style="width:8px;height:8px;border-radius:50%;background:#1A8A7D;'
                                     f'margin-top:7px"></div><p class="act-p" style="margin:0">{p}</p></div>'
@@ -505,7 +517,7 @@ def render_national_overview():
                         render_html(
                             f'<div class="gap-row" style="grid-template-columns:1fr 1fr;margin:6px 0 4px">'
                             f'<div class="gap"><span>Without an account</span><b>{base:,} respondents</b></div>'
-                            f'<div class="gap"><span>Population represented</span><b>{pop:,.0f}</b></div></div>'
+                            f'<div class="gap"><span>Weighted adults represented (estimate)</span><b>{pop:,.0f}</b></div></div>'
                         )
                         card_title(f"Reasons in {picked}", "Weighted shares grouped by barrier family.")
                         st.plotly_chart(_district_family_figure(rows), use_container_width=True,
@@ -517,12 +529,15 @@ def render_national_overview():
                             f'({top["Weighted share (%)"]:.1f}%). '
                             + (badge("Small base: read with care", "warn") if wide else
                                badge("Reasonable base for family-level shares", "ok"))
-                            + " Individual reasons rest on small counts, so families are more reliable than single reasons.</div>"
+                            + " Individual reasons rest on small counts, so families are more reliable than single reasons. "
+                            "The weighted base represents adults who reported no account and gave a reason; it is not "
+                            "an estimate of people eligible for or likely to benefit from an investment.</div>"
                         )
         st.markdown("")
 
     # ---- Where the gaps are ----------------------------------------------------
-    section_title("Where the gaps are", "Pick an indicator to see how districts compare across the country.")
+    section_title("Where the gaps are",
+                  "Compare district estimates with the national reference for one indicator at a time.")
     options = {it["short"]: it for it in REGISTRY if it["column"] in district.columns}
     with st.container(key="card_district_snapshot"):
         picked = st.pills("Indicator", list(options.keys()), selection_mode="single",
@@ -530,21 +545,20 @@ def render_national_overview():
             or list(options.keys())[0]
         item = options[picked]
         metric = item["column"]
-        nbr_entries = []
-        nbr_source_version = None
-        if mode == "Combined":
-            try:
-                nbr_entries, nbr_source_version = load_combined_context_data(
-                    item["variable"],
-                    geography_level="district",
-                )
-            except (RuntimeError, ValueError, OSError, PyMongoError):
-                st.caption("NBR map context is unavailable; FinScope estimates are unchanged.")
+        national_est = nat.get(item["national"])
 
         low = district.loc[district[metric].idxmin()]
         high = district.loc[district[metric].idxmax()]
         spread = float(high[metric] - low[metric])
         typical = float(np.median([data.moe_pp(v, n) for v, n in zip(district[metric], district["Valid respondents"])]))
+        direction = (
+            "Lower values indicate less reported access or resilience."
+            if item["polarity"] == "positive"
+            else "Higher values indicate greater reported vulnerability."
+            if item["polarity"] == "negative"
+            else "Neither higher nor lower is inherently better for this indicator."
+        )
+        below_national = int((district[metric] < national_est).sum()) if national_est is not None else None
 
         try:
             geojson = data.load_geojson()
@@ -560,6 +574,16 @@ def render_national_overview():
           <div class="gap"><span>Lowest district</span><b>{esc(low["District"])} · {low[metric]:.1f}%</b></div>
           <div class="gap"><span>District range</span><b>{spread:.1f} pp</b></div>
         </div>""")
+        benchmark_text = (
+            f"National reference: <b>{national_est:.1f}%</b>; {below_national} of {len(district)} district estimates "
+            f"are below it. {direction}"
+            if national_est is not None
+            else direction
+        )
+        render_html(
+            f'<div class="micro">{benchmark_text} Map colours show district estimates, not distance from the '
+            "national reference; the lists rank this indicator only, not overall financial inclusion.</div>"
+        )
 
         selected_nbr_entry = None
         supply_points = []
@@ -617,8 +641,9 @@ def render_national_overview():
             render_html(_ranking_html(district, metric, item))
 
         render_html(f'<div class="micro">A typical district estimate carries a sampling margin of about '
-                    f"±{typical:.1f} pp (indicative), so gaps between neighbouring districts of that size "
-                    "or smaller should not be over-interpreted.</div>")
+                    f"±{typical:.1f} pp under a simple-random-sample approximation. This is a district-only "
+                    "illustrative margin, not a significance test for district-to-district or district-to-national "
+                    "differences; the survey design information is unavailable.</div>")
 
         if selected_nbr_entry is not None:
             unit = selected_nbr_entry.get("unit") or "unit not specified"

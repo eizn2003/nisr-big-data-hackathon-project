@@ -28,7 +28,7 @@ def district_brief(name, frame, national, barriers=None, priority=None):
         "",
         "## Indicators compared with the national estimate",
         "",
-        "| Indicator | District | National | Difference (pp) | Indicative margin (±pp) | Rank of 30 | How to read |",
+        "| Indicator | District | National | Difference (pp) | District-only indicative margin (±pp) | Rank of 30 | How to read |",
         "|---|---:|---:|---:|---:|---:|---|",
     ]
     for item in REGISTRY:
@@ -46,13 +46,28 @@ def district_brief(name, frame, national, barriers=None, priority=None):
     if priority:
         lines += [
             "",
-            "## Priority screening (exploratory)",
+            "## District gap screening (exploratory)",
             "",
-            f"- Relative priority score: **{priority['score']:.1f} / 100**, rank {priority['rank']} of {priority['total']}.",
+            f"- What-if scenario: **{priority['score']:.1f} relative points**, rank {priority['rank']} of {priority['total']}, "
+            f"using {', '.join(priority.get('components', [])) or 'the selected indicators'}.",
             f"- {priority['robust_text']}",
         ]
+        if "baseline_score" in priority:
+            baseline_total = priority.get("baseline_total", priority["total"])
+            lines.append(
+                f"- Fixed four-indicator baseline: **{priority['baseline_score']:.1f} relative points**, "
+                f"rank {priority['baseline_rank']} of {baseline_total}."
+            )
         if priority.get("drivers"):
             lines.append(f"- Largest contributors: {priority['drivers']}.")
+        lines += [
+            "- The score compares weighted survey estimates with the national survey estimate, a descriptive "
+            "reference rather than a policy target. It is not a percentage, population count, investment "
+            "recommendation, or estimate of expected returns.",
+            "- Respondent counts are survey sample sizes, not beneficiaries. Population reach, costs, and returns "
+            "are not estimated; assess current district population, service availability, intervention eligibility, "
+            "and local evidence before allocating investment.",
+        ]
 
     if barriers is not None and not barriers.empty:
         b = barriers.loc[barriers["District"].eq(name)]
@@ -76,8 +91,8 @@ def district_brief(name, frame, national, barriers=None, priority=None):
         "",
         "## Read with care",
         "",
-        "- Margins assume simple random sampling; the survey's design information is not available, "
-        "so true margins are larger. Differences smaller than the margin should not be treated as real.",
+        "- District-only margins assume simple random sampling; the survey's design information is unavailable. "
+        "They are not confidence intervals for district-versus-national differences and do not establish significance.",
         "- Differences describe gaps; they do not explain causes.",
         "- Mobile-money figures count registered users who describe themselves as current users, "
         "so they are lower than the headline for registered wallets.",
