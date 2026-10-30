@@ -1013,6 +1013,20 @@ def render_national_overview():
             or list(options.keys())[0]
         item = options[picked]
         metric = item["column"]
+        national_est = nat.get(item["national"])
+        nbr_entries = []
+        nbr_source_version = None
+        if mode == "Combined":
+            try:
+                nbr_entries, nbr_source_version = load_combined_context_data(
+                    item["variable"],
+                    geography_level="district",
+                )
+            except (RuntimeError, ValueError, OSError, PyMongoError) as error:
+                st.caption(
+                    "NBR map context is unavailable; FinScope estimates are unchanged."
+                )
+                st.caption(str(error))
 
         low = district.loc[district[metric].idxmin()]
         high = district.loc[district[metric].idxmax()]
