@@ -145,7 +145,8 @@ def test_priority_top_district_matches_independent_calculation():
     n = pd.read_csv(DATA / "national_financial_inclusion.csv").set_index("Indicator")["Estimate (%)"]
     spec = [("Owns a bank account (%)", "Own bank account", True),
             ("Registered mobile-money user (%)", "Registered mobile-money user", True),
-            ("Does not save (%)", "Does not save", False)]
+            ("Does not save (%)", "Does not save", False),
+            ("Has emergency funds (%)", "Has emergency funds", True)]
     parts = []
     for col, nat, lower_is_gap in spec:
         gap = (n[nat] - d[col]) if lower_is_gap else (d[col] - n[nat])
@@ -155,5 +156,19 @@ def test_priority_top_district_matches_independent_calculation():
     top = d.sort_values("score", ascending=False).iloc[0]
     at = _app("priority_explorer", "render_priority_explorer").run()
     assert at.selectbox(key="priority_explorer_district").value == top["District"]
-    shown = float(re.search(r'kpi-value">([\d.]+)<small>/100', _html(at)).group(1))
+    shown = float(re.search(r'kpi-value">([\d.]+)<small>relative points', _html(at)).group(1))
     assert abs(shown - round(top["score"], 1)) < 0.051
+
+
+def test_priority_baseline_stays_fixed_in_what_if_scenario():
+    at = _app("priority_explorer", "render_priority_explorer").run()
+    before = float(re.search(
+        r'kpi-value">([\d.]+)<small>relative points', _html(at)).group(1))
+
+    at.session_state["priority_explorer_components"] = ["Bank account", "Mobile money"]
+    at.run()
+
+    after = float(re.search(
+        r'kpi-value">([\d.]+)<small>relative points', _html(at)).group(1))
+    assert after == before
+    assert "What-if scenario" in _html(at)

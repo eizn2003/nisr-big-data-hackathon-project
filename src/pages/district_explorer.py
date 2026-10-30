@@ -110,6 +110,7 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
 
     customdata = df[["Valid respondents", "rank", "diff"]].to_numpy()
     n = len(df)
+    rank_label = "Gap rank" if cfg["polarity"] != "neutral" else "Value rank"
 
     fig = go.Figure(
         Choropleth(
@@ -131,9 +132,9 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
                 "<b>%{location}</b><br>"
                 + short
                 + ": <b>%{z:.1f}%</b><br>"
-                + f"Rank %{{customdata[1]:.0f}} of {n} · "
-                + "%{customdata[2]:+.1f} pp vs national<br>"
-                + "%{customdata[0]:,.0f} respondents<extra></extra>"
+                + f"{rank_label} %{{customdata[1]:.0f}} of {n} · "
+                + "%{customdata[2]:+.1f} pp vs national reference<br>"
+                + "%{customdata[0]:,.0f} unweighted respondents (n)<extra></extra>"
             ),
             colorbar=dict(
                 title=dict(text=short, side="top", font=dict(size=11)),
@@ -191,7 +192,7 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
             )
         )
 
-    ranked = df.sort_values(metric, ascending=False)["District"].tolist()
+    ranked = df.sort_values("rank")["District"].tolist()
     spot = settings["spotlight"]
     if spot in ("Top 5", "Both"):
         layers.append(_outline_layer(geojson, ranked[:5], "#FFFFFF" if dark else PALETTE["ink"], 2.4))
@@ -243,15 +244,24 @@ def _inspector_html(row, cfg, metric, national_est, lo, hi, n):
     arrow = "▲" if diff >= 0 else "▼"
     margin = data.moe_pp(est, row["Valid respondents"])
     verdict = (
-        badge("Difference larger than the sampling margin", "ok")
+        badge("Observed gap exceeds the district-only illustrative margin", "info")
         if abs(diff) > margin else
-        badge("Difference within the sampling margin", "warn")
+        badge("Observed gap is within the district-only illustrative margin", "warn")
+    )
+    rank_label = "Gap rank for this indicator" if cfg["polarity"] != "neutral" else "Value rank for this indicator"
+    rank_note = "1 = largest relative gap" if cfg["polarity"] != "neutral" else "1 = highest value; descriptive only"
+    direction = (
+        "Lower values indicate less reported access or resilience."
+        if cfg["polarity"] == "positive"
+        else "Higher values indicate greater reported vulnerability."
+        if cfg["polarity"] == "negative"
+        else "Higher or lower is not inherently better for this indicator."
     )
     return f"""
     <div style="--accent:{cfg['accent']};--accent-text:{cfg['text_accent']}">
       <div class="insp-top">
         <div class="insp-name">{esc(row['District'])}</div>
-        <div class="insp-rank">#{int(row['rank'])} of {n}</div>
+        <div class="insp-rank">#{int(row['rank'])} of {n}<br><small>{rank_label}</small></div>
       </div>
       <div class="insp-value">{est:.1f}<span>%</span></div>
       <div class="insp-sub">{esc(cfg['title'])} · <span class="moe">±{margin:.1f} pp indicative margin</span></div>
@@ -266,7 +276,9 @@ def _inspector_html(row, cfg, metric, national_est, lo, hi, n):
         <div><b>{arrow} {abs(diff):.1f} pp</b><span>{'Above' if diff >= 0 else 'Below'} national</span></div>
         <div><b>{int(row['Valid respondents']):,}</b><span>Respondents</span></div>
       </div>
+      <div class="micro">{rank_note}. {direction}</div>
       <div style="margin-top:12px">{verdict}</div>
+      <div class="micro">This illustrative district-only margin is not a formal test of the district–national difference.</div>
     </div>
     """
 
@@ -312,8 +324,9 @@ def render_district_explorer():
     only_data, only_geo = data.geo_name_mismatch(district["District"], geojson)
     if only_data or only_geo:
         st.warning(
-            "Some district names in the data do not match the map boundaries and will not be coloured: "
-            f"{', '.join(only_data) or 'none'} (data) · {', '.join(only_geo) or 'none'} (map)."
+            "Some district names do not match the map, so those districts may not be shaded. "
+            f"Only in the data: {', '.join(only_data) or 'none'}. "
+            f"Only on the map: {', '.join(only_geo) or 'none'}."
         )
 
     names = sorted(district["District"].unique())
@@ -342,17 +355,40 @@ def render_district_explorer():
     national_est = float(nat_hit.iloc[0])
 
     df = district.reset_index(drop=True).copy()
-    df["rank"] = df[metric].rank(ascending=False, method="min").astype(int)
+    if cfg["polarity"] == "positive":
+        df["directional_gap"] = (national_est - df[metric]).clip(lower=0)
+        df["rank"] = df["directional_gap"].rank(ascending=False, method="min").astype(int)
+    elif cfg["polarity"] == "negative":
+        df["directional_gap"] = (df[metric] - national_est).clip(lower=0)
+        df["rank"] = df["directional_gap"].rank(ascending=False, method="min").astype(int)
+    else:
+        df["directional_gap"] = df[metric]
+        df["rank"] = df[metric].rank(ascending=False, method="min").astype(int)
     df["diff"] = df[metric] - national_est
     n = len(df)
     lo, hi = float(df[metric].min()), float(df[metric].max())
     sel = df.loc[df["District"].eq(selected_district)].iloc[0]
+    largest_gap = df.loc[df["directional_gap"].idxmax()]
+    smallest_gap = df.loc[df["directional_gap"].idxmin()]
     highest = df.loc[df[metric].idxmax()]
     lowest = df.loc[df[metric].idxmin()]
     est = float(sel[metric])
     diff = est - national_est
     margin = data.moe_pp(est, sel["Valid respondents"])
-    clear = abs(diff) > margin
+    if cfg["polarity"] == "positive":
+        direction = (
+            "Below national · lower reported access/resilience" if diff < 0
+            else "Above national · higher reported access/resilience" if diff > 0
+            else "At the national estimate"
+        )
+    elif cfg["polarity"] == "negative":
+        direction = (
+            "Above national · higher reported vulnerability" if diff > 0
+            else "Below national · lower reported vulnerability" if diff < 0
+            else "At the national estimate"
+        )
+    else:
+        direction = "Descriptive comparison; no inherently favourable direction"
 
     page_header(
         "District explorer",
@@ -368,12 +404,14 @@ def render_district_explorer():
                          PALETTE["ink2"], "Weighted national level"),
                 kpi_card("Difference from national", f"{diff:+.1f}", " pp",
                          abs(diff) / max(hi - lo, 1e-9) * 100, PALETTE["sun"],
-                         ("Above" if diff >= 0 else "Below") + " national · "
-                         + ("larger than margin" if clear else "within margin")),
-                kpi_card("Rank among districts", f"#{int(sel['rank'])}", f" of {n}",
+                         direction),
+                kpi_card("Gap rank for this indicator" if cfg["polarity"] != "neutral" else "Value rank for this indicator",
+                         f"#{int(sel['rank'])}", f" of {n}",
                          (n - int(sel["rank"]) + 1) / n * 100, "#5FB8AB",
-                         f"Highest <b>{esc(highest['District'])}</b> · "
-                         f"Lowest <b>{esc(lowest['District'])}</b>"),
+                         ("1 = largest relative gap · " if cfg["polarity"] != "neutral"
+                          else "1 = highest value (descriptive) · ")
+                         + f"Highest <b>{esc(highest['District'])}</b> · "
+                         + f"Lowest <b>{esc(lowest['District'])}</b>"),
             ]
         ),
     )
@@ -401,7 +439,8 @@ def render_district_explorer():
                 basemap = st.selectbox("Basemap", list(BASEMAPS), key="dx_basemap")
                 palette = st.selectbox("Colours", PALETTE_CHOICES, key="dx_palette")
                 opacity = st.slider("Fill opacity", 0.3, 1.0, 0.85, 0.05, key="dx_opacity")
-                spotlight = st.selectbox("Outline extremes", SPOTLIGHTS, key="dx_spot")
+                spotlight = st.selectbox(
+                    "Outline extremes (ranked by gap direction)", SPOTLIGHTS, key="dx_spot")
                 labels = st.toggle("Show district names", value=False, key="dx_labels")
                 tilt = st.slider("Tilt", 0, 60, 0, key="dx_tilt")
                 rotation = st.slider("Rotation", -90, 90, 0, key="dx_rot")
@@ -419,15 +458,19 @@ def render_district_explorer():
     with map_col:
         with st.container(key="card_map"):
             legend = ""
+            large_label = "Largest gaps (5)" if cfg["polarity"] != "neutral" else "Highest values (5)"
+            small_label = "Smallest gaps (5)" if cfg["polarity"] != "neutral" else "Lowest values (5)"
             if spotlight in ("Top 5", "Both"):
                 top_color = "#FFFFFF" if BASEMAPS[basemap]["dark"] else PALETTE["ink"]
                 legend += (
                     f'<span class="chip"><i style="border-color:{top_color};'
-                    f'background:{"#0E2A35" if top_color == "#FFFFFF" else "#fff"}"></i>Highest 5</span>'
+                    f'background:{"#0E2A35" if top_color == "#FFFFFF" else "#fff"}"></i>'
+                    f'{esc(large_label)}</span>'
                 )
             if spotlight in ("Bottom 5", "Both"):
                 legend += (
-                    f'<span class="chip"><i style="border-color:{PALETTE["coral"]}"></i>Lowest 5</span>'
+                    f'<span class="chip"><i style="border-color:{PALETTE["coral"]}"></i>'
+                    f'{esc(small_label)}</span>'
                 )
             legend += (
                 f'<span class="chip"><i style="border-color:{PALETTE["sun"]}"></i>Selected</span>'
@@ -473,18 +516,20 @@ def render_district_explorer():
         with st.container(key="card_inspector"):
             render_html(_inspector_html(sel, cfg, metric, national_est, lo, hi, n))
             st.button(
-                f"Highest: {highest['District']} · {highest[metric]:.1f}%",
+                f"{'Largest gap' if cfg['polarity'] != 'neutral' else 'Highest value'}: "
+                f"{largest_gap['District']} · {largest_gap[metric]:.1f}%",
                 key="dx_go_high",
                 on_click=_jump_to,
-                args=(highest["District"],),
+                args=(largest_gap["District"],),
                 use_container_width=True,
                 icon=":material/arrow_upward:",
             )
             st.button(
-                f"Lowest: {lowest['District']} · {lowest[metric]:.1f}%",
+                f"{'Smallest gap' if cfg['polarity'] != 'neutral' else 'Lowest value'}: "
+                f"{smallest_gap['District']} · {smallest_gap[metric]:.1f}%",
                 key="dx_go_low",
                 on_click=_jump_to,
-                args=(lowest["District"],),
+                args=(smallest_gap["District"],),
                 use_container_width=True,
                 icon=":material/arrow_downward:",
             )
@@ -492,9 +537,11 @@ def render_district_explorer():
                 f"""
                 <div class="insp-note"><b>{esc(cfg['description'])}</b><br>
                 {esc(cfg['interpretation'])}<br>
-                The gap between extremes is {hi - lo:.1f} pp. It is a
-                description, not a causal explanation. The margin assumes simple
-                random sampling, so the true uncertainty is larger.</div>
+                The gap between extremes is {hi - lo:.1f} pp. {esc(cfg['interpretation'])}
+                Differences describe patterns, not causes. A district's rank is specific to this indicator and
+                is not an overall financial-inclusion rank. The district-only margin is a simple-random-sample
+                illustration, not a significance test against the national estimate; survey design information
+                is unavailable.</div>
                 """
             )
             nat_lookup = dict(zip(national["Indicator"], national["Estimate (%)"].astype(float)))
@@ -519,9 +566,9 @@ def render_district_explorer():
     with rank_col:
         with st.container(key="card_ranking"):
             card_title(
-                "All districts, ranked",
-                "The highlighted bar is your selected district; the dotted "
-                "line is the national estimate.",
+                "District indicator estimates",
+                "Bars show this indicator's estimate, sorted by value; the dotted line is the national reference. "
+                "This is not an overall district financial-inclusion ranking.",
             )
             ordered = df.sort_values(metric, ascending=True)
             bar_colors = [

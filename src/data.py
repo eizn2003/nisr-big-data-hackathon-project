@@ -186,11 +186,11 @@ def barrier_family_shares(barriers, by_district=False):
 # Uncertainty helpers
 # --------------------------------------------------------------------------
 def moe_pp(p_percent, n, deff=1.0):
-    """Indicative 95% margin of error in percentage points.
+    """Illustrative 95% binomial margin under simple-random-sample assumptions.
 
     Uses the binomial formula with an optional design-effect multiplier. The
-    survey's strata and cluster identifiers are not in the supplied dataset,
-    so this is a *minimum* margin: the true design-based margin is larger.
+    supplied data omit strata and cluster identifiers, so this is not a
+    design-correct margin; actual design-based uncertainty may differ.
     """
     if n is None or n <= 0 or pd.isna(p_percent):
         return float("nan")
