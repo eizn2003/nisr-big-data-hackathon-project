@@ -32,7 +32,8 @@ Thumbs.db
 
 # Local data — review before committing
 data/reports/
-data/processed/
+#data/processed/
+data/raw/
 
 # Logs
 *.log

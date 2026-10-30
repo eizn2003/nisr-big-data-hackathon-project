@@ -10,11 +10,16 @@ import json
 import math
 import os
 import statistics
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+from pymongo import monitoring
 
 from src.data_sources.mongodb_district_explorer import (
     CHANGE_REVIEW_THRESHOLD_PERCENT,
@@ -1542,12 +1547,16 @@ def _tentative_reconciliation_qualifications(
 def load_mongodb_history(
     *,
     pages: Sequence[str] | None = None,
+    scope_keys: Sequence[tuple[str, str, str]] | None = None,
+    include_kpis: bool = True,
+    include_tables: bool = True,
+    load_metrics: dict[str, Any] | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
 ]:
-    """Load source history read-only, optionally restricting all collections by page."""
+    """Load source history read-only, optionally restricting exact observation scopes."""
     try:
         from dotenv import load_dotenv
         from pymongo import MongoClient
@@ -1560,14 +1569,54 @@ def load_mongodb_history(
     uri = os.getenv("MONGODB_URI") or os.getenv("MONGO_URI")
     if not uri:
         raise RuntimeError("Set MONGODB_URI or MONGO_URI in the project .env file.")
-    client = MongoClient(uri, serverSelectionTimeoutMS=15000)
+    if scope_keys is not None:
+        normalized_scope_keys = sorted({
+            (str(page), str(reporting_date), str(combo_key))
+            for page, reporting_date, combo_key in scope_keys
+            if page and reporting_date and combo_key
+        })
+        if not normalized_scope_keys:
+            if load_metrics is not None:
+                load_metrics.update({
+                    "collection_read_seconds": {
+                        RUN_COLLECTION: 0.0,
+                        KPI_COLLECTION: 0.0,
+                        TABLE_COLLECTION: 0.0,
+                    },
+                    "collection_document_counts": {
+                        RUN_COLLECTION: 0,
+                        KPI_COLLECTION: 0,
+                        TABLE_COLLECTION: 0,
+                    },
+                    "mongo_read_command_count": 0,
+                    "mongo_read_command_seconds": 0.0,
+                })
+            return [], [], []
+    command_metrics = _NBRReadCommandMetrics()
+    client = MongoClient(
+        uri,
+        serverSelectionTimeoutMS=8000,
+        connectTimeoutMS=8000,
+        socketTimeoutMS=30000,
+        event_listeners=[command_metrics],
+    )
     try:
-        client.admin.command("ping")
         database = client[DATABASE_NAME]
-        query = {"page": {"$in": list(pages)}} if pages is not None else {}
-        runs = list(database[RUN_COLLECTION].find(
-            query,
-            {
+        if scope_keys is not None:
+            query = {
+                "$or": [
+                    {
+                        "page": page,
+                        "snapshot_date": reporting_date,
+                        "combo_key": combo_key,
+                    }
+                    for page, reporting_date, combo_key in normalized_scope_keys
+                ]
+            }
+        else:
+            query = {"page": {"$in": list(pages)}} if pages is not None else {}
+        projections = {
+            RUN_COLLECTION: {
                 "_id": 0,
                 "page": 1,
                 "snapshot_date": 1,
@@ -1580,13 +1629,9 @@ def load_mongodb_history(
                 "filters": 1,
                 "filters_requested": 1,
                 "table_status": 1,
-                "table_rows": 1,
-                "previous_matching_snapshot_date": 1,
+                "table_columns": 1,
             },
-        ))
-        kpis = list(database[KPI_COLLECTION].find(
-            query,
-            {
+            KPI_COLLECTION: {
                 "_id": 0,
                 "page": 1,
                 "snapshot_date": 1,
@@ -1595,15 +1640,9 @@ def load_mongodb_history(
                 "combo_key": 1,
                 "filters": 1,
                 "filters_requested": 1,
-                "date_source": 1,
-                "dashboard_date": 1,
                 "kpis": 1,
-                "kpi_count": 1,
             },
-        ))
-        tables = list(database[TABLE_COLLECTION].find(
-            query,
-            {
+            TABLE_COLLECTION: {
                 "_id": 0,
                 "page": 1,
                 "snapshot_date": 1,
@@ -1612,18 +1651,120 @@ def load_mongodb_history(
                 "combo_key": 1,
                 "filters": 1,
                 "filters_requested": 1,
-                "date_source": 1,
-                "dashboard_date": 1,
                 "district": 1,
                 "district_known": 1,
-                "columns": 1,
                 "values": 1,
-                "row_index": 1,
             },
-        ))
+        }
+
+        def read_collection(name: str) -> tuple[list[dict[str, Any]], float]:
+            started = time.perf_counter()
+            documents = list(
+                database[name]
+                .find(query, projections[name])
+                .batch_size(2000)
+                .max_time_ms(20000)
+            )
+            return documents, time.perf_counter() - started
+
+        collection_names = [RUN_COLLECTION]
+        if include_kpis:
+            collection_names.append(KPI_COLLECTION)
+        if include_tables:
+            collection_names.append(TABLE_COLLECTION)
+        with ThreadPoolExecutor(max_workers=len(collection_names)) as executor:
+            reads = {
+                name: executor.submit(read_collection, name)
+                for name in collection_names
+            }
+            runs, runs_elapsed = reads[RUN_COLLECTION].result()
+            kpis, kpis_elapsed = (
+                reads[KPI_COLLECTION].result()
+                if include_kpis else ([], 0.0)
+            )
+            tables, tables_elapsed = (
+                reads[TABLE_COLLECTION].result()
+                if include_tables else ([], 0.0)
+            )
+        if load_metrics is not None:
+            load_metrics.update({
+                "collection_read_seconds": {
+                    RUN_COLLECTION: runs_elapsed,
+                    KPI_COLLECTION: kpis_elapsed,
+                    TABLE_COLLECTION: tables_elapsed,
+                },
+                "collection_document_counts": {
+                    RUN_COLLECTION: len(runs),
+                    KPI_COLLECTION: len(kpis),
+                    TABLE_COLLECTION: len(tables),
+                },
+                "scope_key_count": (
+                    len(normalized_scope_keys)
+                    if scope_keys is not None else None
+                ),
+                **command_metrics.snapshot(),
+            })
     finally:
         client.close()
     return runs, kpis, tables
+
+
+class _NBRReadCommandMetrics(monitoring.CommandListener):
+    """Capture read-command latency/counts for NBR page-load diagnostics."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._started: dict[int, tuple[str, float]] = {}
+        self._counts: Counter[str] = Counter()
+        self._seconds: Counter[str] = Counter()
+
+    def started(self, event: Any) -> None:
+        if event.command_name not in {"find", "getMore"}:
+            return
+        command = event.command
+        collection = str(
+            command.get("find")
+            or command.get("collection")
+            or "unknown"
+        )
+        with self._lock:
+            self._started[event.request_id] = (
+                collection,
+                time.perf_counter(),
+            )
+
+    def succeeded(self, event: Any) -> None:
+        self._finish(event.request_id, event.duration_micros / 1_000_000)
+
+    def failed(self, event: Any) -> None:
+        self._finish(event.request_id, 0.0)
+
+    def _finish(self, request_id: int, elapsed: float) -> None:
+        with self._lock:
+            started = self._started.pop(request_id, None)
+            if started is None:
+                return
+            collection, _ = started
+            self._counts[collection] += 1
+            self._seconds[collection] += elapsed
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            by_collection = {
+                collection: {
+                    "command_count": self._counts[collection],
+                    "command_seconds": round(self._seconds[collection], 4),
+                }
+                for collection in sorted(self._counts)
+            }
+            return {
+                "mongo_read_command_count": sum(self._counts.values()),
+                "mongo_read_command_seconds": round(
+                    sum(self._seconds.values()),
+                    4,
+                ),
+                "mongo_read_commands_by_collection": by_collection,
+            }
 
 
 def main(argv: list[str] | None = None) -> int:

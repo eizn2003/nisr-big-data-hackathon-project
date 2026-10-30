@@ -41,7 +41,13 @@ nd.render_nbr_page("{view}", selected_district="Gasabo")
 """)
     check(f"NBR {view} page renders without exception", not at.exception, "; ".join(e.message for e in at.exception))
     html = " ".join(m.value for m in at.markdown)
-    check(f"NBR {view}: sparkline inside KPI", "<svg" in html and "polyline" in html)
+    if view == "district":
+        check(f"NBR {view}: sparkline inside KPI", "<svg" in html and "polyline" in html)
+    else:
+        check(
+            "NBR priority: dedicated evidence explorer renders",
+            "Priority Explorer" in html and "NBR Supply" in html,
+        )
     check(f"NBR {view}: no run/record ids or snapshot hash on page",
           "Run ID" not in html and "Source record ID" not in html and "snap" not in " ".join(c.value for c in at.caption))
 
@@ -59,23 +65,7 @@ at.run()
 after = at.session_state[key[0]] if key else None
 check("pending map click selects the district", after == "Kicukiro" and not at.exception, f"{before}->{after} {[e.message for e in at.exception]}")
 
-# 4 priority review panel (nested expander)
-at = app("""
-import src.nbr_dashboard as nd
-nd.load_nbr_review_candidates = lambda v, pages: ([{"method": "robust_zscore", "district": "Gasabo", "page": "inclusion",
-    "metric_label": "Bank customers", "filters": {}, "reporting_date": "2024-Q4", "observed_value": 121000, "direction": "up",
-    "evidence_assessment": {"state": "needs_review"}, "quality_qualifications": ["Short history"], "score": 3.2,
-    "threshold": 2.5, "run_id": "r1", "method_specific_rank": 1, "reason": "Jump vs history"}],
-    {"assessment_id": "A1", "assessment_timestamp": "2026-10-01", "model_version": "m", "source_git_commit": "abc", "pages": ["inclusion"]})
-nd.render_nbr_page("priority", selected_district="Gasabo")
-""")
-for b in at.button:
-    if (b.label or "").startswith("Load review candidates"):
-        b.click()
-at.run()
-check("review candidates panel renders", not at.exception, "; ".join(e.message for e in at.exception))
-
-# 5 Combined strip + helpers
+# 4 Combined strip + helpers
 at = app("""
 html = nd.combined_strip_html("k1", scope="National")
 st.session_state["strip"] = html

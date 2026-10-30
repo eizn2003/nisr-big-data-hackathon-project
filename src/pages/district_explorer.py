@@ -61,6 +61,50 @@ BASEMAPS = {
 }
 PALETTE_CHOICES = ["Indicator colours", "Viridis", "Plasma", "Cividis", "Turbo"]
 SPOTLIGHTS = ["Off", "Top 5", "Bottom 5", "Both"]
+NBR_INSTITUTION_COLOR_SCALES = {
+    "all": [
+        [0.0, "#167B76"],
+        [0.28, "#20A69A"],
+        [0.58, "#67C7B4"],
+        [0.82, "#D39A5B"],
+        [1.0, "#F3D27A"],
+    ],
+    "banks": [
+        [0.0, "#EAF2FB"],
+        [0.28, "#A9C7E8"],
+        [0.58, "#6097CD"],
+        [0.82, "#3267A8"],
+        [1.0, "#183D70"],
+    ],
+    "e-money issuers": [
+        [0.0, "#F2ECFA"],
+        [0.28, "#C6AFE4"],
+        [0.58, "#9B78CC"],
+        [0.82, "#754CB0"],
+        [1.0, "#482876"],
+    ],
+    "insurance": [
+        [0.0, "#FBECEF"],
+        [0.28, "#EFB3C2"],
+        [0.58, "#DA7D9A"],
+        [0.82, "#B94C70"],
+        [1.0, "#7D2947"],
+    ],
+    "microfinance": [
+        [0.0, "#E8F4F1"],
+        [0.28, "#A6D8CA"],
+        [0.58, "#66B6A1"],
+        [0.82, "#318A78"],
+        [1.0, "#15584E"],
+    ],
+    "sacco": [
+        [0.0, "#FCF1E5"],
+        [0.28, "#F0C99D"],
+        [0.58, "#DEA05E"],
+        [0.82, "#B97431"],
+        [1.0, "#75451F"],
+    ],
+}
 
 
 # --------------------------------------------------------------------------
@@ -114,16 +158,30 @@ def build_map(
     *,
     value_unit="%",
     supply_points=(),
+    nbr_style=False,
+    hover_context="",
+    value_range=None,
+    nbr_institution=None,
 ):
     Choropleth, Labels, key = _trace_classes()
     base = BASEMAPS[settings["basemap"]]
     dark = base["dark"]
 
     scale = (
-        cfg["scale"] if settings["palette"] == "Indicator colours"
-        else settings["palette"]
+        NBR_INSTITUTION_COLOR_SCALES.get(
+            str(nbr_institution or "all").strip().casefold(),
+            NBR_INSTITUTION_COLOR_SCALES["all"],
+        )
+        if nbr_style
+        else (
+            cfg["scale"] if settings["palette"] == "Indicator colours"
+            else settings["palette"]
+        )
     )
-    lo, hi = float(df[metric].min()), float(df[metric].max())
+    lo, hi = value_range or (
+        float(df[metric].min()),
+        float(df[metric].max()),
+    )
     if hi <= lo:
         hi = lo + max(abs(lo) * 1e-6, 1e-6)
 
@@ -136,7 +194,25 @@ def build_map(
     differences = df["diff"].to_numpy() if "diff" in df else [None] * len(df)
     customdata = list(zip(respondents, ranks, differences))
     n = len(df)
-    if national_est is None:
+    if nbr_style:
+        hovertemplate = (
+            "<b>%{location}</b><br>"
+            + esc(short)
+            + ": <b>%{z:,.4g}</b> "
+            + esc(value_unit or "unit not specified")
+            + "<br>Reporting date: "
+            + esc(hover_context.split("\n", 1)[0])
+            + "<br>Filters: "
+            + esc(hover_context.split("\n", 1)[1] if "\n" in hover_context else "")
+            + "<extra></extra>"
+        )
+        colorbar_title = f"{short} · {value_unit or 'unit not specified'}"
+        colorbar_suffix = ""
+        colorbar_tickformat = (
+            ",.0f" if str(value_unit).strip().casefold() == "count"
+            else ",.2~f"
+        )
+    elif national_est is None:
         hovertemplate = (
             "<b>%{location}</b><br>"
             + esc(short)
@@ -148,6 +224,7 @@ def build_map(
         )
         colorbar_title = f"{short} · {value_unit or 'unit not specified'}"
         colorbar_suffix = ""
+        colorbar_tickformat = None
     else:
         hovertemplate = (
             "<b>%{location}</b><br>"
@@ -159,6 +236,7 @@ def build_map(
         )
         colorbar_title = short
         colorbar_suffix = "%"
+        colorbar_tickformat = None
 
     fig = go.Figure(
         Choropleth(
@@ -171,7 +249,10 @@ def build_map(
             colorscale=scale,
             marker=dict(
                 opacity=settings["opacity"],
-                line=dict(color="#FFFFFF", width=0.9),
+                line=dict(
+                    color="#6E9A96" if nbr_style else "#FFFFFF",
+                    width=0.85 if nbr_style else 0.9,
+                ),
             ),
             selected=dict(marker=dict(opacity=settings["opacity"])),
             unselected=dict(marker=dict(opacity=settings["opacity"])),
@@ -185,6 +266,7 @@ def build_map(
                 ticksuffix=colorbar_suffix, outlinewidth=0,
                 bgcolor="rgba(14,42,53,.78)" if dark else "rgba(255,255,255,.88)",
                 tickfont=dict(size=11, color="#FFFFFF" if dark else PALETTE["ink"]),
+                tickformat=colorbar_tickformat if nbr_style else None,
                 xpad=12, ypad=10,
             ),
         )
@@ -278,13 +360,35 @@ def build_map(
 
     ranked = df.sort_values(metric, ascending=False)["District"].tolist()
     spot = settings["spotlight"]
+    if nbr_style:
+        layers.append(_outline_layer(
+            geojson,
+            [
+                feature["properties"].get("shapeName", "")
+                for feature in geojson["features"]
+            ],
+            "#78918F",
+            0.8,
+            0.7,
+        ))
     if spot in ("Top 5", "Both"):
         layers.append(_outline_layer(geojson, ranked[:5], "#FFFFFF" if dark else PALETTE["ink"], 2.4))
     if spot in ("Bottom 5", "Both"):
         layers.append(_outline_layer(geojson, ranked[-5:], PALETTE["coral"], 2.4))
 
-    layers.append(_outline_layer(geojson, [selected], PALETTE["ink"], 7, 0.55))
-    layers.append(_outline_layer(geojson, [selected], PALETTE["sun"], 3.4))
+    layers.append(_outline_layer(
+        geojson,
+        [selected],
+        "#F8F5EA" if nbr_style else PALETTE["ink"],
+        7,
+        0.85 if nbr_style else 0.55,
+    ))
+    layers.append(_outline_layer(
+        geojson,
+        [selected],
+        "#F3D27A" if nbr_style else PALETTE["sun"],
+        3.4,
+    ))
 
     fig.update_layout(
         **{
@@ -307,7 +411,10 @@ def build_map(
             bgcolor=PALETTE["ink"], bordercolor=PALETTE["ink"],
             font=dict(family="Plus Jakarta Sans, Arial, sans-serif", color="#FFFFFF", size=12.5),
         ),
-        uirevision=f"{settings['basemap']}-{settings['tilt']}-{settings['rotation']}",
+        uirevision=settings.get(
+            "uirevision",
+            f"{settings['basemap']}-{settings['tilt']}-{settings['rotation']}",
+        ),
         dragmode="pan",
     )
     return fig
