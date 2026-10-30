@@ -254,7 +254,7 @@ def _district_family_figure(rows):
 
 
 # --------------------------------------------------------------------------
-# District map
+# District map data
 # --------------------------------------------------------------------------
 def _map_figure(district, geojson, center, metric, item):
     Choropleth, _, key = _trace_classes()
