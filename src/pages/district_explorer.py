@@ -1,11 +1,15 @@
+import math
+
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 import streamlit as st
+from pymongo.errors import PyMongoError
 
 from src import data
 from src.briefs import district_brief
 from src.indicators import REGISTRY, available
+from src.pages.nbr_dashboard import context_strip_html, fmt_value
 from src.styles import (
     INDICATOR_THEME,
     PALETTE,
@@ -57,6 +61,50 @@ BASEMAPS = {
 }
 PALETTE_CHOICES = ["Indicator colours", "Viridis", "Plasma", "Cividis", "Turbo"]
 SPOTLIGHTS = ["Off", "Top 5", "Bottom 5", "Both"]
+NBR_INSTITUTION_COLOR_SCALES = {
+    "all": [
+        [0.0, "#167B76"],
+        [0.28, "#20A69A"],
+        [0.58, "#67C7B4"],
+        [0.82, "#D39A5B"],
+        [1.0, "#F3D27A"],
+    ],
+    "banks": [
+        [0.0, "#EAF2FB"],
+        [0.28, "#A9C7E8"],
+        [0.58, "#6097CD"],
+        [0.82, "#3267A8"],
+        [1.0, "#183D70"],
+    ],
+    "e-money issuers": [
+        [0.0, "#F2ECFA"],
+        [0.28, "#C6AFE4"],
+        [0.58, "#9B78CC"],
+        [0.82, "#754CB0"],
+        [1.0, "#482876"],
+    ],
+    "insurance": [
+        [0.0, "#FBECEF"],
+        [0.28, "#EFB3C2"],
+        [0.58, "#DA7D9A"],
+        [0.82, "#B94C70"],
+        [1.0, "#7D2947"],
+    ],
+    "microfinance": [
+        [0.0, "#E8F4F1"],
+        [0.28, "#A6D8CA"],
+        [0.58, "#66B6A1"],
+        [0.82, "#318A78"],
+        [1.0, "#15584E"],
+    ],
+    "sacco": [
+        [0.0, "#FCF1E5"],
+        [0.28, "#F0C99D"],
+        [0.58, "#DEA05E"],
+        [0.82, "#B97431"],
+        [1.0, "#75451F"],
+    ],
+}
 
 
 # --------------------------------------------------------------------------
@@ -96,19 +144,55 @@ def _outline_layer(geojson, names, color, width, opacity=1.0):
     )
 
 
-def build_map(df, geojson, centers, center, cfg, metric, national_est,
-              selected, short, settings):
+def build_map(
+    df,
+    geojson,
+    centers,
+    center,
+    cfg,
+    metric,
+    national_est,
+    selected,
+    short,
+    settings,
+    *,
+    value_unit="%",
+    supply_points=(),
+    nbr_style=False,
+    hover_context="",
+    value_range=None,
+    nbr_institution=None,
+):
     Choropleth, Labels, key = _trace_classes()
     base = BASEMAPS[settings["basemap"]]
     dark = base["dark"]
 
     scale = (
-        cfg["scale"] if settings["palette"] == "Indicator colours"
-        else settings["palette"]
+        NBR_INSTITUTION_COLOR_SCALES.get(
+            str(nbr_institution or "all").strip().casefold(),
+            NBR_INSTITUTION_COLOR_SCALES["all"],
+        )
+        if nbr_style
+        else (
+            cfg["scale"] if settings["palette"] == "Indicator colours"
+            else settings["palette"]
+        )
     )
-    lo, hi = float(df[metric].min()), float(df[metric].max())
+    lo, hi = value_range or (
+        float(df[metric].min()),
+        float(df[metric].max()),
+    )
+    if hi <= lo:
+        hi = lo + max(abs(lo) * 1e-6, 1e-6)
 
-    customdata = df[["Valid respondents", "rank", "diff"]].to_numpy()
+    respondents = (
+        df["Valid respondents"].to_numpy()
+        if "Valid respondents" in df
+        else [None] * len(df)
+    )
+    ranks = df["rank"].to_numpy() if "rank" in df else [None] * len(df)
+    differences = df["diff"].to_numpy() if "diff" in df else [None] * len(df)
+    customdata = list(zip(respondents, ranks, differences))
     n = len(df)
     rank_label = "Gap rank" if cfg["polarity"] != "neutral" else "Value rank"
 
@@ -123,7 +207,10 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
             colorscale=scale,
             marker=dict(
                 opacity=settings["opacity"],
-                line=dict(color="#FFFFFF", width=0.9),
+                line=dict(
+                    color="#6E9A96" if nbr_style else "#FFFFFF",
+                    width=0.85 if nbr_style else 0.9,
+                ),
             ),
             selected=dict(marker=dict(opacity=settings["opacity"])),
             unselected=dict(marker=dict(opacity=settings["opacity"])),
@@ -137,19 +224,63 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
                 + "%{customdata[0]:,.0f} unweighted respondents (n)<extra></extra>"
             ),
             colorbar=dict(
-                title=dict(text=short, side="top", font=dict(size=11)),
+                title=dict(text=colorbar_title, side="top", font=dict(size=11)),
                 orientation="h",
                 x=0.02, y=0.04, xanchor="left", yanchor="bottom",
                 len=0.34, thickness=10, nticks=4,
-                ticksuffix="%", outlinewidth=0,
+                ticksuffix=colorbar_suffix, outlinewidth=0,
                 bgcolor="rgba(14,42,53,.78)" if dark else "rgba(255,255,255,.88)",
                 tickfont=dict(size=11, color="#FFFFFF" if dark else PALETTE["ink"]),
+                tickformat=colorbar_tickformat if nbr_style else None,
                 xpad=12, ypad=10,
             ),
         )
     )
 
-    if settings["labels"]:
+    if supply_points:
+        marker_class = go.Scattermap if hasattr(go, "Scattermap") else go.Scattermapbox
+        visible_supply = [
+            point for point in supply_points
+            if point.get("geography") in centers
+        ]
+        if visible_supply:
+            values = [float(point["value"]) for point in visible_supply]
+            low_supply, high_supply = min(values), max(values)
+            marker_sizes = [
+                11 + (
+                    14 * math.sqrt((value - low_supply) / (high_supply - low_supply))
+                    if high_supply > low_supply else 7
+                )
+                for value in values
+            ]
+            fig.add_trace(marker_class(
+                lat=[centers[str(point["geography"])][0] for point in visible_supply],
+                lon=[centers[str(point["geography"])][1] for point in visible_supply],
+                text=[str(point["geography"]) for point in visible_supply],
+                customdata=[[
+                    point.get("metric_label", ""),
+                    fmt_value(point.get("value")),
+                    point.get("unit") or "unit not specified",
+                    point.get("reporting_date", ""),
+                    str(point["geography"]),
+                ] for point in visible_supply],
+                mode="markers",
+                marker=dict(
+                    size=marker_sizes,
+                    color=PALETTE["ink2"],
+                    opacity=0.86,
+                ),
+                selected=dict(marker=dict(opacity=0.86)),
+                unselected=dict(marker=dict(opacity=0.86)),
+                name="NBR supply · marker size",
+                hovertemplate=(
+                    "<b>%{text}</b><br>NBR · %{customdata[0]}: "
+                    "<b>%{customdata[1]} %{customdata[2]}</b><br>"
+                    "Reported %{customdata[3]}<extra>NBR supply</extra>"
+                ),
+            ))
+
+    if settings.get("labels", False):
         span = max(hi - lo, 1e-9)
         try:
             fills = sample_colorscale(scale, [(v - lo) / span for v in df[metric]])
@@ -194,13 +325,35 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
 
     ranked = df.sort_values("rank")["District"].tolist()
     spot = settings["spotlight"]
+    if nbr_style:
+        layers.append(_outline_layer(
+            geojson,
+            [
+                feature["properties"].get("shapeName", "")
+                for feature in geojson["features"]
+            ],
+            "#78918F",
+            0.8,
+            0.7,
+        ))
     if spot in ("Top 5", "Both"):
         layers.append(_outline_layer(geojson, ranked[:5], "#FFFFFF" if dark else PALETTE["ink"], 2.4))
     if spot in ("Bottom 5", "Both"):
         layers.append(_outline_layer(geojson, ranked[-5:], PALETTE["coral"], 2.4))
 
-    layers.append(_outline_layer(geojson, [selected], PALETTE["ink"], 7, 0.55))
-    layers.append(_outline_layer(geojson, [selected], PALETTE["sun"], 3.4))
+    layers.append(_outline_layer(
+        geojson,
+        [selected],
+        "#F8F5EA" if nbr_style else PALETTE["ink"],
+        7,
+        0.85 if nbr_style else 0.55,
+    ))
+    layers.append(_outline_layer(
+        geojson,
+        [selected],
+        "#F3D27A" if nbr_style else PALETTE["sun"],
+        3.4,
+    ))
 
     fig.update_layout(
         **{
@@ -223,7 +376,10 @@ def build_map(df, geojson, centers, center, cfg, metric, national_est,
             bgcolor=PALETTE["ink"], bordercolor=PALETTE["ink"],
             font=dict(family="Plus Jakarta Sans, Arial, sans-serif", color="#FFFFFF", size=12.5),
         ),
-        uirevision=f"{settings['basemap']}-{settings['tilt']}-{settings['rotation']}",
+        uirevision=settings.get(
+            "uirevision",
+            f"{settings['basemap']}-{settings['tilt']}-{settings['rotation']}",
+        ),
         dragmode="pan",
     )
     return fig
@@ -287,6 +443,19 @@ def _jump_to(name):
     st.session_state["dx_district"] = name
 
 
+def _kpi_context(entry, district_name):
+    """NBR trend for the selected district, shown inside the primary KPI card."""
+    if not entry:
+        return ""
+    local = [p for p in entry["points"] if p.get("geography") == district_name]
+    if local:
+        return context_strip_html(entry, local)
+    return (
+        '<div class="nbr-ctx"><div class="nbr-ctx-meta">'
+        f'NBR · {esc(entry["metric_label"])}: no observation for this district</div></div>'
+    )
+
+
 def _clicked_district(event, names):
     points = []
     try:
@@ -294,10 +463,13 @@ def _clicked_district(event, names):
     except AttributeError:
         points = []
     for point in points:
-        if point.get("curve_number", 0) != 0:
-            continue
-        name = point.get("location")
-        if name in names:
+        custom = point.get("customdata")
+        name = (
+            point.get("location")
+            or point.get("text")
+            or (custom[-1] if isinstance(custom, (list, tuple)) and custom else None)
+        )
+        if isinstance(name, str) and name in names:
             return name
     return None
 
@@ -306,6 +478,21 @@ def _clicked_district(event, names):
 # Page
 # --------------------------------------------------------------------------
 def render_district_explorer():
+    from src.pages.nbr_dashboard import (
+        current_mode,
+        load_combined_context_data,
+        render_combined_context,
+        render_nbr_page,
+    )
+
+    mode = current_mode()
+    if mode == "NBR Supply":
+        render_nbr_page(
+            "district",
+            selected_district=st.session_state.get("dx_district"),
+        )
+        return
+
     try:
         district = data.load_district()
         national = data.load_national()
@@ -345,6 +532,37 @@ def render_district_explorer():
     cfg = present[indicator_name]
     metric = cfg["column"]
     selected_district = st.session_state["dx_district"]
+    combined_entries = []
+    combined_version = None
+    if mode == "Combined":
+        try:
+            combined_entries, combined_version = load_combined_context_data(
+                cfg["variable"],
+                geography_level="district",
+            )
+        except (RuntimeError, ValueError, OSError, PyMongoError) as error:
+            combined_context_error = error
+        else:
+            combined_context_error = None
+    else:
+        combined_context_error = None
+    series_key = f"combined_dx_series_{cfg['variable']}_{combined_version or 'none'}"
+    if combined_entries:
+        series_index = st.session_state.get(series_key, 0)
+        if not isinstance(series_index, int) or series_index >= len(combined_entries):
+            series_index = 0
+        combined_entry = combined_entries[series_index]
+        latest_date = max(
+            (str(point["reporting_date"]) for point in combined_entry["points"]),
+            default="",
+        )
+        overlay_points = [
+            point for point in combined_entry["points"]
+            if str(point["reporting_date"]) == latest_date
+        ]
+    else:
+        combined_entry = None
+        overlay_points = []
 
     nat_hit = national.loc[
         national["Indicator"].eq(cfg["national_label"]), "Estimate (%)"
@@ -399,7 +617,8 @@ def render_district_explorer():
         below_html=kpi_grid(
             [
                 kpi_card("Selected district", f"{est:.1f}", "%", est, cfg["accent"],
-                         f"<b>{esc(selected_district)}</b> · ±{margin:.1f} pp indicative"),
+                         f"<b>{esc(selected_district)}</b> · ±{margin:.1f} pp indicative"
+                         + _kpi_context(combined_entry, selected_district)),
                 kpi_card("National estimate", f"{national_est:.1f}", "%", national_est,
                          PALETTE["ink2"], "Weighted national level"),
                 kpi_card("Difference from national", f"{diff:+.1f}", " pp",
@@ -427,6 +646,18 @@ def render_district_explorer():
             default=list(present.keys())[0],
             key="dx_indicator",
         )
+        if combined_entries and len(combined_entries) > 1:
+            st.selectbox(
+                "NBR supply series",
+                range(len(combined_entries)),
+                format_func=lambda index: (
+                    f"{combined_entries[index]['metric_label']} · "
+                    f"{combined_entries[index].get('unit') or 'unit not specified'}"
+                ),
+                key=series_key,
+            )
+        if combined_context_error is not None:
+            st.caption("NBR supply context is temporarily unavailable; FinScope estimates are unchanged.")
         c_dist, c_set = st.columns([2.2, 1], gap="medium", vertical_alignment="bottom")
         with c_dist:
             st.selectbox("District", names, key="dx_district")
@@ -482,7 +713,9 @@ def render_district_explorer():
                     <div class="ct">{esc(cfg['title'])}</div>
                     <div class="cs">Click a district to inspect it · scroll to zoom · drag to pan</div>
                   </div>
-                  <div class="chips">{legend}</div>
+                  <div class="chips">{legend}
+                    {(f'<span class="chip"><i style="background:#163D4B;border-color:#fff"></i>NBR · {esc(combined_entry["metric_label"])} · marker size</span>' if overlay_points else '')}
+                  </div>
                 </div>
                 """
             )
@@ -490,6 +723,7 @@ def render_district_explorer():
             fig = build_map(
                 df, geojson, centers, center, cfg, metric, national_est,
                 selected_district, indicator_name, settings,
+                supply_points=overlay_points,
             )
             event = st.plotly_chart(
                 fig,
@@ -515,6 +749,13 @@ def render_district_explorer():
     with insp_col:
         with st.container(key="card_inspector"):
             render_html(_inspector_html(sel, cfg, metric, national_est, lo, hi, n))
+            if combined_entry is not None:
+                render_combined_context(
+                    cfg["variable"],
+                    district=selected_district,
+                    entries=[combined_entry],
+                    source_version=combined_version,
+                )
             st.button(
                 f"{'Largest gap' if cfg['polarity'] != 'neutral' else 'Highest value'}: "
                 f"{largest_gap['District']} · {largest_gap[metric]:.1f}%",
