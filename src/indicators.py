@@ -75,7 +75,7 @@ _RAW = [
         label="Has emergency funds", kpi_label="Has emergency funds",
         national="Has emergency funds", variable="e9b", role="supporting",
         family="Saving & resilience", polarity="positive", hue="violet",
-        priority_candidate=True, priority_default=False,
+        priority_candidate=True, priority_default=True,
         description="Percentage of respondents who report setting aside emergency or rainy-day funds.",
         interpretation="A financial-resilience signal. It does not measure the amount saved "
                        "or whether funds would cover a major emergency.",
