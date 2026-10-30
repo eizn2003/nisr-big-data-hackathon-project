@@ -1394,6 +1394,11 @@ def sparkline_svg(
     )
 
 
+def _unit_label(value: Any, *, fallback: str = "unit not specified") -> str:
+    label = str(value or "").strip()
+    return label or fallback
+
+
 def context_strip_html(
     entry: Mapping[str, Any],
     points: Sequence[Mapping[str, Any]] | None = None,
@@ -1410,7 +1415,7 @@ def context_strip_html(
     if not series:
         return ""
     latest = series[-1]
-    unit = str(entry.get("unit") or "").strip()
+    unit = _unit_label(entry.get("unit"))
     count = len({str(item["reporting_date"]) for item in series})
     meta = f"{esc(latest['reporting_date'])}"
     if scope:
@@ -1848,6 +1853,10 @@ def load_combined_context_data(
         item for item in mapping["nbr_relationships"]
         if item["relationship"] == "contextual_indicator"
         and geography_level in item["available_levels"]
+        and not (
+            indicator_variable == "g3a_11"
+            and str(item.get("page", "")).casefold() == "branches"
+        )
     ]
     pages = tuple(sorted({str(item["page"]) for item in relationships}))
     if not pages:
@@ -1866,6 +1875,42 @@ def load_combined_context_data(
         relationships={"contextual_indicator"},
     )
     return entries, source_version
+
+
+def load_combined_national_evidence(
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Load the approved national mapping pages through the existing cache."""
+    relationships = [
+        relationship
+        for mapping in MAPPING_BY_VARIABLE.values()
+        for relationship in mapping["nbr_relationships"]
+        if "national" in relationship["available_levels"]
+        and relationship["relationship"] != "unsuitable"
+    ]
+    pages = tuple(sorted({
+        str(relationship["page"])
+        for relationship in relationships
+    }))
+    if not pages:
+        return [], []
+
+    points, _, _, _ = load_nbr_dashboard_data(
+        "nbr-dashboard-v2",
+        pages,
+    )
+    national_kpis = [
+        dict(point)
+        for point in points
+        if point.get("source_type") == "national_kpi"
+    ]
+    bank_account_entries = _mapped_series(
+        points,
+        "k1",
+        geography_level="national",
+        geography=None,
+        relationships={"contextual_indicator"},
+    )
+    return national_kpis, bank_account_entries
 
 
 def _district_series_table(
@@ -3991,6 +4036,7 @@ def _render_combined_context(
     subgroup_type: str = "",
     subgroup: str = "",
     source_version: str | None = None,
+    intelligence: Mapping[str, Any] | None = None,
 ) -> None:
     source_version = source_version or _source_data_version(points)
     level = "district" if district else "national"
@@ -4004,6 +4050,22 @@ def _render_combined_context(
         relationships={"contextual_indicator"},
     )
     if not entries:
+        if district and intelligence:
+            with st.expander(
+                f"NBR supply context · "
+                f"{MAPPING_BY_VARIABLE[indicator_variable]['original_indicator_label']}",
+                expanded=False,
+            ):
+                render_html(
+                    '<span class="nbr-tag">NBR supply</span> '
+                    '<span class="nbr-tag beta">Beta</span>'
+                )
+                st.caption(
+                    "No district-scoped observation is recorded for the selected "
+                    "district in this exact NBR series."
+                )
+                _render_combined_peer_comparison(intelligence, district)
+                _render_combined_intelligence(intelligence, district)
         return
     with st.expander(
         f"NBR supply context · "
@@ -4035,18 +4097,18 @@ def _render_combined_context(
             None,
         )
         geography_label = f" in {district}" if district else " nationally"
+        unit_label = _unit_label(entry.get("unit"))
         st.caption(
             f"{entry['metric_label']}{geography_label}: "
-            f"{fmt_value(latest['value'])} {entry.get('unit') or 'unit not specified'} "
-            f"on {latest_date}. Administrative context only; it does not change "
-            "the FinScope estimate."
+            f"{fmt_value(latest['value'])} {unit_label} on {latest_date}. "
+            "Administrative context only; it does not change the FinScope estimate."
             if latest else
             f"Observed source dates: {len(dates)} · latest reporting date {latest_date}."
         )
         st.warning(entry["limitations"])
         _render_trend(
             series_points,
-            title=f"{entry['metric_label']} · {entry.get('unit') or 'unit not specified'}",
+            title=f"{entry['metric_label']} · {unit_label}",
             compact=True,
             key_suffix=(
                 f"{indicator_variable}_{district or 'national'}_"
@@ -4055,6 +4117,229 @@ def _render_combined_context(
         )
         with st.popover("View observations", icon=":material/table:"):
             _render_observation_table(series_points)
+        if district and intelligence:
+            _render_combined_peer_comparison(intelligence, district)
+            _render_combined_intelligence(intelligence, district)
+
+
+def _combined_peer_figure(
+    points: Sequence[Mapping[str, Any]],
+    selected_district: str,
+    unit: str,
+) -> go.Figure | None:
+    observed = [
+        point for point in points
+        if isinstance(point.get("geography"), str)
+        and point.get("value") is not None
+    ]
+    if not observed:
+        return None
+    ordered = sorted(
+        observed,
+        key=lambda point: (float(point["value"]), str(point["geography"]).casefold()),
+    )
+    colors = [
+        PALETTE["sun"]
+        if str(point["geography"]).casefold() == selected_district.casefold()
+        else PALETTE["blue"]
+        for point in ordered
+    ]
+    fig = go.Figure(go.Bar(
+        x=[float(point["value"]) for point in ordered],
+        y=[str(point["geography"]) for point in ordered],
+        orientation="h",
+        marker_color=colors,
+        text=[fmt_value(point["value"]) for point in ordered],
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate=(
+            "%{y}<br>Recorded: %{x:,.7~r} "
+            + esc(unit or "unit not specified")
+            + "<extra>NBR administrative observation</extra>"
+        ),
+    ))
+    fig.update_xaxes(
+        title=unit or "unit not specified",
+        rangemode="tozero",
+        gridcolor=PALETTE["grid"],
+        zeroline=False,
+    )
+    fig.update_yaxes(title=None, showgrid=False, autorange="reversed")
+    fig.update_layout(
+        height=max(260, 20 * len(ordered) + 60),
+        margin=dict(l=4, r=34, t=8, b=8),
+        showlegend=False,
+    )
+    return fig
+
+
+def _render_combined_peer_comparison(
+    intelligence: Mapping[str, Any],
+    selected_district: str,
+) -> None:
+    points = intelligence.get("peer_points", [])
+    peer_date = intelligence.get("peer_date")
+    if not points or not peer_date:
+        return
+    observation = intelligence.get("observation") or {}
+    unit = str(
+        observation.get("unit")
+        or (points[0].get("unit") if points else None)
+        or "unit not specified"
+    )
+    fig = _combined_peer_figure(points, selected_district, unit)
+    if fig is None:
+        return
+    st.markdown("**Same-scope district snapshot**")
+    st.caption(
+        f"{peer_date} · same NBR metric, filters, and reporting date. "
+        "Only recorded district observations are plotted; missing values are not zero."
+    )
+    st.plotly_chart(
+        style_chart(fig, fig.layout.height),
+        use_container_width=True,
+        config={"displayModeBar": False},
+        key=(
+            f"combined_nbr_peers_{selected_district}_"
+            f"{peer_date}_{_source_data_version(points)}"
+        ),
+    )
+    expected_count = intelligence.get("expected_district_count")
+    if expected_count:
+        st.caption(
+            f"{len(points)} of {expected_count} expected district observations "
+            "are available for this reporting date."
+        )
+    if not any(
+        str(point.get("geography", "")).casefold()
+        == selected_district.casefold()
+        for point in points
+    ):
+        st.caption(
+            f"No observation is recorded for {selected_district} on this date."
+        )
+
+
+def _render_combined_intelligence(
+    intelligence: Mapping[str, Any],
+    selected_district: str,
+) -> None:
+    st.markdown("**NBR intelligence**")
+    if intelligence.get("state") != "available":
+        st.caption(str(intelligence.get("reason") or "NBR evidence is unavailable."))
+        st.markdown(
+            "**Evidence-led follow-up.** "
+            f"For {esc(selected_district)}, resolve the missing observation or "
+            "provenance gap before interpreting this NBR series; missing is not zero."
+        )
+        st.caption(
+            "The NBR detector uses administrative observations only; it does not "
+            "assess FinScope estimates."
+        )
+        return
+
+    observation = intelligence["observation"]
+    unit = str(observation.get("unit") or "unit not specified")
+    cross = intelligence["cross_section"]
+    cross_state = cross["state"]
+    if cross_state == "eligible_unusual_observation":
+        candidate = cross["candidate"]
+        sensitivity = candidate["sensitivity_1pct"][
+            "classification_changes_with_1pct_perturbation"
+        ]
+        st.markdown(
+            f"**Peer signal · {candidate['reporting_date']}.** "
+            f"{esc(selected_district)} recorded {fmt_value(candidate['observed_value'])} "
+            f"{esc(unit)}, compared with a peer median of "
+            f"{fmt_value(candidate['peer_median'])} {esc(unit)} across "
+            f"{candidate['comparison_district_count']} districts in the same "
+            "metric, date, and filter scope. The detector flags this observation "
+            "as unusual for review."
+        )
+        if sensitivity:
+            st.caption(
+                "The peer flag changes under a 1% value perturbation; treat it "
+                "as especially sensitive to measurement precision."
+            )
+    elif cross_state == "assessable_no_qualifying_signal":
+        st.markdown(
+            f"**Peer assessment · {observation['reporting_date']}.** "
+            f"The exact-scope comparison covered "
+            f"{cross['observed_district_count']} districts; no qualifying peer "
+            "signal was returned."
+        )
+    elif cross_state == "insufficient_evidence":
+        st.markdown(
+            f"**Peer assessment not run · {observation['reporting_date']}.** "
+            f"{cross['observed_district_count']} eligible district observations "
+            f"were available; the detector requires at least "
+            f"{cross['minimum_peer_districts']}."
+        )
+    elif cross_state == "unassessable_zero_peer_dispersion":
+        st.markdown(
+            f"**Peer assessment not assessable · {observation['reporting_date']}.** "
+            "The observed district values had no peer dispersion."
+        )
+    else:
+        st.markdown(
+            f"**Peer assessment unavailable · {observation['reporting_date']}.** "
+            f"{esc(str(cross.get('state', 'unassessable')).replace('_', ' '))}."
+        )
+
+    temporal = intelligence["temporal"]
+    temporal_state = temporal["state"]
+    if temporal_state == "eligible_unusual_observation":
+        case = temporal["case"]
+        previous = case["previous"]
+        target = case["target"]
+        st.markdown(
+            f"**Historical signal · {target['reporting_date']}.** The recorded "
+            f"{fmt_value(previous['value'])} {esc(unit)} on "
+            f"{previous['reporting_date']} changed to "
+            f"{fmt_value(target['value'])} {esc(unit)}. The detector flags the "
+            "rate of change as unusual relative to this district's compatible "
+            "NBR history."
+        )
+    elif temporal_state == "assessable_no_qualifying_signal":
+        case = temporal["case"]
+        st.markdown(
+            f"**Historical assessment · {case['target']['reporting_date']}.** "
+            f"The compatible series had {case['training_rate_count']} historical "
+            "rates; no qualifying unusual rate-change signal was returned."
+        )
+    elif temporal_state == "insufficient_evidence":
+        st.markdown(
+            "**Historical assessment not run.** "
+            f"{temporal['observation_count']} compatible snapshots are available; "
+            f"at least {temporal['minimum_observations']} distinct snapshots are "
+            "needed for the existing detector."
+        )
+    else:
+        reason = str(
+            temporal.get("dispersion_status")
+            or temporal.get("model_status")
+            or "insufficient comparable history"
+        ).replace("_", " ")
+        st.markdown(
+            f"**Historical assessment not assessable.** {esc(reason)}."
+        )
+
+    qualifications = observation.get("quality_qualifications") or []
+    if qualifications:
+        reasons = [
+            str(item.get("reason"))
+            for item in qualifications
+            if isinstance(item, Mapping) and item.get("reason")
+        ]
+        if reasons:
+            st.caption("Source qualification: " + " ".join(reasons))
+    st.markdown(
+        f"**Evidence-led follow-up.** {esc(str(intelligence['recommendation']))}"
+    )
+    st.caption(
+        "Experimental, NBR-only review signals—not findings of financial "
+        "exclusion, causation, policy failure, or intervention priority."
+    )
 
 
 def combined_strip(
@@ -4097,6 +4382,7 @@ def render_combined_context(
     subgroup: str = "",
     entries: Sequence[Mapping[str, Any]] | None = None,
     source_version: str | None = None,
+    intelligence: Mapping[str, Any] | None = None,
 ) -> None:
     if entries is None:
         try:
@@ -4120,6 +4406,7 @@ def render_combined_context(
         subgroup_type=subgroup_type,
         subgroup=subgroup,
         source_version=source_version,
+        intelligence=intelligence,
     )
 
 

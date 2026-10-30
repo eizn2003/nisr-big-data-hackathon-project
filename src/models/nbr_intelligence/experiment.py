@@ -327,6 +327,7 @@ def _evaluate_cross_sectionally(
     dict[str, Any],
     list[dict[str, Any]],
     set[tuple[str, str, str, str, str]],
+    dict[tuple[str, str, str, str, str], dict[str, Any]],
 ]:
     """Compare districts only within the same page, metric, date, and combo."""
     tentative_reconciliations = tentative_reconciliations or {}
@@ -360,6 +361,7 @@ def _evaluate_cross_sectionally(
     scored_district_names = set()
     scored_series = set()
     assessable_observation_keys = set()
+    observation_states = {}
 
     for group_key, group in sorted(
         grouped.items(),
@@ -374,9 +376,32 @@ def _evaluate_cross_sectionally(
         group.sort(key=lambda item: item.district.casefold())
         distinct_districts = {item.district.casefold() for item in group}
         if len(distinct_districts) != len(group):
+            for item in group:
+                observation_states[_event_identity(
+                    item.page,
+                    item.metric_label,
+                    item.district,
+                    reporting_date.isoformat(),
+                    item.combo_key,
+                )] = {
+                    "state": "unassessable_duplicate_district_observation",
+                    "observed_district_count": len(distinct_districts),
+                }
             continue
         if len(group) < MIN_CROSS_SECTION_DISTRICTS:
             insufficient_groups += 1
+            for item in group:
+                observation_states[_event_identity(
+                    item.page,
+                    item.metric_label,
+                    item.district,
+                    reporting_date.isoformat(),
+                    item.combo_key,
+                )] = {
+                    "state": "insufficient_evidence",
+                    "observed_district_count": len(group),
+                    "minimum_peer_districts": MIN_CROSS_SECTION_DISTRICTS,
+                }
             continue
 
         peer_values = [item.value for item in group]
@@ -386,6 +411,17 @@ def _evaluate_cross_sectionally(
         )
         if peer_mad <= 0:
             zero_mad_groups += 1
+            for item in group:
+                observation_states[_event_identity(
+                    item.page,
+                    item.metric_label,
+                    item.district,
+                    reporting_date.isoformat(),
+                    item.combo_key,
+                )] = {
+                    "state": "unassessable_zero_peer_dispersion",
+                    "observed_district_count": len(group),
+                }
             continue
 
         assessable_groups += 1
@@ -486,8 +522,34 @@ def _evaluate_cross_sectionally(
                 sensitivity_flips += 1
 
             if not current_alert:
+                observation_states[_event_identity(
+                    item.page,
+                    item.metric_label,
+                    item.district,
+                    reporting_date.isoformat(),
+                    item.combo_key,
+                )] = {
+                    "state": "assessable_no_qualifying_signal",
+                    "observed_district_count": len(group),
+                    "peer_median": peer_median,
+                    "peer_mad": peer_mad,
+                    "robust_score": score,
+                }
                 continue
             direction = "high" if score > 0 else "low"
+            observation_states[_event_identity(
+                item.page,
+                item.metric_label,
+                item.district,
+                reporting_date.isoformat(),
+                item.combo_key,
+            )] = {
+                "state": "eligible_unusual_observation",
+                "observed_district_count": len(group),
+                "peer_median": peer_median,
+                "peer_mad": peer_mad,
+                "robust_score": score,
+            }
             candidates.append({
                 "method": "cross_sectional_modified_z",
                 "page": page,
@@ -581,7 +643,7 @@ def _evaluate_cross_sectionally(
             "No adjudicated labels exist to measure whether these candidates are useful.",
         ],
     }
-    return summary, candidates, assessable_observation_keys
+    return summary, candidates, assessable_observation_keys, observation_states
 
 
 def evaluate_cross_sectionally(
@@ -593,13 +655,35 @@ def evaluate_cross_sectionally(
     ] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Return a JSON-serializable peer summary and its flagged observations."""
-    summary, candidates, _ = _evaluate_cross_sectionally(
+    summary, candidates, _, _ = _evaluate_cross_sectionally(
         observations,
         table_documents,
         expected_districts,
         tentative_reconciliations,
     )
     return summary, candidates
+
+
+def evaluate_cross_sectionally_with_statuses(
+    observations: Sequence[NBRObservation],
+    table_documents: Sequence[Mapping[str, Any]],
+    expected_districts: Sequence[str] = (),
+    tentative_reconciliations: Mapping[
+        tuple[str, str, str], Mapping[str, Any]
+    ] | None = None,
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    dict[tuple[str, str, str, str, str], dict[str, Any]],
+]:
+    """Return existing peer findings plus per-observation assessability states."""
+    summary, candidates, _, states = _evaluate_cross_sectionally(
+        observations,
+        table_documents,
+        expected_districts,
+        tentative_reconciliations,
+    )
+    return summary, candidates, states
 
 
 def _compare_cross_section_to_temporal(
@@ -1329,6 +1413,7 @@ def build_experiment_report(
         cross_section,
         cross_section_candidates,
         cross_section_assessable_keys,
+        _,
     ) = _evaluate_cross_sectionally(
         observations,
         table_documents,
@@ -1839,6 +1924,7 @@ __all__ = [
     "CROSS_SECTION_ROBUST_Z_THRESHOLD",
     "evaluate_chronologically",
     "evaluate_cross_sectionally",
+    "evaluate_cross_sectionally_with_statuses",
     "prepare_observations",
     "build_experiment_report",
     "load_mongodb_history",

@@ -284,6 +284,11 @@ div[class*="st-key-card"]{
   background:var(--surface); border:1px solid var(--line); border-radius:18px;
   padding:22px 24px; box-shadow:var(--shadow);
 }
+.st-key-card_combined_finding{
+  background:linear-gradient(135deg,#FFFFFF 0%,#F2F7FC 100%) !important;
+  border-top:3px solid var(--blue) !important;
+  box-shadow:0 16px 30px -20px rgba(14,42,53,.42) !important;
+}
 .st-key-nbr_context_card{
   background:var(--surface); border:1px solid var(--line); border-radius:18px;
   padding:22px 24px; box-shadow:var(--shadow); margin:14px 0;
@@ -484,6 +489,7 @@ div[data-baseweb="select"] > div:hover{border-color:var(--teal);}
 }
 .stApp .pg-hero.compact .pg-title{font-size:clamp(24px,2.4vw,32px); margin-bottom:6px;}
 .stApp .pg-hero .pg-sub{color:#C5D6DB; font-size:15.5px; line-height:1.6; margin:0; max-width:58ch;}
+.stApp .pg-hero .pg-intro{color:#C5D6DB; font-size:13px; line-height:1.55; margin:9px 0 0; max-width:62ch;}
 .stApp .pg-hero.compact .pg-sub{font-size:14.5px;}
 .pg-pill{
   position:relative; z-index:2; flex:none; display:inline-flex; gap:8px; align-items:center;
@@ -735,6 +741,25 @@ div[data-baseweb="select"] > div:hover{border-color:var(--teal);}
 .soon .pg-art{width:70%; opacity:.55;}
 .app-foot{margin-top:28px; padding-top:16px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:12.5px; color:var(--muted);}
 
+/* ---------- combined-mode source labels and reading notes ---------- */
+.pg-hero.dual::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;z-index:3;
+  background:linear-gradient(90deg,#1A8A7D 0 50%,#2F6FB3 50% 100%);}
+.src-tag{display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 7px;border-radius:6px;white-space:nowrap;line-height:1;}
+.src-tag.fs{background:#DCF0EC;color:#0F5A52;}
+.src-tag.nbr{background:#E3EEF8;color:#245A99;}
+.kpi-label .src-tag{margin-left:auto;flex:none;}
+.cov{display:flex;flex-wrap:wrap;gap:10px;margin:0;}
+.cov-chip{display:inline-flex;gap:9px;align-items:center;padding:8px 13px;border-radius:12px;font-size:12.5px;line-height:1.45;
+  color:var(--text);background:#fff;border:1px solid var(--line);box-shadow:0 1px 2px rgba(14,42,53,.04);}
+.cov-chip.fs{border-left:3px solid #1A8A7D;}
+.cov-chip.nbr{border-left:3px solid #2F6FB3;}
+.cov-chip.none{border-left:3px solid #B4C3CA;color:var(--muted);background:#F6F8F9;}
+.fn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px 30px;padding:4px 2px 2px;}
+.fn-h{font-size:12px;font-weight:800;color:var(--ink);margin-bottom:4px;}
+.fn-p{font-size:13px;line-height:1.6;color:#3F5560;margin:0;}
+.fn-src{font-size:12px;color:var(--muted);margin-top:14px;}
+
 /* ---------- responsive ---------- */
 @media (max-width:1100px){
   .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr)); margin:-66px 12px 0;}
@@ -765,19 +790,72 @@ def apply_global_styles():
 # --------------------------------------------------------------------------
 # Components
 # --------------------------------------------------------------------------
-def page_header(title, subtitle, pill=None, size="tall", below_html="", pill_badge=None):
+MODE_PILLS = {
+    "Combined": "FinScope survey + NBR supply",
+    "FinScope": "FinScope Rwanda 2024",
+    "NBR Supply": "NBR administrative data",
+}
+
+
+def mode_pill(mode):
+    return MODE_PILLS.get(mode, MODE_PILLS["FinScope"])
+
+
+def source_tag(kind):
+    label = {"fs": "FinScope", "nbr": "NBR"}.get(kind, "")
+    return f'<span class="src-tag {esc(kind)}">{label}</span>'
+
+
+def coverage_html(chips):
+    body = "".join(
+        f'<span class="cov-chip {esc(kind)}">'
+        + (source_tag(kind) if kind in ("fs", "nbr") else "")
+        + f"<span>{esc(text)}</span></span>"
+        for kind, text in chips
+    )
+    return f'<div class="cov">{body}</div>'
+
+
+def page_footnotes(items, source="", title="About these figures"):
+    items = [(heading, body) for heading, body in items if heading and body]
+    if not items:
+        return
+    with st.expander(title):
+        cells = "".join(
+            f'<div><div class="fn-h">{esc(heading)}</div>'
+            f'<p class="fn-p">{esc(body)}</p></div>'
+            for heading, body in items
+        )
+        render_html(f'<div class="fn-grid">{cells}</div>')
+        if source:
+            render_html(f'<div class="fn-src">{source}</div>')
+
+
+def page_header(
+    title,
+    subtitle,
+    pill=None,
+    size="tall",
+    below_html="",
+    pill_badge=None,
+    intro="",
+    mode=None,
+):
     """Hero header. size: 'tall' (overlaps a KPI row) or 'compact'."""
     pill_badge_html = badge(pill_badge, "warn") if pill_badge else ""
+    intro_html = f'<p class="pg-intro">{esc(intro)}</p>' if intro else ""
     pill_html = (
         f'<div class="pg-pill"><i></i>{esc(pill)}{pill_badge_html}</div>'
         if pill else ""
     )
+    dual_class = " dual" if mode == "Combined" else ""
     render_html(
         f"""
-        <div class="pg-hero {size}">
+        <div class="pg-hero {size}{dual_class}">
           <div class="pg-text">
             <h1 class="pg-title">{esc(title)}</h1>
             <p class="pg-sub">{esc(subtitle)}</p>
+            {intro_html}
           </div>
           {pill_html}
           <div class="pg-art">{HERO_ART}</div>
@@ -794,6 +872,7 @@ def kpi_card(
     fill=0,
     accent="#1A8A7D",
     src="",
+    tag="",
     *,
     show_track=True,
 ):
@@ -805,9 +884,10 @@ def kpi_card(
         if show_track
         else ""
     )
+    tag_html = source_tag(tag) if tag in ("fs", "nbr") else ""
     return f"""
     <div class="kpi" style="--accent:{accent}">
-      <div class="kpi-label"><i></i><span>{esc(label)}</span></div>
+      <div class="kpi-label"><i></i><span>{esc(label)}</span>{tag_html}</div>
       <div class="kpi-value">{value}<small>{small}</small></div>
       {track}
       <div class="kpi-src">{src}</div>

@@ -8,6 +8,7 @@ import pytest
 import pymongo
 from streamlit.testing.v1 import AppTest
 
+import src.pages.nbr_dashboard as dashboard
 from src.pages.district_explorer import build_map
 from src.pages.nbr_dashboard import (
     _group_families,
@@ -88,6 +89,7 @@ def _point(
         "geography": geography,
         "geography_level": level,
         "filters": filters,
+        "combo_key": json.dumps(filters, sort_keys=True),
         "unit": unit,
         "unit_status": "configured_source_label",
         "source_type": "district_table" if level == "district" else "national_kpi",
@@ -3536,8 +3538,76 @@ def test_combined_context_renders_separately_from_survey_data():
     assert not any(selectbox.label == "NBR source page" for selectbox in app.selectbox)
 
 
-def test_combined_national_context_uses_existing_reading_card():
+def test_context_strip_html_uses_unit_fallback_when_missing():
+    fallback = dashboard.context_strip_html({
+        "metric_label": "Total Branches",
+        "unit": "",
+        "limitations": "Source limitation",
+        "points": [{"reporting_date": "2026-10-24", "value": 42}],
+    })
+    assert "unit not specified" in fallback
+
+
+def test_group_saving_combined_context_excludes_sacco_branches():
+    points = [_point(
+        page="branches",
+        metric="Total Branches",
+        date="2026-10-24",
+        value=155,
+        geography="Kirehe",
+        level="district",
+        filters={"Institution Type": "Sacco", "Branch Status": "Active", "Location": "All"},
+        unit="count",
+    )]
+    original_loader = dashboard.load_nbr_dashboard_data
+    dashboard.load_nbr_dashboard_data = lambda *args, **kwargs: (points, {}, [], "v1")
+    try:
+        entries, _ = dashboard.load_combined_context_data("g3a_11", geography_level="district", geography="Kirehe")
+    finally:
+        dashboard.load_nbr_dashboard_data = original_loader
+    assert entries == []
+
+
+def test_combined_national_context_keeps_primary_chart_visible():
     points = _dashboard_points()
+    agent_filters = {
+        "Gender": "All",
+        "Institution Type": "E-money Issuers",
+        "Agent Status": "Active",
+        "Location": "All",
+    }
+    sacco_filters = {
+        "Institution Type": "Sacco",
+        "Branch Status": "Active",
+        "Location": "All",
+    }
+    for page, metric, filters, observations in (
+        (
+            "agents",
+            "Total Agents",
+            agent_filters,
+            (("2026-08-20", 153971), ("2026-10-24", 155211)),
+        ),
+        (
+            "branches",
+            "Total Branches",
+            sacco_filters,
+            (("2026-08-20", 632), ("2026-10-24", 635)),
+        ),
+    ):
+        points.extend(
+            _point(
+                page=page,
+                metric=metric,
+                date=reporting_date,
+                value=value,
+                geography="Rwanda",
+                level="national",
+                filters=filters,
+                unit="count",
+            )
+            for reporting_date, value in observations
+        )
     script = (
         "import json\n"
         "import streamlit as st\n"
@@ -3563,76 +3633,82 @@ def test_combined_national_context_uses_existing_reading_card():
 
     assert not app.exception, [error.value for error in app.exception]
     assert app.session_state["requested_pages"]
-    assert all(pages == ("branches",) for pages in app.session_state["requested_pages"])
-    assert any(
-        "About the NBR lines in these cards" in expander.label
-        for expander in app.expander
+    assert len(app.session_state["requested_pages"]) == 1
+    chart_keys = {chart.key for chart in app.get("plotly_chart")}
+    assert not any(key.startswith("ov_combined_finding_") for key in chart_keys)
+    rendered = " ".join(
+        [item.value for item in app.markdown]
+        + [item.value for item in app.caption]
     )
-    assert any(
-        "NBR supply context · Bank-account ownership" in expander.label
-        for expander in app.expander
-    )
+    assert rendered.split('<div class="sec">', 1)[0].count('class="kpi"') == 2
+    assert "Financial inclusion in Rwanda: people and the financial system" in rendered
+    assert "Different measures, not a direct comparison" not in rendered
 
 
-def test_national_overview_selects_one_nbr_series_for_shared_map():
-    filters = {"Institution Type": "Banks", "Location": "All"}
-    entries = [
-        {
-            "metric_label": "Branches",
-            "unit": "branches",
-            "filters": filters,
-            "points": [{
-                "geography": "Kirehe",
-                "value": 5,
-                "reporting_date": "2026-10-24",
-            }],
-        },
-        {
-            "metric_label": "Customers",
-            "unit": "customers",
-            "filters": {**filters, "Account Status": "Active"},
-            "points": [{
-                "geography": "Kirehe",
-                "value": 9,
-                "reporting_date": "2026-10-24",
-            }],
-        },
-    ]
+def test_combined_national_overview_uses_only_approved_national_branch_context():
+    filters = {
+        "Institution Type": "Banks",
+        "Branch Status": "Active",
+        "Location": "All",
+    }
+    point = _point(
+        page="branches",
+        metric="Total Branches",
+        date="2026-10-24",
+        value=152,
+        geography="Rwanda",
+        level="national",
+        unit="count",
+        filters=filters,
+    )
+    entry = {
+        "page": "branches",
+        "metric_label": "Total Branches",
+        "display_label": "Branches · Total Branches",
+        "unit": "count",
+        "filters": filters,
+        "geography_level": "national",
+        "relationship": "contextual_indicator",
+        "limitations": "Branch presence is not individual account ownership.",
+        "points": [point],
+    }
     app = AppTest.from_string(
         "import plotly.graph_objects as go\n"
         "import streamlit as st\n"
         "import src.pages.nbr_dashboard as dashboard\n"
         "import src.pages.national_overview as overview\n"
         "st.session_state['global_dashboard_mode'] = 'Combined'\n"
-        "st.session_state['overview_district_indicator'] = 'Bank account'\n"
-        "_original_context_loader = dashboard.load_combined_context_data\n"
-        "_original_strip = dashboard.combined_strip\n"
+        "_original_shared_loader = dashboard.load_combined_national_evidence\n"
+        "_original_nbr_loader = dashboard.load_nbr_dashboard_data\n"
         "_original_map_figure = overview._map_figure\n"
-        f"entries = {entries!r}\n"
-        "dashboard.load_combined_context_data = lambda *args, **kwargs: (entries, 'fixture')\n"
-        "dashboard.combined_strip = lambda *args, **kwargs: ('', None)\n"
-        "def capture_map(*args, supply_points=(), **kwargs):\n"
-        "    st.session_state['map_values'] = [point['value'] for point in supply_points]\n"
+        f"entry = {entry!r}\n"
+        "def test_shared_loader():\n"
+        "    st.session_state.setdefault('shared_requests', []).append('called')\n"
+        "    return [], [entry]\n"
+        "dashboard.load_combined_national_evidence = test_shared_loader\n"
+        "def empty_nbr_loader(version, pages=None):\n"
+        "    return [], {'eligible_source_point_count': 0}, [], 'empty-fixture'\n"
+        "dashboard.load_nbr_dashboard_data = empty_nbr_loader\n"
+        "def capture_map(*args, **kwargs):\n"
+        "    st.session_state['map_called'] = True\n"
         "    return go.Figure()\n"
         "overview._map_figure = capture_map\n"
         "try:\n"
         "    overview.render_national_overview()\n"
         "finally:\n"
-        "    dashboard.load_combined_context_data = _original_context_loader\n"
-        "    dashboard.combined_strip = _original_strip\n"
+        "    dashboard.load_combined_national_evidence = _original_shared_loader\n"
+        "    dashboard.load_nbr_dashboard_data = _original_nbr_loader\n"
         "    overview._map_figure = _original_map_figure\n"
     ).run()
 
     assert not app.exception, [error.value for error in app.exception]
-    selector = app.selectbox(key="overview_nbr_map_series_k1_fixture")
-    assert selector.options[0].startswith("Branches · branches")
-    assert selector.options[1].startswith("Customers · customers")
-    assert app.session_state["map_values"] == [5]
-
-    selector.select(selector.options[1]).run()
-
-    assert not app.exception, [error.value for error in app.exception]
-    assert app.session_state["map_values"] == [9]
+    rendered = "\n".join(markdown.value for markdown in app.markdown)
+    assert app.session_state["shared_requests"] == ["called"]
+    assert "Recorded active bank branches" in rendered
+    assert "152" in rendered
+    assert "2026-10-24" in rendered
+    assert "Where the gaps are" not in rendered
+    assert "map_called" not in app.session_state
 
 
 def test_nbr_national_map_uses_only_exact_unit_and_reporting_date(monkeypatch):

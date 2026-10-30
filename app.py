@@ -1,3 +1,5 @@
+from importlib import import_module
+
 import streamlit as st
 
 from src.auth import render_access_gate
@@ -32,6 +34,14 @@ NAV = {
     "Policy alignment": ":material/account_balance:",
     "Methodology & sources": ":material/menu_book:",
 }
+PAGE_MODULES = {
+    "National overview": ("national_overview", "render_national_overview"),
+    "District explorer": ("district_explorer", "render_district_explorer"),
+    "Population groups": ("population_groups", "render_population_groups"),
+    "Priority explorer": ("priority_explorer", "render_priority_explorer"),
+    "Policy alignment": ("policy_alignment", "render_policy_alignment"),
+    "Methodology & sources": ("methodology", "render_methodology"),
+}
 
 
 def select_page(page):
@@ -39,6 +49,18 @@ def select_page(page):
 
 
 selected_page = st.session_state.get("selected_page", "National overview")
+
+
+def render_selected_page(page):
+    module_name, renderer_name = PAGE_MODULES[page]
+    from src.pages.nbr_dashboard import current_mode
+
+    page_package = (
+        "src.pages.combine-view" if current_mode() == "Combined" else "src.pages"
+    )
+    module = import_module(f"{page_package}.{module_name}")
+    getattr(module, renderer_name)()
+
 
 with st.sidebar:
     sidebar_brand()
@@ -76,34 +98,6 @@ with st.sidebar:
     )
 
 
-if selected_page == "National overview":
-    from src.pages.national_overview import render_national_overview
-
-    render_national_overview()
-
-elif selected_page == "District explorer":
-    from src.pages.district_explorer import render_district_explorer
-
-    render_district_explorer()
-
-elif selected_page == "Population groups":
-    from src.pages.population_groups import render_population_groups
-
-    render_population_groups()
-
-elif selected_page == "Priority explorer":
-    from src.pages.priority_explorer import render_priority_explorer
-
-    render_priority_explorer()
-
-elif selected_page == "Policy alignment":
-    from src.pages.policy_alignment import render_policy_alignment
-
-    render_policy_alignment()
-
-elif selected_page == "Methodology & sources":
-    from src.pages.methodology import render_methodology
-
-    render_methodology()
+render_selected_page(selected_page)
 
 app_footer()
