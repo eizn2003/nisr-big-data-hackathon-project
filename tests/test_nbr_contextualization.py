@@ -8,10 +8,12 @@ from src.models.nbr_intelligence.contextualization import (
     _matching_relationships,
     _review_queue_report,
     build_contextualization_report,
+    build_national_contextualization_report,
     compare_cross_channel_trends,
     generate_finscope_suggestions,
     load_finscope_baselines,
     prepare_source_points,
+    select_national_contextualization_findings,
     summarize_trend,
 )
 from src.models.nbr_intelligence.indicator_mapping import (
@@ -378,6 +380,160 @@ def test_gender_mapping_is_exact_and_age_bins_are_not_crosswalked():
     assert all(item["Gender"] == "Female" for item in matched)
     assert all(item["Age Segment"] == "All" for item in matched)
     assert _matching_relationships(age) == []
+
+
+def test_national_contextualization_findings_change_with_new_observations():
+    variable = "f5"
+    relationship = next(
+        item
+        for item in MAPPING_BY_VARIABLE[variable]["nbr_relationships"]
+        if "national" in item["available_levels"]
+        and item["relationship"] != "unsuitable"
+    )
+    dates = ["2025-01-01", "2025-06-01", "2025-12-01"]
+
+    def points(values):
+        return [
+            {
+                "page": relationship["page"],
+                "metric_label": relationship["national_kpi_labels"][0],
+                "reporting_date": day,
+                "value": value,
+                "raw_value": str(value),
+                "geography": "Rwanda",
+                "geography_level": "national",
+                "filters": dict(relationship["filter_scope"]),
+                "combo_key": json.dumps(
+                    relationship["filter_scope"],
+                    sort_keys=True,
+                ),
+                "unit": "count",
+                "unit_status": "configured_source_label",
+                "source_type": "national_kpi",
+                "source_record_id": f"national-{day}",
+                "run_id": f"run-{day}",
+                "collected_at": f"{day}T12:00:00+00:00",
+                "quality_qualifications": [],
+            }
+            for day, value in zip(dates, values)
+        ]
+
+    baseline = {
+        "analytical_level": "national",
+        "geography": "Rwanda",
+        "subgroup_type": "",
+        "subgroup": "",
+        "indicator_variable": variable,
+        "indicator_label": MAPPING_BY_VARIABLE[variable][
+            "original_indicator_label"
+        ],
+        "estimate_percent": 66.6,
+        "valid_respondents": 13994,
+        "baseline_source": "national_financial_inclusion.csv",
+    }
+
+    first_report = build_national_contextualization_report(
+        points([100, 110, 120]),
+        [baseline],
+        assessed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    later_points = [
+        *points([100, 110, 120]),
+        {
+            **points([100])[0],
+            "reporting_date": "2026-06-01",
+            "value": 90,
+            "source_record_id": "national-2026-06-01",
+            "run_id": "run-2026-06-01",
+            "collected_at": "2026-06-01T12:00:00+00:00",
+        },
+    ]
+    later_report = build_national_contextualization_report(
+        later_points,
+        [baseline],
+        assessed_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+    )
+
+    first = select_national_contextualization_findings(first_report)
+    later = select_national_contextualization_findings(later_report)
+
+    assert first
+    assert later
+    assert first[0]["nbr_observed_direction"] == "increasing"
+    assert later[0]["nbr_observed_direction"] == "mixed"
+    assert later[0]["supporting_evidence"][0]["observations"][-1][
+        "source_record_id"
+    ] == "national-2026-06-01"
+    assert later[0]["finscope_estimate_percent"] == 66.6
+    assert later[0]["finscope_valid_respondents"] == 13994
+    assert later[0]["mapping_status"] == relationship["existing_mapping_status"]
+
+
+def test_national_findings_deduplicate_mobile_money_and_select_sacco_use_context():
+    dates = ["2025-01-01", "2025-06-01", "2025-12-01"]
+    points = []
+    baselines = []
+
+    def add_baseline(variable, estimate):
+        definition = MAPPING_BY_VARIABLE[variable]
+        baselines.append({
+            "analytical_level": "national",
+            "geography": "Rwanda",
+            "subgroup_type": "",
+            "subgroup": "",
+            "indicator_variable": variable,
+            "indicator_label": definition["original_indicator_label"],
+            "estimate_percent": estimate,
+            "valid_respondents": 1000,
+            "baseline_source": "national_financial_inclusion.csv",
+        })
+
+    def add_series(relationship, values):
+        for day, value in zip(dates, values):
+            filters = dict(relationship["filter_scope"])
+            points.append({
+                "page": relationship["page"],
+                "metric_label": relationship["national_kpi_labels"][0],
+                "reporting_date": day,
+                "value": value,
+                "raw_value": str(value),
+                "geography": "Rwanda",
+                "geography_level": "national",
+                "filters": filters,
+                "combo_key": json.dumps(filters, sort_keys=True),
+                "unit": "count",
+                "unit_status": "configured_source_label",
+                "source_type": "national_kpi",
+                "source_record_id": f"{relationship['page']}-{day}",
+                "run_id": f"run-{day}",
+                "collected_at": f"{day}T12:00:00+00:00",
+                "quality_qualifications": [],
+            })
+
+    add_baseline("f5", 66.6)
+    add_baseline("g3a_11", 51.8)
+    add_baseline("qf4_06", 21.3)
+    for relationship in MAPPING_BY_VARIABLE["f5"]["nbr_relationships"]:
+        if relationship["relationship"] != "unsuitable":
+            add_series(relationship, [100, 110, 120])
+    sacco_relationship = next(
+        item
+        for item in MAPPING_BY_VARIABLE["qf4_06"]["nbr_relationships"]
+        if item["page"] == "branches"
+    )
+    add_series(sacco_relationship, [500, 520, 540])
+
+    report = build_national_contextualization_report(points, baselines)
+    findings = select_national_contextualization_findings(report, limit=4)
+
+    assert [finding["indicator_variable"] for finding in findings].count("f5") == 1
+    sacco_finding = next(
+        finding
+        for finding in findings
+        if finding["nbr_page"] == "branches"
+    )
+    assert sacco_finding["indicator_variable"] == "qf4_06"
+    assert sacco_finding["indicator_label"] == "Currently uses an Umurenge SACCO"
 
 
 def test_contextual_suggestion_keeps_original_baseline_and_excludes_future_dates():

@@ -335,12 +335,24 @@ def summarize_trend(points: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Summarize one exact NBR metric/filter/geography series, without imputation."""
     ordered = sorted(points, key=lambda point: str(point["reporting_date"]))
     dates = [str(point["reporting_date"]) for point in ordered]
+    source_record_ids = [
+        str(point.get("source_record_id", "")) for point in ordered
+    ]
+    quality_qualifications = [
+        qualification
+        for point in ordered
+        for qualification in point.get("quality_qualifications", [])
+    ]
     if len(set(dates)) != len(dates):
         return {
             "direction": "not_assessable",
             "evidence_sufficiency_state": "not_comparable",
             "reason": "Multiple observations share a reporting date in this series.",
             "observations": ordered,
+            "reporting_dates": dates,
+            "observation_count": len(ordered),
+            "source_record_ids": source_record_ids,
+            "quality_qualifications": quality_qualifications,
         }
     if len(ordered) < MIN_TREND_OBSERVATIONS:
         return {
@@ -352,6 +364,9 @@ def summarize_trend(points: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             ),
             "observations": ordered,
             "reporting_dates": dates,
+            "observation_count": len(ordered),
+            "source_record_ids": source_record_ids,
+            "quality_qualifications": quality_qualifications,
         }
 
     values = [float(point["value"]) for point in ordered]
@@ -402,15 +417,9 @@ def summarize_trend(points: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             (values[-1] - values[0]) / values[0] * 100
             if values[0] != 0 else None
         ),
-        "source_record_ids": [
-            str(point.get("source_record_id", "")) for point in ordered
-        ],
+        "source_record_ids": source_record_ids,
         "observations": ordered,
-        "quality_qualifications": [
-            qualification
-            for point in ordered
-            for qualification in point.get("quality_qualifications", [])
-        ],
+        "quality_qualifications": quality_qualifications,
     }
 
 
@@ -1312,6 +1321,237 @@ def _trend_series(points: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             **summary,
         })
     return trends
+
+
+def build_national_contextualization_report(
+    points: Sequence[Mapping[str, Any]],
+    baselines: Sequence[Mapping[str, Any]],
+    *,
+    assessed_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Assess normalized national NBR observations against stored FinScope estimates."""
+    timestamp = assessed_at or datetime.now(timezone.utc)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    timestamp = timestamp.astimezone(timezone.utc)
+
+    eligible_points = []
+    excluded = defaultdict(int)
+    for point in points:
+        if (
+            point.get("source_type") != "national_kpi"
+            or point.get("geography_level") != "national"
+            or str(point.get("geography", "")).casefold() != "rwanda"
+            or not isinstance(point.get("filters"), Mapping)
+        ):
+            excluded["not_national_or_missing_filters"] += 1
+            continue
+        try:
+            reporting_date = date.fromisoformat(
+                str(point.get("reporting_date", ""))
+            )
+            value = float(point.get("value"))
+        except (TypeError, ValueError):
+            excluded["invalid_reporting_date_or_value"] += 1
+            continue
+        if value < 0 or not math.isfinite(value):
+            excluded["invalid_reporting_date_or_value"] += 1
+            continue
+        normalized = dict(point)
+        normalized["reporting_date"] = reporting_date.isoformat()
+        normalized["value"] = value
+        normalized["quality_qualifications"] = list(
+            point.get("quality_qualifications", [])
+        )
+        eligible_points.append(normalized)
+
+    eligible_points.sort(key=lambda point: (
+        str(point.get("page", "")),
+        str(point.get("metric_label", "")),
+        str(point.get("combo_key", "")),
+        str(point.get("reporting_date", "")),
+        str(point.get("source_record_id", "")),
+    ))
+    trends = _trend_series(eligible_points)
+    cross_channel_findings, cross_channel_summary = compare_cross_channel_trends(
+        trends
+    )
+    national_baselines = [
+        baseline for baseline in baselines
+        if baseline.get("analytical_level") == "national"
+        and str(baseline.get("geography", "")).casefold() == "rwanda"
+    ]
+    suggestions = generate_finscope_suggestions(
+        national_baselines,
+        trends,
+        cross_channel_findings,
+    )
+    for suggestion in suggestions:
+        suggestion["finscope_population"] = FINSCOPE_POPULATION
+        suggestion["finscope_weight"] = FINSCOPE_WEIGHT
+        supporting = suggestion.get("supporting_evidence", [])
+        if not supporting:
+            continue
+        baseline = next(
+            (
+                item for item in national_baselines
+                if item.get("indicator_variable")
+                == suggestion.get("indicator_variable")
+            ),
+            None,
+        )
+        if baseline is not None:
+            suggestion["finscope_source"] = baseline.get("baseline_source", "")
+        relationship_type = supporting[0].get("relationship")
+        relationship = next(
+            (
+                item
+                for item in MAPPING_BY_VARIABLE.get(
+                    str(suggestion.get("indicator_variable", "")),
+                    {},
+                ).get("nbr_relationships", [])
+                if item.get("page") == suggestion.get("nbr_page")
+                and item.get("relationship") == relationship_type
+            ),
+            None,
+        )
+        if relationship is not None:
+            suggestion["mapping_status"] = relationship.get(
+                "existing_mapping_status",
+                "unresolved",
+            )
+            suggestion["mapping_relevance"] = relationship.get("relevance", "")
+
+    return {
+        "assessment": {
+            "name": "National FinScope contextualization of NBR observations",
+            "model_version": MODEL_VERSION,
+            "assessment_timestamp": timestamp.isoformat(),
+            "sources_assessed_separately": True,
+            "FinScope_reference_period": FINSCOPE_REFERENCE_PERIOD,
+            "FinScope_population": FINSCOPE_POPULATION,
+            "FinScope_weight": FINSCOPE_WEIGHT,
+            "NBR_scope": "National Rwanda KPI observations only",
+            "method": (
+                "Reuse observed-date trend summaries, cross-channel comparisons, "
+                "approved mappings, and suggestion/evidence rules."
+            ),
+        },
+        "source_data": {
+            "eligible_national_nbr_observation_count": len(eligible_points),
+            "eligible_national_finscope_baseline_count": len(national_baselines),
+            "excluded_nbr_observations_by_reason": dict(sorted(excluded.items())),
+            "reporting_dates": sorted({
+                str(point["reporting_date"]) for point in eligible_points
+            }),
+        },
+        "series_trends": trends,
+        "cross_channel_summary": cross_channel_summary,
+        "cross_channel_findings": cross_channel_findings,
+        "suggestions": suggestions,
+    }
+
+
+def select_national_contextualization_findings(
+    report: Mapping[str, Any],
+    *,
+    limit: int = 4,
+    excluded_indicator_variables: Sequence[str] = (),
+    excluded_source_record_ids: Sequence[str] = (),
+) -> list[dict[str, Any]]:
+    """Select changing findings, deduplicating indicators and source series."""
+    if limit < 0:
+        raise ValueError("limit must be zero or greater")
+    if limit == 0:
+        return []
+
+    excluded_indicators = {str(item) for item in excluded_indicator_variables}
+    excluded_sources = {str(item) for item in excluded_source_record_ids}
+    eligible = []
+    for suggestion in report.get("suggestions", []):
+        if (
+            suggestion.get("analytical_level") != "national"
+            or str(suggestion.get("geography", "")).casefold() != "rwanda"
+            or str(suggestion.get("indicator_variable", ""))
+            in excluded_indicators
+            or suggestion.get("evidence_sufficiency_state")
+            not in {"sufficient_for_directional_assessment", "limited_evidence"}
+            or suggestion.get("nbr_observed_direction")
+            not in {"increasing", "decreasing", "mixed"}
+        ):
+            continue
+        supporting = suggestion.get("supporting_evidence", [])
+        if not supporting:
+            continue
+        evidence = supporting[0]
+        observations = evidence.get("observations", [])
+        source_ids = {
+            str(item)
+            for item in evidence.get("source_record_ids", [])
+            if item
+        }
+        dates = sorted({
+            str(point.get("reporting_date", ""))
+            for point in observations
+            if point.get("reporting_date")
+        })
+        if (
+            len(dates) < MIN_TREND_OBSERVATIONS
+            or source_ids.intersection(excluded_sources)
+        ):
+            continue
+        latest_date = dates[-1]
+        quality_qualifications = evidence.get("quality_qualifications", [])
+        filters = evidence.get("filters", {})
+        institution_type = (
+            str(filters.get("Institution Type", "")).strip().casefold()
+            if isinstance(filters, Mapping)
+            else ""
+        )
+        indicator_label = str(suggestion.get("indicator_label", "")).casefold()
+        institution_specific = bool(
+            institution_type
+            and institution_type != "all"
+            and institution_type in indicator_label
+        )
+        eligible.append((
+            (
+                0
+                if suggestion.get("evidence_sufficiency_state")
+                == "sufficient_for_directional_assessment"
+                else 1,
+                bool(quality_qualifications),
+                -date.fromisoformat(latest_date).toordinal(),
+                0 if evidence.get("relationship") == "contextual_indicator" else 1,
+                0 if institution_specific else 1,
+                str(suggestion.get("indicator_variable", "")),
+                str(suggestion.get("nbr_page", "")),
+                str(suggestion.get("nbr_metric", "")),
+                json.dumps(evidence.get("filters", {}), sort_keys=True),
+            ),
+            dict(suggestion),
+            evidence,
+        ))
+
+    eligible.sort(key=lambda item: item[0])
+    selected = []
+    seen_series = set()
+    seen_indicators = set()
+    for _, suggestion, evidence in eligible:
+        indicator_variable = str(suggestion.get("indicator_variable", ""))
+        series_key = (
+            str(evidence.get("page", "")),
+            str(evidence.get("metric_label", "")),
+            json.dumps(evidence.get("filters", {}), sort_keys=True),
+        )
+        if series_key in seen_series or indicator_variable in seen_indicators:
+            continue
+        seen_series.add(series_key)
+        seen_indicators.add(indicator_variable)
+        selected.append(suggestion)
+        if len(selected) == limit:
+            break
+    return selected
 
 
 def _health_context(

@@ -1,0 +1,2334 @@
+
+[     UTC     ] Logs for rwanda-finance-gap-dashboard.streamlit.app/
+────────────────────────────────────────────────────────────────────────────────────────
+[10:31:25] 🚀 Starting up repository: 'nisr-big-data-hackathon-project', branch: 'main', main module: 'app.py'
+[10:31:25] 🐙 Cloning repository...
+[10:31:30] 🐙 Cloning into '/mount/src/nisr-big-data-hackathon-project'...
+
+[10:31:30] 🐙 Cloned repository!
+[10:31:30] 🐙 Pulling code changes from Github...
+[10:31:31] 📦 Processing dependencies...
+
+──────────────────────────────────────── uv ───────────────────────────────────────────
+
+Using uv pip install.
+Using Python 3.14.10 environment at: /home/adminuser/venv
+Resolved 75 packages in 601ms
+Downloading pygments (1.2MiB)
+Downloading networkx (2.0MiB)
+Downloading matplotlib (10.4MiB)
+Downloading fonttools (5.1MiB)
+Downloading playwright (46.2MiB)
+Downloading plotly (9.2MiB)
+Downloading pyarrow [2026-10-30 10:31:32.744070] (51.5MiB)
+Downloading pydeck (10.9MiB)
+Downloading cryptography (4.5MiB)
+Downloading kiwisolver (1.4MiB)
+Downloading pymupdf (65.7MiB)
+Downloading streamlit (9.9MiB)
+Downloading pandas (11.5MiB)
+Downloading pyreadstat (2.8MiB)
+Downloading numpy (15.9MiB)
+Downloading pillow (6.8MiB)
+Downloading pymongo (1.0MiB)
+Downloading onnxruntime (22.7MiB)
+ Downloaded pymongo
+ Downloaded kiwisolver
+ Downloaded pygments
+ Downloaded networkx
+ Downloaded pyreadstat
+ Downloaded cryptography
+ Downloaded fonttools
+ Downloaded pillow
+ Downloaded plotly
+ Downloaded streamlit
+ Downloaded matplotlib
+ Downloaded pydeck
+ Downloaded pandas
+ Downloaded numpy
+ Downloaded onnxruntime
+ Downloaded pymupdf
+ Downloaded playwright
+ Downloaded pyarrow
+Prepared 74 packages in 2.32s
+Installed 74 packages in 268ms
+ + altair==6.3.0
+ + anyio==4.15.1
+ + attrs==26.1.0
+ + authlib==1.9.1
+ + cffi==2.1.1
+ + charset-normalizer==3.5.2
+ + click==8.5.0
+ + contourpy==1.4.[2026-10-30 10:31:35.297282] 0
+ + cryptography==50.0.2
+ + cycler==0.12.1
+ + dnspython==2.9.1
+ + [2026-10-30 10:31:35.297699] et-xmlfile==2.0.0
+ + flatbuffers==25.12.19
+ + fonttools==4.68.0
+ + greenlet==3.5.6
+ + h11==0.16.0
+ + httpcore[2026-10-30 10:31:35.298129] ==1.0.9
+ + httpx==0.28.1
+ + idna==3.20
+ + iniconfig==2.3.1
+ + itsdangerous==2.2.0[2026-10-30 10:31:35.298491] 
+ + jinja2==3.1.6
+ + joserfc==1.7.7
+ + jsonschema==4.26.0
+ + jsonschema-specifications==2025.9.[2026-10-30 10:31:35.298704] 1
+ + kiwisolver==1.5.1
+ + markupsafe==3.0.4
+ + matplotlib==3.11.2
+ + mongomock==4[2026-10-30 10:31:35.298951] .3.0
+ + narwhals==2.28.0
+ + networkx==3.7
+ + numpy==2.5.4
+ + onnxruntime==1.31.1
+ + openpyxl==3.1[2026-10-30 10:31:35.299150] .5
+ + packaging==26.3
+ + pandas==3.1.0
+ + pillow==13.0.0
+ + playwright==1.64.1
+ + plotly==7.1.0
+ + pluggy==1.7.0
+ + protobuf==7[2026-10-30 10:31:35.299397] .36.2
+ + psutil==7.2.2
+ + pyarrow==26.0.0
+ + pycparser==3.12
+ + pydeck==0.9.3
+ + pyee==14.0.0
+ + pygments==2.21.0
+ + pymongo==4.19.0
+ + pymupdf==2.0[2026-10-30 10:31:35.299551] 
+ + pymupdf-layout==2.0
+ + pymupdf4llm==2.0
+ + pyparsing==3.3.3
+ + pyreadstat==1.3.7
+ + pytest==9.2.0
+ +[2026-10-30 10:31:35.299740]  python-dateutil==3.0.0
+ + python-dotenv==1.2.4
+ + python-multipart==0.0.32
+ + pytz==2026.6
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + [2026-10-30 10:31:35.299931] requests==2.34.2
+ + rpds-py==2026.9.1
+ + seaborn==0.13.2
+ + sentinels==[2026-10-30 10:31:35.300152] 1.1.1
+ + six==1.17.0
+ + starlette==1.10.0
+ + streamlit==1.66.[2026-10-30 10:31:35.300386] 1
+ + tabulate==0.10.0
+ + typing-extensions==4.16.0
+ + tzdata==2026.6
+ + urllib3==2.8.0
+ + uvicorn==0.54.0
+ + watchdog==6.0.0
+ + websockets==17.3
+Collecting certifi>=2026.10.19
+  Downloading certifi-2026.10.23-py3-none-any.whl.metadata (2.5 kB)
+Downloading certifi-2026.10.23-py3-none-any.whl (135 kB)
+Installing collected packages: certifi
+  Attempting uninstall: certifi
+    Found existing installation: certifi 2026.10.23
+    Uninstalling certifi-2026.10.23:
+      Successfully uninstalled certifi-2026.10.23
+Successfully installed certifi-2026.10.23
+Collecting pip>=26.2.2
+  Downloading pip-26.2.2-py3-none-any.whl.metadata (4.6 kB)
+Downloading pip-26.2.2-py3-none-any.whl (1.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 21.0 MB/s  0:00:00[2026-10-30 10:31:37.490298] 
+Installing collected packages: pip
+  Attempting uninstall: pip
+    Found existing installation: pip 26.2.2
+    Uninstalling pip-26.2.2:
+      Successfully uninstalled pip-26.2.2
+Successfully installed pip-26.2.2
+Checking if Streamlit is installed
+Found Streamlit version 1.66.1 in the environment
+Detected pyarrow 26.0.0 (known segfault, apache/arrow#50471). Replacing with pyarrow<25.
+Using uv pip install.
+Using Python 3.14.10 environment at: /home/adminuser/venv
+Resolved [2026-10-30 10:31:42.045225] 1 package[2026-10-30 10:31:42.045862]  in 77ms
+Downloading pyarrow (46.6MiB)
+ Downloaded pyarrow
+Prepared 1 package in 781ms
+Uninstalled 1 package in 22ms
+Installed 1 package in 25ms
+ - pyarrow==26.0.0
+ + pyarrow==24.0.0
+Installing rich for an improved exception logging
+Using uv pip install.
+Using Python 3.14.10 environment at: /home/adminuser/venv
+Resolved 4 packages in 162ms
+Prepared 3 packages in 40ms
+Installed 3 packages in 8ms
+ + markdown-it-py==4.2.0
+ [2026-10-30 10:31:43.489830] + mdurl==0.1.2
+ + rich==15.0.0
+
+────────────────────────────────────────────────────────────────────────────────────────
+
+[10:31:44] 🐍 Python dependencies were installed from /mount/src/nisr-big-data-hackathon-project/requirements.txt using uv.
+Check if streamlit is installed
+Streamlit is already installed
+Collecting certifi>=2026.10.19
+  Downloading certifi-2026.10.23-py3-none-any.whl.metadata (2.5 kB)
+Downloading certifi-2026.10.23-py3-none-any.whl (135 kB)
+Installing collected packages: certifi
+  Attempting uninstall: certifi
+    Found existing installation: certifi 2026.10.23
+    Uninstalling certifi-2026.10.23:
+      Successfully uninstalled certifi-2026.10.23
+Successfully installed certifi-2026.10.23
+Collecting pip>=26.2.2
+  Downloading pip-26.2.2-py3-none-any.whl.metadata (4.6 kB)
+Downloading pip-26.2.2-py3-none-any.whl (1.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 62.2 MB/s  0:00:00[2026-10-30 10:31:46.254340] 
+Installing collected packages: pip
+  Attempting uninstall: pip
+    Found existing installation: pip 26.2.2
+    Uninstalling pip-26.2.2:
+      Successfully uninstalled pip-26.2.2
+Successfully installed pip-26.2.2
+[10:31:49] 📦 Processed dependencies!
+2026-10-30 10:31:51.093 Uvicorn server started on :::8501
+
+
+
+/home/adminuser/venv/lib/python3.14/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+2026-10-30 11:23:27.664 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:27.703 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:27.735 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:27.863 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:27.884 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:27.931 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:27.962 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:28.842 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:29.533 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:41.365 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:41.400 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:41.429 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:41.459 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:41.483 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:41.516 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:41.547 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:41.904 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:23:42.721 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:01.415 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:01.453 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:01.484 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:01.523 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:01.557 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:01.596 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:01.633 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:02.036 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:02.751 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:11.595 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:11.622 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:25:11.651 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:10.158 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:10.185 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:10.214 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:18.238 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:18.260 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:18.285 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:18.356 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:18.390 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:18.433 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:35:18.479 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:16.759 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:16.784 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:16.809 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:17.047 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:17.065 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:17.096 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:17.172 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:17.228 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:17.278 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:17.340 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.430 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.462 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.486 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.659 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.735 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.764 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.828 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.868 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.909 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:19.975 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.137 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.167 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.193 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.395 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.521 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.566 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.626 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.663 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.702 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:22.745 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:24.987 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.012 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.045 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.212 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.287 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.313 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.377 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.415 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.466 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:25.505 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.084 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.108 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.137 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.320 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.424 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.460 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.527 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.565 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.604 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:27.647 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:43.703 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:44.962 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:45.010 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:45.227 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:38:45.257 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:39:54.414 The widget with key "nbr_priority_filter_8fd14167271b7bb8_inclusion_Customers_count_3b6126a7" was created with a default value but also had its value set via the Session State API.
+Stack (most recent call last):
+  File "/usr/local/lib/python3.14/threading.py", line 1045, in _bootstrap
+    self._bootstrap_inner()
+  File "/usr/local/lib/python3.14/threading.py", line 1083, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/usr/local/lib/python3.14/threading.py", line 1025, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 436, in _run_script_thread
+    self._run_script(request.rerun_data)
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 949, in _run_script
+    ) = exec_func_with_error_handling(code_to_exec, ctx)
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 136, in exec_func_with_error_handling
+    result = func()
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 924, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/mount/src/nisr-big-data-hackathon-project/app.py", line 97, in <module>
+    render_priority_explorer()
+  File "/mount/src/nisr-big-data-hackathon-project/src/pages/priority_explorer.py", line 228, in render_priority_explorer
+    render_nbr_page(
+  File "/mount/src/nisr-big-data-hackathon-project/src/pages/nbr_dashboard.py", line 6461, in render_nbr_page
+    render_nbr_priority_explorer(
+  File "/mount/src/nisr-big-data-hackathon-project/src/pages/nbr_priority_explorer.py", line 1313, in render_nbr_priority_explorer
+    family = _render_controls(
+  File "/mount/src/nisr-big-data-hackathon-project/src/pages/nbr_priority_explorer.py", line 1120, in _render_controls
+    selected_value = _widget_pill_choice(
+  File "/mount/src/nisr-big-data-hackathon-project/src/pages/nbr_priority_explorer.py", line 1001, in _widget_pill_choice
+    selected = st.pills(
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/metrics_util.py", line 725, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/elements/widgets/button_group.py", line 740, in pills
+    return self._internal_button_group(
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/metrics_util.py", line 725, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/elements/widgets/button_group.py", line 1329, in _internal_button_group
+    result: RegisterWidgetResult[Any] = self._button_group(
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/elements/widgets/button_group.py", line 1429, in _button_group
+    check_widget_policies(self.dg, key, on_change_callback, default_value=_default)
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/elements/lib/policies.py", line 146, in check_widget_policies
+    check_session_state_rules(
+  File "/home/adminuser/venv/lib/python3.14/site-packages/streamlit/elements/lib/policies.py", line 90, in check_session_state_rules
+    _LOGGER.warning(
+2026-10-30 11:40:26.151 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:40:30.962 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:40:30.982 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:40:30.987 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 11:40:41.564 No end_session_endpoint found for provider google
+[17:22:57] 🐙 Pulling code changes from Github...
+[17:23:00] 📦 Processing dependencies...
+[17:23:00] 📦 Processed dependencies!
+[17:23:01] 🔄 Updated app!
+2026-10-30 17:31:32.892 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:32.897 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:32.931 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:32.955 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:32.959 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:32.990 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:32.994 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:33.022 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:33.051 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:33.093 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:33.129 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:33.177 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:33.217 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:33.622 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:34.460 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:34.467 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:57.299 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:57.333 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:57.371 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:57.414 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:57.442 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:57.492 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:57.530 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:57.906 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:31:58.616 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:35:43.260 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:35:43.295 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:35:43.325 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:35:43.373 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:35:43.383 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:36:55.296 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:36:55.330 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:36:55.355 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:36:55.385 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:36:55.405 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:36:55.414 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:49:30.166 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:49:30.907 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:49:30.929 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:49:30.980 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 17:49:30.985 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.504 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.510 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.546 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.568 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.571 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.594 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.597 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.627 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.659 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.694 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.726 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.763 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:00.791 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:01.326 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:02.131 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:02.136 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:06.781 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:07.589 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:07.594 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:07.644 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:07.665 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:07.694 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:07.701 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:13.123 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:13.841 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:13.846 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:13.885 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:13.902 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:13.930 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:02:13.938 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.482 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.486 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.513 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.537 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.544 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.565 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.568 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.592 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.616 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.650 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.672 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.708 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:41.737 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:42.183 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:42.945 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:46.296 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:46.333 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:46.375 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:46.418 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:46.445 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:46.477 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:46.502 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:46.866 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:07:47.664 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:10:51.521 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:10:52.255 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:10:52.282 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:10:52.315 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:10:52.327 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:11:51.783 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:11:51.817 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:11:51.843 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:11:51.906 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:11:51.919 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:05.602 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:05.628 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:05.650 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:05.675 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:05.695 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:05.705 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:28.859 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:29.598 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:29.617 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:29.650 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:29.656 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:32.587 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:32.635 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:32.682 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:32.742 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:12:32.753 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:14:58.420 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:17:00.152 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:17:00.164 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:17:00.168 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+[18:34:11] 🐙 Pulling code changes from Github...
+[18:34:13] 📦 Processing dependencies...
+[18:34:13] 📦 Processed dependencies!
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:3 in <module>               
+                                                                                
+      1 import streamlit as st                                                  
+      2                                                                         
+  ❱   3 from src.auth import render_access_gate                                 
+      4 from src.styles import (                                                
+      5 │   app_footer,                                                         
+      6 │   apply_global_styles,                                                
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/auth.py:3 in <module>          
+                                                                                
+      1 import streamlit as st                                                  
+      2                                                                         
+  ❱   3 from src.styles import HERO_ART, LOGO_SVG, esc, render_html             
+      4                                                                         
+      5                                                                         
+      6 LOGIN_CSS = """                                                         
+  in _find_and_load:1371                                                        
+  in _find_and_load_unlocked:1342                                               
+  in _load_unlocked:949                                                         
+────────────────────────────────────────────────────────────────────────────────
+KeyError: 'src.styles'
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:46 in <module>              
+                                                                                
+     43 with st.sidebar:                                                        
+     44 │   sidebar_brand()                                                     
+     45 │   render_html('<div class="sb-section">Explore</div>')                
+  ❱  46 │   from src.pages.nbr_dashboard import render_mode_selector            
+     47 │                                                                       
+     48 │   render_mode_selector()                                              
+     49 │   st.divider()                                                        
+  in _find_and_load:1371                                                        
+  in _find_and_load_unlocked:1342                                               
+  in _load_unlocked:949                                                         
+────────────────────────────────────────────────────────────────────────────────
+KeyError: 'src.pages.nbr_dashboard'
+[18:34:14] 🔄 Updated app!
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:46 in <module>              
+                                                                                
+     43 with st.sidebar:                                                        
+     44 │   sidebar_brand()                                                     
+     45 │   render_html('<div class="sb-section">Explore</div>')                
+  ❱  46 │   from src.pages.nbr_dashboard import render_mode_selector            
+     47 │                                                                       
+     48 │   render_mode_selector()                                              
+     49 │   st.divider()                                                        
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/nbr_dashboard.py:23 in   
+  <module>                                                                      
+                                                                                
+      20 │   load_district_reference,                                           
+      21 │   parse_numeric_value,                                               
+      22 )                                                                      
+  ❱   23 from src.models.nbr_intelligence.contextualization import (            
+      24 │   _filters_match,                                                    
+      25 │   prepare_source_points,                                             
+      26 )                                                                      
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/models/nbr_intelligence/conte  
+  xtualization.py:21 in <module>                                                
+                                                                                
+      18 )                                                                      
+      19 from src.indicators import REGISTRY                                    
+      20 from src.models.nbr_intelligence import MODEL_VERSION                  
+  ❱   21 from src.models.nbr_intelligence.experiment import (                   
+      22 │   PROJECT_ROOT,                                                      
+      23 │   _identity,                                                         
+      24 │   _tentative_reconciliation_qualifications,                          
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/models/nbr_intelligence/exper  
+  iment.py:32 in <module>                                                       
+                                                                                
+      29 │   TABLE_COLLECTION,                                                  
+      30 │   parse_numeric_value,                                               
+      31 )                                                                      
+  ❱   32 from src.models.nbr_intelligence.assessment import (                   
+      33 │   MODEL_VERSION,                                                     
+      34 │   assess_evidence,                                                   
+      35 │   attach_candidate_evidence,                                         
+  in _find_and_load:1371                                                        
+  in _find_and_load_unlocked:1342                                               
+  in _load_unlocked:949                                                         
+────────────────────────────────────────────────────────────────────────────────
+KeyError: 'src.models.nbr_intelligence.assessment'
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:46 in <module>              
+                                                                                
+     43 with st.sidebar:                                                        
+     44 │   sidebar_brand()                                                     
+     45 │   render_html('<div class="sb-section">Explore</div>')                
+  ❱  46 │   from src.pages.nbr_dashboard import render_mode_selector            
+     47 │                                                                       
+     48 │   render_mode_selector()                                              
+     49 │   st.divider()                                                        
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/nbr_dashboard.py:18 in   
+  <module>                                                                      
+                                                                                
+      15 import streamlit as st                                                 
+      16 from pymongo.errors import PyMongoError                                
+      17                                                                        
+  ❱   18 from src import data                                                   
+      19 from src.data_sources.mongodb_district_explorer import (               
+      20 │   load_district_reference,                                           
+      21 │   parse_numeric_value,                                               
+  in _find_and_load:1371                                                        
+  in _find_and_load_unlocked:1342                                               
+  in _load_unlocked:949                                                         
+────────────────────────────────────────────────────────────────────────────────
+KeyError: 'src.data'
+2026-10-30 18:34:15.522 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:15.534 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:15.538 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:15.825 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:15.838 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:15.845 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.166 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.180 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.183 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.341 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.360 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.526 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.839 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.861 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:16.866 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:46 in <module>              
+                                                                                
+     43 with st.sidebar:                                                        
+     44 │   sidebar_brand()                                                     
+     45 │   render_html('<div class="sb-section">Explore</div>')                
+  ❱  46 │   from src.pages.nbr_dashboard import render_mode_selector            
+     47 │                                                                       
+     48 │   render_mode_selector()                                              
+     49 │   st.divider()                                                        
+  in _find_and_load:1371                                                        
+  in _find_and_load_unlocked:1342                                               
+  in _load_unlocked:949                                                         
+────────────────────────────────────────────────────────────────────────────────
+KeyError: 'src.pages.nbr_dashboard'
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:46 in <module>              
+                                                                                
+     43 with st.sidebar:                                                        
+     44 │   sidebar_brand()                                                     
+     45 │   render_html('<div class="sb-section">Explore</div>')                
+  ❱  46 │   from src.pages.nbr_dashboard import render_mode_selector            
+     47 │                                                                       
+     48 │   render_mode_selector()                                              
+     49 │   st.divider()                                                        
+  in _find_and_load:1371                                                        
+  in _find_and_load_unlocked:1342                                               
+  in _load_unlocked:949                                                         
+────────────────────────────────────────────────────────────────────────────────
+KeyError: 'src.pages'
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:3 in <module>               
+                                                                                
+      1 import streamlit as st                                                  
+      2                                                                         
+  ❱   3 from src.auth import render_access_gate                                 
+      4 from src.styles import (                                                
+      5 │   app_footer,                                                         
+      6 │   apply_global_styles,                                                
+  in _find_and_load:1371                                                        
+  in _find_and_load_unlocked:1342                                               
+  in _load_unlocked:949                                                         
+────────────────────────────────────────────────────────────────────────────────
+KeyError: 'src.auth'
+2026-10-30 18:34:19.406 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:19.422 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:19.427 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:20.067 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:20.240 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:20.249 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:20.804 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:20.816 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:20.820 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:20.981 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:20.995 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:21.001 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:21.733 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:21.745 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:21.750 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:22.388 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:22.406 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:22.413 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:23.226 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:23.239 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:23.396 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:23.410 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:23.415 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:24.774 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:24.791 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:24.797 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:25.839 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:26.173 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:26.186 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:26.191 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:27.296 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:27.308 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:27.313 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:28.235 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:28.250 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:28.256 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:28.292 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:28.308 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:34:28.319 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:08.821 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:08.848 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:08.871 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:08.900 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:08.924 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:08.961 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:09.000 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:82 in <module>              
+                                                                                
+     79 if selected_page == "National overview":                                
+     80 │   from src.pages.national_overview import render_national_overview    
+     81 │                                                                       
+  ❱  82 │   render_national_overview()                                          
+     83                                                                         
+     84 elif selected_page == "District explorer":                              
+     85 │   from src.pages.district_explorer import render_district_explorer    
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/national_overview.py:62  
+  4 in render_national_overview                                                 
+                                                                                
+    621 │   │   │   │   │   "District pattern",                                 
+    622 │   │   │   │   │   "FinScope estimates use the shaded map; NBR supply  
+    623 │   │   │   │   )                                                       
+  ❱ 624 │   │   │   │   st.plotly_chart(_map_figure(                            
+    625 │   │   │   │   │   district,                                           
+    626 │   │   │   │   │   geojson,                                            
+    627 │   │   │   │   │   centers,                                            
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/national_overview.py:28  
+  6 in _map_figure                                                              
+                                                                                
+    283 │   │   "rotation": 0,                                                  
+    284 │   │   "zoom": 6.8,                                                    
+    285 │   }                                                                   
+  ❱ 286 │   return build_map(                                                   
+    287 │   │   frame,                                                          
+    288 │   │   geojson,                                                        
+    289 │   │   centers,                                                        
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/district_explorer.py:22  
+  7 in build_map                                                                
+                                                                                
+    224 │   │   )                                                               
+    225 │   │   colorbar_title = f"{short} · {value_unit or 'unit not specifie  
+    226 │   │   colorbar_suffix = ""                                            
+  ❱ 227 │   │   colorbar_tickformat = None                                      
+    228 │   else:                                                               
+    229 │   │   hovertemplate = (                                               
+    230 │   │   │   "<b>%{location}</b><br>"                                    
+────────────────────────────────────────────────────────────────────────────────
+NameError: name 'colorbar_title' is not defined
+2026-10-30 18:36:35.458 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:35.481 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:35.507 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:35.536 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:35.560 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:35.589 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:36:35.618 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:82 in <module>              
+                                                                                
+     79 if selected_page == "National overview":                                
+     80 │   from src.pages.national_overview import render_national_overview    
+     81 │                                                                       
+  ❱  82 │   render_national_overview()                                          
+     83                                                                         
+     84 elif selected_page == "District explorer":                              
+     85 │   from src.pages.district_explorer import render_district_explorer    
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/national_overview.py:62  
+  4 in render_national_overview                                                 
+                                                                                
+    621 │   │   │   │   │   "District pattern",                                 
+    622 │   │   │   │   │   "FinScope estimates use the shaded map; NBR supply  
+    623 │   │   │   │   )                                                       
+  ❱ 624 │   │   │   │   st.plotly_chart(_map_figure(                            
+    625 │   │   │   │   │   district,                                           
+    626 │   │   │   │   │   geojson,                                            
+    627 │   │   │   │   │   centers,                                            
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/national_overview.py:28  
+  6 in _map_figure                                                              
+                                                                                
+    283 │   │   "rotation": 0,                                                  
+    284 │   │   "zoom": 6.8,                                                    
+    285 │   }                                                                   
+  ❱ 286 │   return build_map(                                                   
+    287 │   │   frame,                                                          
+    288 │   │   geojson,                                                        
+    289 │   │   centers,                                                        
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/district_explorer.py:22  
+  7 in build_map                                                                
+                                                                                
+    224 │   │   │   │   + "%{customdata[0]:,.0f} unweighted respondents (n)<ex  
+    225 │   │   │   ),                                                          
+    226 │   │   │   colorbar=dict(                                              
+  ❱ 227 │   │   │   │   title=dict(text=colorbar_title, side="top", font=dict(  
+    228 │   │   │   │   orientation="h",                                        
+    229 │   │   │   │   x=0.02, y=0.04, xanchor="left", yanchor="bottom",       
+    230 │   │   │   │   len=0.34, thickness=10, nticks=4,                       
+────────────────────────────────────────────────────────────────────────────────
+NameError: name 'colorbar_title' is not defined
+2026-10-30 18:37:03.277 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.283 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.307 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.332 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.335 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.363 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.368 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.390 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.418 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.446 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.467 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.497 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:37:03.527 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:82 in <module>              
+                                                                                
+     79 if selected_page == "National overview":                                
+     80 │   from src.pages.national_overview import render_national_overview    
+     81 │                                                                       
+  ❱  82 │   render_national_overview()                                          
+     83                                                                         
+     84 elif selected_page == "District explorer":                              
+     85 │   from src.pages.district_explorer import render_district_explorer    
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/national_overview.py:59  
+  0 in render_national_overview                                                 
+                                                                                
+    587 │   │                                                                   
+    588 │   │   selected_nbr_entry = None                                       
+    589 │   │   supply_points = []                                              
+  ❱ 590 │   │   if mode == "Combined" and nbr_entries:                          
+    591 │   │   │   if len(nbr_entries) == 1:                                   
+    592 │   │   │   │   selected_nbr_entry = nbr_entries[0]                     
+    593 │   │   │   else:                                                       
+────────────────────────────────────────────────────────────────────────────────
+NameError: name 'nbr_entries' is not defined
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:87 in <module>              
+                                                                                
+     84 elif selected_page == "District explorer":                              
+     85 │   from src.pages.district_explorer import render_district_explorer    
+     86 │                                                                       
+  ❱  87 │   render_district_explorer()                                          
+     88                                                                         
+     89 elif selected_page == "Population groups":                              
+     90 │   from src.pages.population_groups import render_population_groups    
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/district_explorer.py:72  
+  3 in render_district_explorer                                                 
+                                                                                
+    720 │   │   │   │   """                                                     
+    721 │   │   │   )                                                           
+    722 │   │   │                                                               
+  ❱ 723 │   │   │   fig = build_map(                                            
+    724 │   │   │   │   df, geojson, centers, center, cfg, metric, national_es  
+    725 │   │   │   │   selected_district, indicator_name, settings,            
+    726 │   │   │   │   supply_points=overlay_points,                           
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/district_explorer.py:22  
+  7 in build_map                                                                
+                                                                                
+    224 │   │   │   │   + "%{customdata[0]:,.0f} unweighted respondents (n)<ex  
+    225 │   │   │   ),                                                          
+    226 │   │   │   colorbar=dict(                                              
+  ❱ 227 │   │   │   │   title=dict(text=colorbar_title, side="top", font=dict(  
+    228 │   │   │   │   orientation="h",                                        
+    229 │   │   │   │   x=0.02, y=0.04, xanchor="left", yanchor="bottom",       
+    230 │   │   │   │   len=0.34, thickness=10, nticks=4,                       
+────────────────────────────────────────────────────────────────────────────────
+NameError: name 'colorbar_title' is not defined
+2026-10-30 18:38:45.850 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:45.854 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:45.881 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:45.907 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:45.912 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:45.938 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:45.942 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:45.976 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:46.011 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:46.052 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:46.077 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:46.123 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:38:46.150 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:82 in <module>              
+                                                                                
+     79 if selected_page == "National overview":                                
+     80 │   from src.pages.national_overview import render_national_overview    
+     81 │                                                                       
+  ❱  82 │   render_national_overview()                                          
+     83                                                                         
+     84 elif selected_page == "District explorer":                              
+     85 │   from src.pages.district_explorer import render_district_explorer    
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/national_overview.py:59  
+  0 in render_national_overview                                                 
+                                                                                
+    587 │   │                                                                   
+    588 │   │   selected_nbr_entry = None                                       
+    589 │   │   supply_points = []                                              
+  ❱ 590 │   │   if mode == "Combined" and nbr_entries:                          
+    591 │   │   │   if len(nbr_entries) == 1:                                   
+    592 │   │   │   │   selected_nbr_entry = nbr_entries[0]                     
+    593 │   │   │   else:                                                       
+────────────────────────────────────────────────────────────────────────────────
+NameError: name 'nbr_entries' is not defined
+2026-10-30 18:39:29.605 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.609 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.643 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.667 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.671 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.705 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.711 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.761 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.789 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.828 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.862 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.911 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-30 18:39:29.953 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+────────────────────── Traceback (most recent call last) ───────────────────────
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/exec_code.py:136 in exec_func_with_error_handling                        
+                                                                                
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+  nner/script_runner.py:924 in code_to_exec                                     
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/app.py:82 in <module>              
+                                                                                
+     79 if selected_page == "National overview":                                
+     80 │   from src.pages.national_overview import render_national_overview    
+     81 │                                                                       
+  ❱  82 │   render_national_overview()                                          
+     83                                                                         
+     84 elif selected_page == "District explorer":                              
+     85 │   from src.pages.district_explorer import render_district_explorer    
+                                                                                
+  /mount/src/nisr-big-data-hackathon-project/src/pages/national_overview.py:59  
+  0 in render_national_overview                                                 
+                                                                                
+    587 │   │                                                                   
+    588 │   │   selected_nbr_entry = None                                       
+    589 │   │   supply_points = []                                              
+  ❱ 590 │   │   if mode == "Combined" and nbr_entries:                          
+    591 │   │   │   if len(nbr_entries) == 1:                                   
+    592 │   │   │   │   selected_nbr_entry = nbr_entries[0]                     
+    593 │   │   │   else:                                                       
+────────────────────────────────────────────────────────────────────────────────
+NameError: name 'nbr_entries' is not defined

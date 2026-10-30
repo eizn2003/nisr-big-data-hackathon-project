@@ -1,4 +1,6 @@
 import math
+from datetime import date
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -9,6 +11,13 @@ from pymongo.errors import PyMongoError
 from src import data
 from src.briefs import district_brief
 from src.indicators import REGISTRY, available
+from src.models.nbr_intelligence.experiment import (
+    MIN_CROSS_SECTION_DISTRICTS,
+    MIN_TRAINING_RATES,
+    NBRObservation,
+    evaluate_chronologically,
+    evaluate_cross_sectionally_with_statuses,
+)
 from src.pages.nbr_dashboard import context_strip_html, fmt_value
 from src.styles import (
     INDICATOR_THEME,
@@ -443,6 +452,294 @@ def _jump_to(name):
     st.session_state["dx_district"] = name
 
 
+def _filtered_combined_entries(entries, indicator_variable):
+    filtered = []
+    for entry in entries or []:
+        if not entry or not entry.get("points"):
+            continue
+        page = str(entry.get("page") or entry.get("source_page") or "").casefold()
+        filters = entry.get("filters") or {}
+        if indicator_variable == "g3a_11" and page == "branches":
+            continue
+        if indicator_variable == "g3a_11" and str(filters.get("Institution Type", "")).casefold() == "sacco":
+            continue
+        filtered.append(entry)
+    return filtered
+
+
+def _combined_story_html(cfg, district_name, est, national_est, diff, combined_entry):
+    direction = "above" if est >= national_est else "below"
+    story = (
+        f"<b>FinScope finding.</b> {esc(district_name)} reports "
+        f"{est:.1f}% for {esc(cfg['title'])}, {abs(diff):.1f} percentage points "
+        f"{direction} the weighted national estimate of {national_est:.1f}%. "
+    )
+    if combined_entry is None:
+        context = (
+            "No approved district-scoped NBR observation is available for this "
+            "indicator and selected scope."
+        )
+    else:
+        context = (
+            "A separately labelled NBR administrative context is available in "
+            "the evidence panel below."
+        )
+    return (
+        f"<div class='insp-note'>{story}<br>{esc(cfg['interpretation'])}<br>"
+        f"{esc(context)} The survey difference is descriptive, not a causal explanation.</div>"
+    )
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _combined_intelligence_assessment(
+    points: Sequence[Mapping[str, Any]],
+    expected_districts: Sequence[str],
+    selected_district: str,
+) -> dict[str, Any]:
+    if not points:
+        return {
+            "state": "observation_unavailable",
+            "reason": "No NBR observations are available for this approved series.",
+        }
+
+    observations = []
+    table_documents = {}
+    source_points = []
+    required_fields = (
+        "page",
+        "metric_label",
+        "geography",
+        "reporting_date",
+        "collected_at",
+        "run_id",
+        "combo_key",
+        "filters",
+        "value",
+    )
+    for point in points:
+        if (
+            point.get("source_type") != "district_table"
+            or point.get("geography_level") != "district"
+            or not all(point.get(field) is not None for field in required_fields)
+            or not isinstance(point.get("filters"), Mapping)
+            or not str(point.get("combo_key", "")).strip()
+        ):
+            return {
+                "state": "unassessable_source_provenance",
+                "reason": (
+                    "One or more normalized NBR observations lacks the exact "
+                    "district, date, filter, or collection provenance required "
+                    "by the existing assessment."
+                ),
+            }
+        try:
+            reporting_date = date.fromisoformat(str(point["reporting_date"]))
+            value = float(point["value"])
+        except (TypeError, ValueError):
+            return {
+                "state": "unassessable_source_provenance",
+                "reason": "An NBR observation has an invalid date or numeric value.",
+            }
+        if not math.isfinite(value) or value < 0:
+            return {
+                "state": "unassessable_source_provenance",
+                "reason": "An NBR observation has an invalid numeric value.",
+            }
+
+        observation = NBRObservation(
+            page=str(point["page"]),
+            metric_label=str(point["metric_label"]),
+            district=str(point["geography"]),
+            combo_key=str(point["combo_key"]),
+            reporting_date=reporting_date,
+            collected_at=str(point["collected_at"]),
+            run_id=str(point["run_id"]),
+            filters=dict(point["filters"]),
+            value=value,
+        )
+        observations.append(observation)
+        source_points.append(dict(point))
+        table_documents[(
+            observation.page,
+            reporting_date.isoformat(),
+            observation.combo_key,
+            observation.district.casefold(),
+        )] = {
+            "page": observation.page,
+            "snapshot_date": reporting_date.isoformat(),
+            "combo_key": observation.combo_key,
+            "district": observation.district,
+            "district_known": True,
+        }
+
+    cross_summary, cross_candidates, cross_states = (
+        evaluate_cross_sectionally_with_statuses(
+            observations,
+            list(table_documents.values()),
+            expected_districts,
+        )
+    )
+    temporal_summary, temporal_cases = evaluate_chronologically(observations)
+
+    selected_history = [
+        observation
+        for observation in observations
+        if observation.district.casefold() == selected_district.casefold()
+    ]
+    latest = max(
+        selected_history,
+        key=lambda item: item.reporting_date,
+        default=None,
+    )
+    if latest is None:
+        peer_date = max(item.reporting_date for item in observations)
+        return {
+            "state": "observation_unavailable",
+            "reason": (
+                f"No district-scoped observation is recorded for "
+                f"{selected_district} in this exact NBR series."
+            ),
+            "peer_date": peer_date.isoformat(),
+            "peer_points": [
+                point for point in source_points
+                if point["reporting_date"] == peer_date.isoformat()
+            ],
+            "expected_district_count": len(expected_districts),
+            "cross_section": {"state": "observation_unavailable"},
+            "temporal": {"state": "observation_unavailable"},
+        }
+
+    event_key = (
+        latest.page,
+        latest.metric_label,
+        latest.district.casefold(),
+        latest.reporting_date.isoformat(),
+        latest.combo_key,
+    )
+    cross_status = cross_states.get(event_key, {
+        "state": "unassessable",
+        "reason": "The assessment returned no status for this observation.",
+    })
+    cross_candidate = next(
+        (
+            candidate for candidate in cross_candidates
+            if (
+                candidate["page"],
+                candidate["metric_label"],
+                candidate["district"].casefold(),
+                candidate["reporting_date"],
+                candidate["combo_key"],
+            ) == event_key
+        ),
+        None,
+    )
+
+    temporal_case = next(
+        (
+            case for case in temporal_cases
+            if (
+                case["page"],
+                case["metric_label"],
+                case["district"].casefold(),
+                case["target"]["reporting_date"],
+                case["combo_key"],
+            ) == event_key
+        ),
+        None,
+    )
+    if temporal_case is None:
+        temporal_state = (
+            "insufficient_evidence"
+            if len(selected_history) < MIN_TRAINING_RATES + 2
+            else "unassessable"
+        )
+        temporal_details = {
+            "state": temporal_state,
+            "observation_count": len(selected_history),
+            "minimum_observations": MIN_TRAINING_RATES + 2,
+        }
+    elif temporal_case["model_status"] != "scored":
+        temporal_details = {
+            "state": "unassessable",
+            "observation_count": len(selected_history),
+            "model_status": temporal_case["model_status"],
+            "dispersion_status": temporal_case["model_dispersion_status"],
+        }
+    else:
+        temporal_details = {
+            "state": (
+                "eligible_unusual_observation"
+                if temporal_case["model_alert"]
+                else "assessable_no_qualifying_signal"
+            ),
+            "observation_count": len(selected_history),
+            "case": temporal_case,
+        }
+
+    latest_point = next(
+        point for point in source_points
+        if (
+            point["geography"].casefold() == latest.district.casefold()
+            and point["reporting_date"] == latest.reporting_date.isoformat()
+        )
+    )
+    peer_points = [
+        point for point in source_points
+        if point["reporting_date"] == latest.reporting_date.isoformat()
+    ]
+    signal_found = (
+        cross_status.get("state") == "eligible_unusual_observation"
+        or temporal_details.get("state") == "eligible_unusual_observation"
+    )
+    if signal_found:
+        recommendation = (
+            f"For {selected_district}, verify the NBR source row, collection "
+            "run, reporting date, and exact filters before interpreting this "
+            "review signal."
+        )
+    elif (
+        cross_status.get("state") == "insufficient_evidence"
+        or temporal_details.get("state") == "insufficient_evidence"
+    ):
+        recommendation = (
+            f"For {selected_district}, more compatible district observations or "
+            "reporting snapshots are needed before this NBR series can support "
+            "an unusualness assessment."
+        )
+    else:
+        recommendation = (
+            f"For {selected_district}, no unusual NBR signal was returned for "
+            "the assessed scope; retain the administrative count as "
+            "source-specific context, not a measure of FinScope access or use."
+        )
+
+    return {
+        "state": "available",
+        "observation": {
+            "value": latest.value,
+            "reporting_date": latest.reporting_date.isoformat(),
+            "unit": latest_point.get("unit") or "unit not specified",
+            "metric_label": latest.metric_label,
+            "run_id": latest.run_id,
+            "filters": latest.filters,
+            "quality_qualifications": latest_point.get(
+                "quality_qualifications", []
+            ),
+        },
+        "peer_date": latest.reporting_date.isoformat(),
+        "peer_points": peer_points,
+        "expected_district_count": len(expected_districts),
+        "cross_section": {
+            **cross_status,
+            "candidate": cross_candidate,
+            "summary": cross_summary,
+        },
+        "temporal": temporal_details,
+        "temporal_summary": temporal_summary,
+        "recommendation": recommendation,
+    }
+
+
 def _kpi_context(entry, district_name):
     """NBR trend for the selected district, shown inside the primary KPI card."""
     if not entry:
@@ -540,6 +837,7 @@ def render_district_explorer():
                 cfg["variable"],
                 geography_level="district",
             )
+            combined_entries = _filtered_combined_entries(combined_entries, cfg["variable"])
         except (RuntimeError, ValueError, OSError, PyMongoError) as error:
             combined_context_error = error
         else:
@@ -563,6 +861,15 @@ def render_district_explorer():
     else:
         combined_entry = None
         overlay_points = []
+    combined_intelligence = (
+        _combined_intelligence_assessment(
+            combined_entry["points"],
+            names,
+            selected_district,
+        )
+        if mode == "Combined" and combined_entry is not None
+        else None
+    )
 
     nat_hit = national.loc[
         national["Indicator"].eq(cfg["national_label"]), "Estimate (%)"
@@ -749,12 +1056,14 @@ def render_district_explorer():
     with insp_col:
         with st.container(key="card_inspector"):
             render_html(_inspector_html(sel, cfg, metric, national_est, lo, hi, n))
+            render_html(_combined_story_html(cfg, selected_district, est, national_est, diff, combined_entry))
             if combined_entry is not None:
                 render_combined_context(
                     cfg["variable"],
                     district=selected_district,
                     entries=[combined_entry],
                     source_version=combined_version,
+                    intelligence=combined_intelligence,
                 )
             st.button(
                 f"{'Largest gap' if cfg['polarity'] != 'neutral' else 'Highest value'}: "

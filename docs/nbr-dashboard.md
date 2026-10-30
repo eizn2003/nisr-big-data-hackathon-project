@@ -21,19 +21,33 @@ observations.
 NBR data access reuses the existing read-only MongoDB history loader with a
 page predicate applied to the runs, KPI, and district-table collections. Only
 the selected NBR page is normalized for the active view. Combined mode offers
-the configured source pages for each FinScope indicator and loads one selected
-page at a time, retaining the other configured pages as explicit alternatives.
-The source documents and normalized view are cached for at most 15 minutes. A
-sidebar refresh action clears the source, normalized-view, and review-result
-caches. The deterministic digest of the normalized page snapshot versions
-selection state and cached review results.
+configured source pages for each FinScope indicator. On the Combined National
+Overview it loads the union of approved national-mapping pages once, then runs
+the existing contextualization and evidence-selection functions over eligible
+national KPI observations and processed FinScope baselines. At most four
+directional findings with sufficient or limited evidence are shown; the
+headline bank-account and active-bank-branch series are excluded from that
+section. Other Combined pages continue to load only their selected indicator's
+configured pages. The source documents and normalized view are cached for at
+most 15 minutes. A sidebar refresh action clears the source, normalized-view,
+and review-result caches. The deterministic digest of the normalized page
+snapshot versions selection state and cached review results.
+
+The National Overview shows each FinScope indicator at most once, even if its
+approved mappings match multiple NBR series. When different survey indicators
+map to the same NBR series, evidence sufficiency, quality qualifications,
+recency, and relationship type guide selection; an explicit institution-name
+match breaks remaining ties. NBR units and their status are shown from
+normalized source metadata. If the source does not specify a unit, the chart
+labels that explicitly rather than assuming the value is a count.
 
 The Priority Explorer's experimental candidate panel runs only when requested
 and limits the existing anomaly detectors to the selected source page. Its
 method-specific rankings remain separate and require source verification and
 human review. It does not create a FinScope priority score or recommend policy
 action. The large generated contextualization reports are not loaded or parsed
-by the dashboard.
+by the dashboard; the National Overview builds a page-scoped assessment in
+memory from the cached normalized data and does not read serialized reports.
 
 In the measured environment, an unfiltered cold read of 1,873 run records,
 1,719 KPI documents, and 50,418 table documents took 199.1 seconds to fetch

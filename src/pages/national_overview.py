@@ -1,3 +1,5 @@
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -12,6 +14,8 @@ from src.styles import (
     badge,
     card_title,
     esc,
+    kpi_card,
+    kpi_grid,
     note,
     page_header,
     render_html,
@@ -22,7 +26,11 @@ from src.styles import (
 
 
 def _open_district_explorer():
-    st.session_state["main_nav"] = "District explorer"
+    st.session_state["selected_page"] = "District explorer"
+
+
+def _open_overview_page(page):
+    st.session_state["selected_page"] = page
 
 
 # --------------------------------------------------------------------------
@@ -267,8 +275,6 @@ def _map_figure(
     metric,
     item,
     national_est,
-    *,
-    supply_points=(),
 ):
     frame = district.copy()
     frame["rank"] = frame[metric].rank(ascending=False, method="min")
@@ -294,7 +300,6 @@ def _map_figure(
         str(frame["District"].iloc[0]),
         item["short"],
         settings,
-        supply_points=supply_points,
     )
 
 
@@ -328,18 +333,510 @@ def _ranking_html(district, metric, item):
 # --------------------------------------------------------------------------
 # Page
 # --------------------------------------------------------------------------
+def _combined_branch_series(entries, mapping):
+    relationship = next(
+        (
+            item
+            for item in mapping.get("nbr_relationships", [])
+            if item.get("page") == "branches"
+            and item.get("relationship") == "contextual_indicator"
+            and "Total Branches" in item.get("national_kpi_labels", [])
+        ),
+        None,
+    )
+    if relationship is None:
+        return None
+
+    expected_filters = relationship["filter_scope"]
+    return next(
+        (
+            entry
+            for entry in entries
+            if entry.get("page") == "branches"
+            and entry.get("metric_label") == "Total Branches"
+            and entry.get("geography_level") == "national"
+            and entry.get("filters") == expected_filters
+            and entry.get("relationship") == "contextual_indicator"
+        ),
+        None,
+    )
+
+
+def _combined_kpis(national, denominator, branch_entry):
+    bank_row = national.loc[national["Indicator"].eq("Own bank account")]
+    if bank_row.empty:
+        raise ValueError("The FinScope national bank-account estimate is unavailable.")
+    bank_value = float(bank_row.iloc[0]["Estimate (%)"])
+    if pd.isna(bank_value):
+        raise ValueError("The FinScope national bank-account estimate is missing.")
+
+    valid_responses = None
+    if denominator is not None and not denominator.empty:
+        rows = denominator.loc[denominator["Variable"].eq("k1"), "Valid responses"]
+        if not rows.empty and pd.notna(rows.iloc[0]):
+            valid_responses = int(rows.iloc[0])
+
+    response_count = (
+        f"{valid_responses:,} valid responses"
+        if valid_responses is not None
+        else "Valid response count unavailable"
+    )
+    cards = [
+        kpi_card(
+            "People reporting bank-account ownership",
+            f"{bank_value:.1f}",
+            "%",
+            accent="#1A8A7D",
+            src=(
+                "<b>FinScope Rwanda 2024</b> · Weighted percentage of valid responses"
+                f"<br>Rwanda residents aged 16+ · k1 · weight pop_wt · {esc(response_count)}"
+            ),
+            show_track=False,
+        )
+    ]
+
+    latest_point = None
+    if branch_entry is not None:
+        points = sorted(
+            branch_entry.get("points", []),
+            key=lambda point: str(point.get("reporting_date", "")),
+        )
+        latest_point = next(
+            (
+                point
+                for point in reversed(points)
+                if point.get("value") is not None and pd.notna(point.get("value"))
+            ),
+            None,
+        )
+
+    if latest_point is None:
+        cards.append(
+            kpi_card(
+                "Recorded active bank branches",
+                "Unavailable",
+                accent="#2F6DB5",
+                src=(
+                    "<b>NBR administrative observations</b> · Branches"
+                    "<br>No eligible observation for the approved active-bank series."
+                ),
+                show_track=False,
+            )
+        )
+    else:
+        from src.pages.nbr_dashboard import fmt_value
+
+        cards.append(
+            kpi_card(
+                "Recorded active bank branches",
+                esc(fmt_value(latest_point["value"])),
+                "branches",
+                accent="#2F6DB5",
+                src=(
+                    "<b>NBR administrative observations</b> · "
+                    f"{esc(str(latest_point['reporting_date']))}"
+                    "<br>Institution Type: Banks · Branch Status: Active · Location: All"
+                ),
+                show_track=False,
+            )
+        )
+    return kpi_grid(cards, columns=2)
+
+
+def _combined_branch_provenance(entry):
+    rows = []
+    for point in entry.get("points", []):
+        rows.append({
+            "Reporting date": point.get("reporting_date", ""),
+            "Source page": point.get("page", ""),
+            "Source metric": point.get("metric_label", ""),
+            "Raw value": point.get("raw_value", point.get("value")),
+            "Normalized value": point.get("value"),
+            "Unit": point.get("unit") or "Not specified",
+            "Filters": " · ".join(
+                f"{key}: {value}"
+                for key, value in sorted(point.get("filters", {}).items())
+            ),
+            "Source": point.get("source_name", ""),
+            "Source URL": point.get("source_url", ""),
+            "Collected at": point.get("collected_at", ""),
+            "Run ID": point.get("run_id", ""),
+            "Source record ID": point.get("source_record_id", ""),
+        })
+    return pd.DataFrame(rows)
+
+
+def _combined_nbr_observations(entry):
+    if not entry:
+        return []
+
+    expected_page = entry.get("page", "branches")
+    expected_metric = entry.get("metric_label", "Total Branches")
+    expected_filters = entry.get("filters", {})
+    observations = {}
+    ambiguous_dates = set()
+    for point in entry.get("points", []):
+        if (
+            point.get("page") != expected_page
+            or point.get("metric_label") != expected_metric
+            or point.get("source_type") != "national_kpi"
+            or point.get("geography_level") != "national"
+            or point.get("geography") != "Rwanda"
+            or point.get("filters") != expected_filters
+            or point.get("unit") != entry.get("unit")
+            or point.get("repeated_snapshot_warning") is True
+        ):
+            continue
+        reporting_date = str(point.get("reporting_date", ""))
+        try:
+            date.fromisoformat(reporting_date)
+            value = float(point.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(value) or value < 0:
+            continue
+        if reporting_date in observations and observations[reporting_date] != value:
+            ambiguous_dates.add(reporting_date)
+        else:
+            observations[reporting_date] = value
+
+    for reporting_date in ambiguous_dates:
+        observations.pop(reporting_date, None)
+
+    dates = sorted(observations)
+    return [
+        {"reporting_date": reporting_date, "value": observations[reporting_date]}
+        for reporting_date in dates
+    ]
+
+
+def _combined_nbr_figure(observations, *, metric_label, unit_label):
+    ordered = observations[-8:]
+    latest = ordered[-1] if ordered else None
+    axis_unit = (
+        unit_label
+        if unit_label
+        else "Unit not specified by source"
+    )
+    latest_label = (
+        f"Latest · {latest['value']:,.0f} {axis_unit}"
+        if latest and unit_label
+        else f"Latest · {latest['value']:,.0f} · unit not specified"
+        if latest
+        else ""
+    )
+    fig = go.Figure(go.Scatter(
+        x=[item["reporting_date"] for item in ordered],
+        y=[item["value"] for item in ordered],
+        mode="lines+markers+text",
+        text=[f"{item['value']:,.0f}" for item in ordered],
+        textposition="top center",
+        textfont=dict(family="Fraunces, Georgia, serif", size=15, color="#F1F6F8"),
+        line=dict(color="#79AEEF", width=3, shape="linear"),
+        marker=dict(
+            size=[16 if item is latest else 10 for item in ordered],
+            color=[PALETTE["sun"] if item is latest else "#79AEEF" for item in ordered],
+            line=dict(color="#0E2A35", width=2),
+        ),
+        hovertemplate=(
+            f"<b>%{{x}}</b><br>%{{y:,.0f}} "
+            f"{esc(unit_label) if unit_label else 'unit not specified'}"
+            f"<extra>NBR · {esc(metric_label)}</extra>"
+        ),
+        showlegend=False,
+    ))
+    if latest:
+        fig.add_annotation(
+            x=latest["reporting_date"],
+            y=latest["value"],
+            text=esc(latest_label),
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1,
+            arrowwidth=1.5,
+            arrowcolor=PALETTE["sun"],
+            ax=0,
+            ay=-42,
+            bgcolor="#173D49",
+            bordercolor="#79AEEF",
+            borderwidth=1,
+            borderpad=6,
+            font=dict(color="#FFFFFF", size=12, family="Plus Jakarta Sans, Arial, sans-serif"),
+        )
+    fig.update_xaxes(
+        title=None,
+        type="date",
+        showgrid=False,
+        tickangle=-20,
+        tickformat="%b %Y",
+        tickfont=dict(color="#D5E2E6"),
+        linecolor="#45616A",
+    )
+    fig.update_yaxes(
+        title=dict(
+            text=f"Recorded value · {axis_unit}",
+            font=dict(color="#D5E2E6"),
+        ),
+        rangemode="tozero",
+        gridcolor="rgba(213,226,230,.16)",
+        zeroline=False,
+        tickfont=dict(color="#D5E2E6"),
+    )
+    fig.update_layout(
+        height=390,
+        margin=dict(l=18, r=20, t=58, b=44),
+        paper_bgcolor="#0E2A35",
+        plot_bgcolor="#123641",
+        font=dict(
+            family="Plus Jakarta Sans, Segoe UI, Arial, sans-serif",
+            color="#EAF1F3",
+            size=12,
+        ),
+        hoverlabel=dict(
+            bgcolor="#0E2A35",
+            bordercolor="#79AEEF",
+            font=dict(color="#FFFFFF"),
+        ),
+        showlegend=False,
+    )
+    return fig
+
+
+def _render_combined_contextual_finding(index, finding):
+    evidence = finding["supporting_evidence"][0]
+    source_points = evidence.get("observations", [])
+    entry = {
+        "page": evidence.get("page"),
+        "metric_label": evidence.get("metric_label"),
+        "unit": evidence.get("unit"),
+        "filters": evidence.get("filters", {}),
+        "points": source_points,
+    }
+    observations = _combined_nbr_observations(entry)
+    if not observations:
+        return
+
+    latest = max(
+        source_points,
+        key=lambda point: str(point.get("reporting_date", "")),
+    )
+    metric_label = str(evidence.get("metric_label", "NBR metric"))
+    unit_label = str(evidence.get("unit") or "")
+    unit_status = str(evidence.get("unit_status") or "unresolved")
+    unit_display = (
+        f"{unit_label} · {unit_status}"
+        if unit_label
+        else "Not specified by source"
+    )
+    filters_label = " · ".join(
+        f"{name}: {value}"
+        for name, value in sorted(evidence.get("filters", {}).items())
+    )
+    finding_key = (
+        f"{index}_{finding.get('indicator_variable', 'indicator')}_"
+        f"{evidence.get('page', 'page')}"
+    )
+    nbr_column, survey_column = st.columns([2.2, 1], gap="medium")
+    with st.container(key=f"card_combined_finding_{finding_key}"):
+        with nbr_column:
+            card_title(
+                f"NBR · {metric_label}",
+                f"{evidence.get('page', '')} page · "
+                f"NBR unit: {unit_display} · {filters_label}",
+            )
+            st.plotly_chart(
+                _combined_nbr_figure(
+                    observations,
+                    metric_label=metric_label,
+                    unit_label=unit_label,
+                ),
+                use_container_width=True,
+                key=f"ov_combined_finding_{finding_key}",
+                config={"displayModeBar": False},
+            )
+            st.caption(
+                f"NBR · {latest.get('reporting_date', '')} · {filters_label}"
+            )
+            with st.expander("NBR source details"):
+                st.dataframe(
+                    _combined_branch_provenance(entry),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        with survey_column:
+            indicator_label = str(finding.get("indicator_label", "FinScope estimate"))
+            card_title(
+                f"{finding.get('finscope_reference_period', 'FinScope')} · "
+                f"{indicator_label}"
+            )
+            valid_responses = finding.get(
+                "finscope_valid_respondents",
+                finding.get("valid_respondents"),
+            )
+            response_note = (
+                f"{int(valid_responses):,} valid responses"
+                if valid_responses is not None
+                else "valid-response count unavailable"
+            )
+            render_html(
+                '<div class="kpi-value" style="color:#1A8A7D">'
+                f'{float(finding["finscope_estimate_percent"]):.1f}'
+                "<small>%</small></div>"
+                '<div class="kpi-src">Weighted national estimate · '
+                f"{esc(finding.get('finscope_population', 'Population not reported'))} · "
+                f"{esc(finding.get('finscope_weight', 'Weight not reported'))} · "
+                f"{esc(response_note)}</div>"
+            )
+            st.caption(
+                f"FinScope · {finding.get('indicator_variable', '')} · "
+                f"{finding.get('finscope_source', 'source file unavailable')}"
+            )
+            st.caption(
+                f"NBR direction: {finding.get('nbr_observed_direction', 'not assessed')} · "
+                f"Mapping: {finding.get('mapping_status', 'unresolved')} · "
+                f"Evidence: {finding.get('evidence_sufficiency_state', 'unassessed')}"
+            )
+            st.markdown(
+                f"**What this may suggest:** "
+                f"{esc(finding['suggested_interpretation'])}"
+            )
+            with st.expander("Interpretation limits"):
+                for limitation in finding.get("limitations", []):
+                    st.caption(str(limitation))
+                if finding.get("cross_channel_context"):
+                    st.caption(
+                        "NBR channel context is a separate administrative "
+                        "comparison; it does not establish a survey change."
+                    )
+    st.markdown("")
+
+
+def _render_combined_national_overview():
+    from pathlib import Path
+
+    from src.models.nbr_intelligence.contextualization import (
+        build_national_contextualization_report,
+        load_finscope_baselines,
+        select_national_contextualization_findings,
+    )
+    from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
+    from src.pages.nbr_dashboard import (
+        load_combined_context_data,
+        load_combined_national_evidence,
+    )
+
+    try:
+        national = data.load_national()
+        denominator = data.load_denominators()
+    except (FileNotFoundError, OSError, ValueError, KeyError) as error:
+        st.error("The Combined overview data could not be loaded.")
+        st.caption(str(error))
+        return
+
+    national_nbr_points = []
+    entries = []
+    nbr_error = None
+    try:
+        national_nbr_points, entries = load_combined_national_evidence()
+    except (RuntimeError, ValueError, OSError, PyMongoError) as error:
+        nbr_error = error
+        try:
+            entries, _ = load_combined_context_data(
+                "k1",
+                geography_level="national",
+            )
+        except (RuntimeError, ValueError, OSError, PyMongoError) as fallback_error:
+            nbr_error = fallback_error
+
+    branch_entry = _combined_branch_series(
+        entries,
+        MAPPING_BY_VARIABLE["k1"],
+    )
+    try:
+        headline = _combined_kpis(national, denominator, branch_entry)
+    except (ValueError, KeyError) as error:
+        st.error("The Combined overview headline could not be prepared.")
+        st.caption(str(error))
+        return
+
+    page_header(
+        "Financial inclusion in Rwanda: people and the financial system",
+        "FinScope survey estimates of adults’ reported access and use, alongside "
+        "NBR administrative observations of financial services and infrastructure.",
+        pill="Combined",
+        size="tall",
+        intro=(
+            "Together, these sources offer complementary national perspectives. "
+            "Their definitions, populations, units, methodologies and reporting "
+            "periods differ, so their values should be read separately."
+        ),
+        below_html=headline,
+    )
+    st.markdown("")
+
+    section_title(
+        "What the financial system is recording",
+        "Signals surfaced by the NBR intelligence assessment, with related FinScope findings shown separately.",
+    )
+    findings = []
+    contextualization_error = nbr_error
+    if contextualization_error is None:
+        try:
+            baselines = load_finscope_baselines(
+                Path(__file__).resolve().parents[2] / "data" / "processed"
+            )
+            report = build_national_contextualization_report(
+                national_nbr_points,
+                baselines,
+            )
+            headline_source_ids = []
+            if branch_entry is not None:
+                headline_points = branch_entry.get("points", [])
+                if headline_points:
+                    latest_headline_point = max(
+                        headline_points,
+                        key=lambda point: str(point.get("reporting_date", "")),
+                    )
+                    source_id = latest_headline_point.get("source_record_id")
+                    if source_id:
+                        headline_source_ids.append(str(source_id))
+            findings = select_national_contextualization_findings(
+                report,
+                limit=4,
+                excluded_indicator_variables=("k1",),
+                excluded_source_record_ids=headline_source_ids,
+            )
+        except (FileNotFoundError, OSError, ValueError, KeyError, TypeError) as error:
+            contextualization_error = error
+
+    if contextualization_error is not None:
+        st.warning(
+            "The national evidence assessment is unavailable; no findings were substituted."
+        )
+        st.caption(str(contextualization_error))
+    elif not findings:
+        st.info(
+            "No national findings currently meet the assessment's evidence and "
+            "change-selection criteria."
+        )
+    else:
+        for index, finding in enumerate(findings):
+            _render_combined_contextual_finding(index, finding)
+
+
 def render_national_overview():
     from src.pages.nbr_dashboard import (
-        combined_strip,
         current_mode,
-        load_combined_context_data,
-        render_combined_context,
         render_nbr_page,
     )
 
     mode = current_mode()
     if mode == "NBR Supply":
         render_nbr_page("national")
+        return
+    if mode == "Combined":
+        _render_combined_national_overview()
         return
 
     try:
@@ -354,37 +851,14 @@ def render_national_overview():
     nat = dict(zip(national["Indicator"], national["Estimate (%)"].astype(float)))
 
     # ---- Hero + headline indicators ----------------------------------------
-    # Combined mode: an approved, related NBR series is folded into the card it
-    # relates to. Cards with no defensible related series stay exactly as in FinScope mode.
-    kpi_context, kpi_notes = {}, []
-    if mode == "Combined":
-        for item in CORE:
-            strip, entry = combined_strip(item["variable"], scope="National")
-            if strip:
-                kpi_context[item["variable"]] = strip
-                kpi_notes.append((item["kpi_label"], entry))
     page_header(
         "Financial inclusion across Rwanda",
         "How people bank, use mobile money, borrow and save, based on "
         "weighted FinScope survey estimates.",
         pill="FinScope Rwanda 2024",
         size="tall",
-        below_html=_kpi_html(national, kpi_context),
+        below_html=_kpi_html(national),
     )
-    if kpi_notes:
-        with st.expander("About the NBR lines in these cards"):
-            st.caption(
-                "NBR figures are administrative counts or volumes in their own units. "
-                "They add supply-side context and never change the FinScope percentage."
-            )
-            for label, entry in kpi_notes:
-                st.markdown(
-                    f"**{esc(label)}** · {esc(entry['metric_label'])} "
-                    f"({esc(entry.get('unit') or 'unit not specified')}). {esc(entry['limitations'])}"
-                )
-        for item in CORE:
-            if item["kpi_label"] in {label for label, _ in kpi_notes}:
-                render_combined_context(item["variable"])
     st.markdown("")
 
     # ---- What stands out ---------------------------------------------------
@@ -431,12 +905,6 @@ def render_national_overview():
                                     for p in points))
                 render_html('<div class="micro">These are separate survey questions, so they describe '
                             "participation, not the amount saved or whether savings are adequate.</div>")
-                if mode == "Combined":
-                    for variable in ("g3a_11", "qf4_06"):
-                        strip, _ = combined_strip(variable, scope="National")
-                        if strip:
-                            render_html(strip)
-                            render_combined_context(variable)
         st.markdown("")
 
     # ---- Urban and rural ------------------------------------------------------
@@ -545,7 +1013,6 @@ def render_national_overview():
             or list(options.keys())[0]
         item = options[picked]
         metric = item["column"]
-        national_est = nat.get(item["national"])
 
         low = district.loc[district[metric].idxmin()]
         high = district.loc[district[metric].idxmax()]
@@ -585,41 +1052,12 @@ def render_national_overview():
             "national reference; the lists rank this indicator only, not overall financial inclusion.</div>"
         )
 
-        selected_nbr_entry = None
-        supply_points = []
-        if mode == "Combined" and nbr_entries:
-            if len(nbr_entries) == 1:
-                selected_nbr_entry = nbr_entries[0]
-            else:
-                selected_index = st.selectbox(
-                    "NBR marker series",
-                    range(len(nbr_entries)),
-                    format_func=lambda index: (
-                        f"{nbr_entries[index]['metric_label']} · "
-                        f"{nbr_entries[index].get('unit') or 'unit not specified'} · "
-                        + " · ".join(
-                            f"{key}: {value}"
-                            for key, value in sorted(nbr_entries[index]["filters"].items())
-                        )
-                    ),
-                    key=f"overview_nbr_map_series_{item['variable']}_{nbr_source_version}",
-                )
-                selected_nbr_entry = nbr_entries[selected_index]
-            latest_date = max(
-                (str(point["reporting_date"]) for point in selected_nbr_entry["points"]),
-                default="",
-            )
-            supply_points = [
-                point for point in selected_nbr_entry["points"]
-                if str(point["reporting_date"]) == latest_date
-            ]
-
         if map_ok:
             map_col, list_col = st.columns([1.35, 1], gap="large")
             with map_col:
                 card_title(
                     "District pattern",
-                    "FinScope estimates use the shaded map; NBR supply observations, when available, use separate markers and units.",
+                    "FinScope survey estimates shown by the shaded map.",
                 )
                 st.plotly_chart(_map_figure(
                     district,
@@ -629,7 +1067,6 @@ def render_national_overview():
                     metric,
                     item,
                     float(nat[item["national"]]),
-                    supply_points=supply_points,
                 ),
                                 use_container_width=True, key="ov_district_map",
                                 config={"displayModeBar": False, "scrollZoom": True})
@@ -644,30 +1081,6 @@ def render_national_overview():
                     f"±{typical:.1f} pp under a simple-random-sample approximation. This is a district-only "
                     "illustrative margin, not a significance test for district-to-district or district-to-national "
                     "differences; the survey design information is unavailable.</div>")
-
-        if selected_nbr_entry is not None:
-            unit = selected_nbr_entry.get("unit") or "unit not specified"
-            filters = " · ".join(
-                f"{key}: {value}"
-                for key, value in sorted(selected_nbr_entry["filters"].items())
-            ) or "Filters not recorded"
-            with st.expander(
-                f"NBR observations · {selected_nbr_entry['metric_label']} · {unit}"
-            ):
-                st.caption(
-                    f"Administrative values on {latest_date} · {filters}. "
-                    "These are not FinScope ownership estimates."
-                )
-                st.dataframe(
-                    pd.DataFrame([{
-                        "District": point["geography"],
-                        "Observed value": point["value"],
-                        "Unit": unit,
-                        "Reporting date": point["reporting_date"],
-                    } for point in supply_points]),
-                    hide_index=True,
-                    use_container_width=True,
-                )
 
         with st.expander("View district data"):
             show_district_table(district, sort_by=metric, key="download_district_results",
