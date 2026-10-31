@@ -1,5 +1,6 @@
-from functools import partial
 import math
+from datetime import date
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -10,6 +11,31 @@ from pymongo.errors import PyMongoError
 from src import data
 from src.briefs import district_brief
 from src.indicators import REGISTRY, available
+from src.models.nbr_intelligence.experiment import (
+    MIN_CROSS_SECTION_DISTRICTS,
+    MIN_TRAINING_RATES,
+    NBRObservation,
+    evaluate_chronologically,
+    evaluate_cross_sectionally_with_statuses,
+)
+from src.pages.combined_support import (
+    district_recommendations,
+    district_state,
+    entries_for_geography,
+    header_pill,
+    inject_combined_styles,
+    load_context,
+    mapping_summary,
+    render_recommendations,
+    snapshot_points,
+    snapshot_table,
+    STATE_NO_COUNTERPART,
+    ContextState,
+    eligible_state,
+    entry_dates,
+    reporting_date_choice,
+    routed_note,
+)
 from src.pages.nbr_dashboard import context_strip_html, fmt_value
 from src.styles import (
     INDICATOR_THEME,
@@ -17,17 +43,13 @@ from src.styles import (
     badge,
     card_title,
     esc,
-    kpi_card as _kpi_card,
+    kpi_card,
     kpi_grid,
-    mode_pill,
-    page_footnotes,
     page_header,
     render_html,
     show_district_table,
     style_chart,
 )
-
-kpi_card = partial(_kpi_card, tag="fs")
 
 FEATURE_KEY = "properties.shapeName"
 
@@ -66,6 +88,50 @@ BASEMAPS = {
 }
 PALETTE_CHOICES = ["Indicator colours", "Viridis", "Plasma", "Cividis", "Turbo"]
 SPOTLIGHTS = ["Off", "Top 5", "Bottom 5", "Both"]
+NBR_INSTITUTION_COLOR_SCALES = {
+    "all": [
+        [0.0, "#167B76"],
+        [0.28, "#20A69A"],
+        [0.58, "#67C7B4"],
+        [0.82, "#D39A5B"],
+        [1.0, "#F3D27A"],
+    ],
+    "banks": [
+        [0.0, "#EAF2FB"],
+        [0.28, "#A9C7E8"],
+        [0.58, "#6097CD"],
+        [0.82, "#3267A8"],
+        [1.0, "#183D70"],
+    ],
+    "e-money issuers": [
+        [0.0, "#F2ECFA"],
+        [0.28, "#C6AFE4"],
+        [0.58, "#9B78CC"],
+        [0.82, "#754CB0"],
+        [1.0, "#482876"],
+    ],
+    "insurance": [
+        [0.0, "#FBECEF"],
+        [0.28, "#EFB3C2"],
+        [0.58, "#DA7D9A"],
+        [0.82, "#B94C70"],
+        [1.0, "#7D2947"],
+    ],
+    "microfinance": [
+        [0.0, "#E8F4F1"],
+        [0.28, "#A6D8CA"],
+        [0.58, "#66B6A1"],
+        [0.82, "#318A78"],
+        [1.0, "#15584E"],
+    ],
+    "sacco": [
+        [0.0, "#FCF1E5"],
+        [0.28, "#F0C99D"],
+        [0.58, "#DEA05E"],
+        [0.82, "#B97431"],
+        [1.0, "#75451F"],
+    ],
+}
 
 
 # --------------------------------------------------------------------------
@@ -119,16 +185,30 @@ def build_map(
     *,
     value_unit="%",
     supply_points=(),
+    nbr_style=False,
+    hover_context="",
+    value_range=None,
+    nbr_institution=None,
 ):
     Choropleth, Labels, key = _trace_classes()
     base = BASEMAPS[settings["basemap"]]
     dark = base["dark"]
 
     scale = (
-        cfg["scale"] if settings["palette"] == "Indicator colours"
-        else settings["palette"]
+        NBR_INSTITUTION_COLOR_SCALES.get(
+            str(nbr_institution or "all").strip().casefold(),
+            NBR_INSTITUTION_COLOR_SCALES["all"],
+        )
+        if nbr_style
+        else (
+            cfg["scale"] if settings["palette"] == "Indicator colours"
+            else settings["palette"]
+        )
     )
-    lo, hi = float(df[metric].min()), float(df[metric].max())
+    lo, hi = value_range or (
+        float(df[metric].min()),
+        float(df[metric].max()),
+    )
     if hi <= lo:
         hi = lo + max(abs(lo) * 1e-6, 1e-6)
 
@@ -141,7 +221,25 @@ def build_map(
     differences = df["diff"].to_numpy() if "diff" in df else [None] * len(df)
     customdata = list(zip(respondents, ranks, differences))
     n = len(df)
-    if national_est is None:
+    if nbr_style:
+        hovertemplate = (
+            "<b>%{location}</b><br>"
+            + esc(short)
+            + ": <b>%{z:,.4g}</b> "
+            + esc(value_unit or "unit not specified")
+            + "<br>Reporting date: "
+            + esc(hover_context.split("\n", 1)[0])
+            + "<br>Filters: "
+            + esc(hover_context.split("\n", 1)[1] if "\n" in hover_context else "")
+            + "<extra></extra>"
+        )
+        colorbar_title = f"{short} · {value_unit or 'unit not specified'}"
+        colorbar_suffix = ""
+        colorbar_tickformat = (
+            ",.0f" if str(value_unit).strip().casefold() == "count"
+            else ",.2~f"
+        )
+    elif national_est is None:
         hovertemplate = (
             "<b>%{location}</b><br>"
             + esc(short)
@@ -153,6 +251,7 @@ def build_map(
         )
         colorbar_title = f"{short} · {value_unit or 'unit not specified'}"
         colorbar_suffix = ""
+        colorbar_tickformat = None
     else:
         hovertemplate = (
             "<b>%{location}</b><br>"
@@ -164,6 +263,7 @@ def build_map(
         )
         colorbar_title = short
         colorbar_suffix = "%"
+        colorbar_tickformat = None
 
     fig = go.Figure(
         Choropleth(
@@ -176,7 +276,10 @@ def build_map(
             colorscale=scale,
             marker=dict(
                 opacity=settings["opacity"],
-                line=dict(color="#FFFFFF", width=0.9),
+                line=dict(
+                    color="#6E9A96" if nbr_style else "#FFFFFF",
+                    width=0.85 if nbr_style else 0.9,
+                ),
             ),
             selected=dict(marker=dict(opacity=settings["opacity"])),
             unselected=dict(marker=dict(opacity=settings["opacity"])),
@@ -190,6 +293,7 @@ def build_map(
                 ticksuffix=colorbar_suffix, outlinewidth=0,
                 bgcolor="rgba(14,42,53,.78)" if dark else "rgba(255,255,255,.88)",
                 tickfont=dict(size=11, color="#FFFFFF" if dark else PALETTE["ink"]),
+                tickformat=colorbar_tickformat if nbr_style else None,
                 xpad=12, ypad=10,
             ),
         )
@@ -281,15 +385,37 @@ def build_map(
             )
         )
 
-    ranked = df.sort_values(metric, ascending=False)["District"].tolist()
+    ranked = df.sort_values("rank")["District"].tolist()
     spot = settings["spotlight"]
+    if nbr_style:
+        layers.append(_outline_layer(
+            geojson,
+            [
+                feature["properties"].get("shapeName", "")
+                for feature in geojson["features"]
+            ],
+            "#78918F",
+            0.8,
+            0.7,
+        ))
     if spot in ("Top 5", "Both"):
         layers.append(_outline_layer(geojson, ranked[:5], "#FFFFFF" if dark else PALETTE["ink"], 2.4))
     if spot in ("Bottom 5", "Both"):
         layers.append(_outline_layer(geojson, ranked[-5:], PALETTE["coral"], 2.4))
 
-    layers.append(_outline_layer(geojson, [selected], PALETTE["ink"], 7, 0.55))
-    layers.append(_outline_layer(geojson, [selected], PALETTE["sun"], 3.4))
+    layers.append(_outline_layer(
+        geojson,
+        [selected],
+        "#F8F5EA" if nbr_style else PALETTE["ink"],
+        7,
+        0.85 if nbr_style else 0.55,
+    ))
+    layers.append(_outline_layer(
+        geojson,
+        [selected],
+        "#F3D27A" if nbr_style else PALETTE["sun"],
+        3.4,
+    ))
 
     fig.update_layout(
         **{
@@ -312,7 +438,10 @@ def build_map(
             bgcolor=PALETTE["ink"], bordercolor=PALETTE["ink"],
             font=dict(family="Plus Jakarta Sans, Arial, sans-serif", color="#FFFFFF", size=12.5),
         ),
-        uirevision=f"{settings['basemap']}-{settings['tilt']}-{settings['rotation']}",
+        uirevision=settings.get(
+            "uirevision",
+            f"{settings['basemap']}-{settings['tilt']}-{settings['rotation']}",
+        ),
         dragmode="pan",
     )
     return fig
@@ -333,15 +462,24 @@ def _inspector_html(row, cfg, metric, national_est, lo, hi, n):
     arrow = "▲" if diff >= 0 else "▼"
     margin = data.moe_pp(est, row["Valid respondents"])
     verdict = (
-        badge("Difference larger than the sampling margin", "ok")
+        badge("Observed gap exceeds the district-only illustrative margin", "info")
         if abs(diff) > margin else
-        badge("Difference within the sampling margin", "warn")
+        badge("Observed gap is within the district-only illustrative margin", "warn")
+    )
+    rank_label = "Gap rank for this indicator" if cfg["polarity"] != "neutral" else "Value rank for this indicator"
+    rank_note = "1 = largest relative gap" if cfg["polarity"] != "neutral" else "1 = highest value; descriptive only"
+    direction = (
+        "Lower values indicate less reported access or resilience."
+        if cfg["polarity"] == "positive"
+        else "Higher values indicate greater reported vulnerability."
+        if cfg["polarity"] == "negative"
+        else "Higher or lower is not inherently better for this indicator."
     )
     return f"""
     <div style="--accent:{cfg['accent']};--accent-text:{cfg['text_accent']}">
       <div class="insp-top">
         <div class="insp-name">{esc(row['District'])}</div>
-        <div class="insp-rank">#{int(row['rank'])} of {n}</div>
+        <div class="insp-rank">#{int(row['rank'])} of {n}<br><small>{rank_label}</small></div>
       </div>
       <div class="insp-value">{est:.1f}<span>%</span></div>
       <div class="insp-sub">{esc(cfg['title'])} · <span class="moe">±{margin:.1f} pp indicative margin</span></div>
@@ -356,13 +494,313 @@ def _inspector_html(row, cfg, metric, national_est, lo, hi, n):
         <div><b>{arrow} {abs(diff):.1f} pp</b><span>{'Above' if diff >= 0 else 'Below'} national</span></div>
         <div><b>{int(row['Valid respondents']):,}</b><span>Respondents</span></div>
       </div>
+      <div class="micro">{rank_note}. {direction}</div>
       <div style="margin-top:12px">{verdict}</div>
+      <div class="micro">This illustrative district-only margin is not a formal test of the district–national difference.</div>
     </div>
     """
 
 
 def _jump_to(name):
     st.session_state["dx_district"] = name
+
+
+def _filtered_combined_entries(entries, indicator_variable):
+    """Series eligible for display. Suppression is declared in the indicator mapping
+    (SUPPRESSED_RELATIONSHIPS); the loader already honours it, and this is a defensive
+    second check so a suppressed page can never reach a chart or marker."""
+    from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
+
+    mapping = MAPPING_BY_VARIABLE.get(indicator_variable) or {}
+    suppressed_pages = {
+        str(rel.get("page", "")).casefold()
+        for rel in mapping.get("nbr_relationships") or []
+        if rel.get("suppressed")
+    }
+    filtered = []
+    for entry in entries or []:
+        if not entry or not entry.get("points"):
+            continue
+        page = str(entry.get("page") or entry.get("source_page") or "").casefold()
+        if page in suppressed_pages:
+            continue
+        filtered.append(entry)
+    return filtered
+
+
+def _combined_story_html(cfg, district_name, est, national_est, diff, combined_entry, state=None):
+    direction = "above" if est >= national_est else "below"
+    story = (
+        f"<b>FinScope finding.</b> {esc(district_name)} reports "
+        f"{est:.1f}% for {esc(cfg['title'])}, {abs(diff):.1f} percentage points "
+        f"{direction} the weighted national estimate of {national_est:.1f}%. "
+    )
+    if state is not None and not state.available and state.body:
+        context = f"{state.title}. {state.body}"
+    elif combined_entry is None:
+        context = (
+            "No approved district-scoped NBR observation is available for this "
+            "indicator and selected scope."
+        )
+    else:
+        context = (
+            "A separately labelled NBR administrative context is available in "
+            "the evidence panel below."
+        )
+    return (
+        f"<div class='insp-note'>{story}<br>{esc(cfg['interpretation'])}<br>"
+        f"{esc(context)} The survey difference is descriptive, not a causal explanation.</div>"
+    )
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _combined_intelligence_assessment(
+    points: Sequence[Mapping[str, Any]],
+    expected_districts: Sequence[str],
+    selected_district: str,
+) -> dict[str, Any]:
+    if not points:
+        return {
+            "state": "observation_unavailable",
+            "reason": "No NBR observations are available for this approved series.",
+        }
+
+    observations = []
+    table_documents = {}
+    source_points = []
+    required_fields = (
+        "page",
+        "metric_label",
+        "geography",
+        "reporting_date",
+        "collected_at",
+        "run_id",
+        "combo_key",
+        "filters",
+        "value",
+    )
+    for point in points:
+        if (
+            point.get("source_type") != "district_table"
+            or point.get("geography_level") != "district"
+            or not all(point.get(field) is not None for field in required_fields)
+            or not isinstance(point.get("filters"), Mapping)
+            or not str(point.get("combo_key", "")).strip()
+        ):
+            return {
+                "state": "unassessable_source_provenance",
+                "reason": (
+                    "One or more normalized NBR observations lacks the exact "
+                    "district, date, filter, or collection provenance required "
+                    "by the existing assessment."
+                ),
+            }
+        try:
+            reporting_date = date.fromisoformat(str(point["reporting_date"]))
+            value = float(point["value"])
+        except (TypeError, ValueError):
+            return {
+                "state": "unassessable_source_provenance",
+                "reason": "An NBR observation has an invalid date or numeric value.",
+            }
+        if not math.isfinite(value) or value < 0:
+            return {
+                "state": "unassessable_source_provenance",
+                "reason": "An NBR observation has an invalid numeric value.",
+            }
+
+        observation = NBRObservation(
+            page=str(point["page"]),
+            metric_label=str(point["metric_label"]),
+            district=str(point["geography"]),
+            combo_key=str(point["combo_key"]),
+            reporting_date=reporting_date,
+            collected_at=str(point["collected_at"]),
+            run_id=str(point["run_id"]),
+            filters=dict(point["filters"]),
+            value=value,
+        )
+        observations.append(observation)
+        source_points.append(dict(point))
+        table_documents[(
+            observation.page,
+            reporting_date.isoformat(),
+            observation.combo_key,
+            observation.district.casefold(),
+        )] = {
+            "page": observation.page,
+            "snapshot_date": reporting_date.isoformat(),
+            "combo_key": observation.combo_key,
+            "district": observation.district,
+            "district_known": True,
+        }
+
+    cross_summary, cross_candidates, cross_states = (
+        evaluate_cross_sectionally_with_statuses(
+            observations,
+            list(table_documents.values()),
+            expected_districts,
+        )
+    )
+    temporal_summary, temporal_cases = evaluate_chronologically(observations)
+
+    selected_history = [
+        observation
+        for observation in observations
+        if observation.district.casefold() == selected_district.casefold()
+    ]
+    latest = max(
+        selected_history,
+        key=lambda item: item.reporting_date,
+        default=None,
+    )
+    if latest is None:
+        peer_date = max(item.reporting_date for item in observations)
+        return {
+            "state": "observation_unavailable",
+            "reason": (
+                f"No district-scoped observation is recorded for "
+                f"{selected_district} in this exact NBR series."
+            ),
+            "peer_date": peer_date.isoformat(),
+            "peer_points": [
+                point for point in source_points
+                if point["reporting_date"] == peer_date.isoformat()
+            ],
+            "expected_district_count": len(expected_districts),
+            "cross_section": {"state": "observation_unavailable"},
+            "temporal": {"state": "observation_unavailable"},
+        }
+
+    event_key = (
+        latest.page,
+        latest.metric_label,
+        latest.district.casefold(),
+        latest.reporting_date.isoformat(),
+        latest.combo_key,
+    )
+    cross_status = cross_states.get(event_key, {
+        "state": "unassessable",
+        "reason": "The assessment returned no status for this observation.",
+    })
+    cross_candidate = next(
+        (
+            candidate for candidate in cross_candidates
+            if (
+                candidate["page"],
+                candidate["metric_label"],
+                candidate["district"].casefold(),
+                candidate["reporting_date"],
+                candidate["combo_key"],
+            ) == event_key
+        ),
+        None,
+    )
+
+    temporal_case = next(
+        (
+            case for case in temporal_cases
+            if (
+                case["page"],
+                case["metric_label"],
+                case["district"].casefold(),
+                case["target"]["reporting_date"],
+                case["combo_key"],
+            ) == event_key
+        ),
+        None,
+    )
+    if temporal_case is None:
+        temporal_state = (
+            "insufficient_evidence"
+            if len(selected_history) < MIN_TRAINING_RATES + 2
+            else "unassessable"
+        )
+        temporal_details = {
+            "state": temporal_state,
+            "observation_count": len(selected_history),
+            "minimum_observations": MIN_TRAINING_RATES + 2,
+        }
+    elif temporal_case["model_status"] != "scored":
+        temporal_details = {
+            "state": "unassessable",
+            "observation_count": len(selected_history),
+            "model_status": temporal_case["model_status"],
+            "dispersion_status": temporal_case["model_dispersion_status"],
+        }
+    else:
+        temporal_details = {
+            "state": (
+                "eligible_unusual_observation"
+                if temporal_case["model_alert"]
+                else "assessable_no_qualifying_signal"
+            ),
+            "observation_count": len(selected_history),
+            "case": temporal_case,
+        }
+
+    latest_point = next(
+        point for point in source_points
+        if (
+            point["geography"].casefold() == latest.district.casefold()
+            and point["reporting_date"] == latest.reporting_date.isoformat()
+        )
+    )
+    peer_points = [
+        point for point in source_points
+        if point["reporting_date"] == latest.reporting_date.isoformat()
+    ]
+    signal_found = (
+        cross_status.get("state") == "eligible_unusual_observation"
+        or temporal_details.get("state") == "eligible_unusual_observation"
+    )
+    if signal_found:
+        recommendation = (
+            f"For {selected_district}, verify the NBR source row, collection "
+            "run, reporting date, and exact filters before interpreting this "
+            "review signal."
+        )
+    elif (
+        cross_status.get("state") == "insufficient_evidence"
+        or temporal_details.get("state") == "insufficient_evidence"
+    ):
+        recommendation = (
+            f"For {selected_district}, more compatible district observations or "
+            "reporting snapshots are needed before this NBR series can support "
+            "an unusualness assessment."
+        )
+    else:
+        recommendation = (
+            f"For {selected_district}, no unusual NBR signal was returned for "
+            "the assessed scope; retain the administrative count as "
+            "source-specific context, not a measure of FinScope access or use."
+        )
+
+    return {
+        "state": "available",
+        "observation": {
+            "value": latest.value,
+            "reporting_date": latest.reporting_date.isoformat(),
+            "unit": latest_point.get("unit") or "unit not specified",
+            "metric_label": latest.metric_label,
+            "run_id": latest.run_id,
+            "filters": latest.filters,
+            "quality_qualifications": latest_point.get(
+                "quality_qualifications", []
+            ),
+        },
+        "peer_date": latest.reporting_date.isoformat(),
+        "peer_points": peer_points,
+        "expected_district_count": len(expected_districts),
+        "cross_section": {
+            **cross_status,
+            "candidate": cross_candidate,
+            "summary": cross_summary,
+        },
+        "temporal": temporal_details,
+        "temporal_summary": temporal_summary,
+        "recommendation": recommendation,
+    }
 
 
 def _kpi_context(entry, district_name):
@@ -402,7 +840,6 @@ def _clicked_district(event, names):
 def render_district_explorer():
     from src.pages.nbr_dashboard import (
         current_mode,
-        load_combined_context_data,
         render_combined_context,
         render_nbr_page,
     )
@@ -433,8 +870,9 @@ def render_district_explorer():
     only_data, only_geo = data.geo_name_mismatch(district["District"], geojson)
     if only_data or only_geo:
         st.warning(
-            "Some district names in the data do not match the map boundaries and will not be coloured: "
-            f"{', '.join(only_data) or 'none'} (data) · {', '.join(only_geo) or 'none'} (map)."
+            "Some district names do not match the map, so those districts may not be shaded. "
+            f"Only in the data: {', '.join(only_data) or 'none'}. "
+            f"Only on the map: {', '.join(only_geo) or 'none'}."
         )
 
     names = sorted(district["District"].unique())
@@ -455,35 +893,51 @@ def render_district_explorer():
     selected_district = st.session_state["dx_district"]
     combined_entries = []
     combined_version = None
+    series_state = ContextState(STATE_NO_COUNTERPART, "")
     if mode == "Combined":
-        try:
-            combined_entries, combined_version = load_combined_context_data(
-                cfg["variable"],
-                geography_level="district",
-            )
-        except (RuntimeError, ValueError, OSError, PyMongoError) as error:
-            combined_context_error = error
-        else:
-            combined_context_error = None
-    else:
-        combined_context_error = None
+        inject_combined_styles()
+        # One all-district lookup per indicator (cached upstream); the selected
+        # district is applied afterwards so the peer snapshot and markers stay complete.
+        combined_entries, combined_version, series_state = load_context(
+            cfg["variable"], level="district",
+        )
+        combined_entries = _filtered_combined_entries(combined_entries, cfg["variable"])
+        series_state = eligible_state(series_state, combined_entries)
     series_key = f"combined_dx_series_{cfg['variable']}_{combined_version or 'none'}"
+    date_options, date_key = [], ""
     if combined_entries:
         series_index = st.session_state.get(series_key, 0)
         if not isinstance(series_index, int) or series_index >= len(combined_entries):
             series_index = 0
         combined_entry = combined_entries[series_index]
-        latest_date = max(
-            (str(point["reporting_date"]) for point in combined_entry["points"]),
-            default="",
-        )
-        overlay_points = [
-            point for point in combined_entry["points"]
-            if str(point["reporting_date"]) == latest_date
-        ]
+        # Reporting date is keyed to this exact series so it can never go stale.
+        date_options = entry_dates(combined_entry)
+        date_key = f"combined_dx_date_{cfg['variable']}_{series_index}_{combined_version or 'none'}"
+        chosen_date = reporting_date_choice(st.session_state, date_key, date_options)
+        overlay_points, latest_date = snapshot_points(combined_entry, chosen_date)
     else:
         combined_entry = None
-        overlay_points = []
+        overlay_points, latest_date = [], ""
+    local_entries = (
+        entries_for_geography([combined_entry], selected_district)
+        if combined_entry is not None else []
+    )
+    selected_state = (
+        district_state(
+            series_state, local_entries, selected_district,
+            label=combined_entry["metric_label"] if combined_entry else "",
+        )
+        if mode == "Combined" else series_state
+    )
+    combined_intelligence = (
+        _combined_intelligence_assessment(
+            combined_entry["points"],
+            names,
+            selected_district,
+        )
+        if mode == "Combined" and combined_entry is not None
+        else None
+    )
 
     nat_hit = national.loc[
         national["Indicator"].eq(cfg["national_label"]), "Estimate (%)"
@@ -494,25 +948,56 @@ def render_district_explorer():
     national_est = float(nat_hit.iloc[0])
 
     df = district.reset_index(drop=True).copy()
-    df["rank"] = df[metric].rank(ascending=False, method="min").astype(int)
+    if cfg["polarity"] == "positive":
+        df["directional_gap"] = (national_est - df[metric]).clip(lower=0)
+        df["rank"] = df["directional_gap"].rank(ascending=False, method="min").astype(int)
+    elif cfg["polarity"] == "negative":
+        df["directional_gap"] = (df[metric] - national_est).clip(lower=0)
+        df["rank"] = df["directional_gap"].rank(ascending=False, method="min").astype(int)
+    else:
+        df["directional_gap"] = df[metric]
+        df["rank"] = df[metric].rank(ascending=False, method="min").astype(int)
     df["diff"] = df[metric] - national_est
     n = len(df)
     lo, hi = float(df[metric].min()), float(df[metric].max())
     sel = df.loc[df["District"].eq(selected_district)].iloc[0]
+    largest_gap = df.loc[df["directional_gap"].idxmax()]
+    smallest_gap = df.loc[df["directional_gap"].idxmin()]
     highest = df.loc[df[metric].idxmax()]
     lowest = df.loc[df[metric].idxmin()]
     est = float(sel[metric])
     diff = est - national_est
     margin = data.moe_pp(est, sel["Valid respondents"])
-    clear = abs(diff) > margin
+    if cfg["polarity"] == "positive":
+        direction = (
+            "Below national · lower reported access/resilience" if diff < 0
+            else "Above national · higher reported access/resilience" if diff > 0
+            else "At the national estimate"
+        )
+    elif cfg["polarity"] == "negative":
+        direction = (
+            "Above national · higher reported vulnerability" if diff > 0
+            else "Below national · lower reported vulnerability" if diff < 0
+            else "At the national estimate"
+        )
+    else:
+        direction = "Descriptive comparison; no inherently favourable direction"
 
     page_header(
         "District explorer",
-        f"How {cfg['title'].lower()} varies across Rwanda's {n} districts"
-        + (", with NBR supply observations on the same map." if mode == "Combined" else "."),
-        pill=mode_pill(mode),
-        size="tall",
+        f"How {cfg['title'].lower()} varies across Rwanda's {n} districts. "
+        "Click any district on the map to inspect it."
+        + (" NBR administrative observations appear as separate markers and context."
+           if mode == "Combined" else ""),
+        pill=header_pill(mode, "FinScope Rwanda 2024"),
         mode=mode,
+        intro=(
+            "Survey estimates and administrative counts differ in meaning, unit and "
+            "coverage, so the selected district shows each separately and never "
+            "compares one with the other."
+            if mode == "Combined" else ""
+        ),
+        size="tall",
         below_html=kpi_grid(
             [
                 kpi_card("Selected district", f"{est:.1f}", "%", est, cfg["accent"],
@@ -522,12 +1007,14 @@ def render_district_explorer():
                          PALETTE["ink2"], "Weighted national level"),
                 kpi_card("Difference from national", f"{diff:+.1f}", " pp",
                          abs(diff) / max(hi - lo, 1e-9) * 100, PALETTE["sun"],
-                         ("Above" if diff >= 0 else "Below") + " national · "
-                         + ("larger than margin" if clear else "within margin")),
-                kpi_card("Rank among districts", f"#{int(sel['rank'])}", f" of {n}",
+                         direction),
+                kpi_card("Gap rank for this indicator" if cfg["polarity"] != "neutral" else "Value rank for this indicator",
+                         f"#{int(sel['rank'])}", f" of {n}",
                          (n - int(sel["rank"]) + 1) / n * 100, "#5FB8AB",
-                         f"Highest <b>{esc(highest['District'])}</b> · "
-                         f"Lowest <b>{esc(lowest['District'])}</b>"),
+                         ("1 = largest relative gap · " if cfg["polarity"] != "neutral"
+                          else "1 = highest value (descriptive) · ")
+                         + f"Highest <b>{esc(highest['District'])}</b> · "
+                         + f"Lowest <b>{esc(lowest['District'])}</b>"),
             ]
         ),
     )
@@ -553,7 +1040,9 @@ def render_district_explorer():
                 ),
                 key=series_key,
             )
-        if combined_context_error is not None:
+        if combined_entry is not None and len(date_options) > 1:
+            st.selectbox("NBR reporting date for map markers", date_options[::-1], key=date_key)
+        if mode == "Combined" and series_state.state == "load_error":
             st.caption("NBR supply context is temporarily unavailable; FinScope estimates are unchanged.")
         c_dist, c_set = st.columns([2.2, 1], gap="medium", vertical_alignment="bottom")
         with c_dist:
@@ -567,7 +1056,8 @@ def render_district_explorer():
                 basemap = st.selectbox("Basemap", list(BASEMAPS), key="dx_basemap")
                 palette = st.selectbox("Colours", PALETTE_CHOICES, key="dx_palette")
                 opacity = st.slider("Fill opacity", 0.3, 1.0, 0.85, 0.05, key="dx_opacity")
-                spotlight = st.selectbox("Outline extremes", SPOTLIGHTS, key="dx_spot")
+                spotlight = st.selectbox(
+                    "Outline extremes (ranked by gap direction)", SPOTLIGHTS, key="dx_spot")
                 labels = st.toggle("Show district names", value=False, key="dx_labels")
                 tilt = st.slider("Tilt", 0, 60, 0, key="dx_tilt")
                 rotation = st.slider("Rotation", -90, 90, 0, key="dx_rot")
@@ -585,15 +1075,19 @@ def render_district_explorer():
     with map_col:
         with st.container(key="card_map"):
             legend = ""
+            large_label = "Largest gaps (5)" if cfg["polarity"] != "neutral" else "Highest values (5)"
+            small_label = "Smallest gaps (5)" if cfg["polarity"] != "neutral" else "Lowest values (5)"
             if spotlight in ("Top 5", "Both"):
                 top_color = "#FFFFFF" if BASEMAPS[basemap]["dark"] else PALETTE["ink"]
                 legend += (
                     f'<span class="chip"><i style="border-color:{top_color};'
-                    f'background:{"#0E2A35" if top_color == "#FFFFFF" else "#fff"}"></i>Highest 5</span>'
+                    f'background:{"#0E2A35" if top_color == "#FFFFFF" else "#fff"}"></i>'
+                    f'{esc(large_label)}</span>'
                 )
             if spotlight in ("Bottom 5", "Both"):
                 legend += (
-                    f'<span class="chip"><i style="border-color:{PALETTE["coral"]}"></i>Lowest 5</span>'
+                    f'<span class="chip"><i style="border-color:{PALETTE["coral"]}"></i>'
+                    f'{esc(small_label)}</span>'
                 )
             legend += (
                 f'<span class="chip"><i style="border-color:{PALETTE["sun"]}"></i>Selected</span>'
@@ -606,7 +1100,7 @@ def render_district_explorer():
                     <div class="cs">Click a district to inspect it · scroll to zoom · drag to pan</div>
                   </div>
                   <div class="chips">{legend}
-                    {(f'<span class="chip"><i style="background:#163D4B;border-color:#fff"></i>NBR · {esc(combined_entry["metric_label"])} · marker size</span>' if overlay_points else '')}
+                    {(f'<span class="chip"><i style="background:#163D4B;border-color:#fff"></i>NBR · {esc(combined_entry["metric_label"])} · {esc(combined_entry.get("unit") or "unit not specified")} · {esc(latest_date)} · marker size (separate scale)</span>' if overlay_points else '')}
                   </div>
                 </div>
                 """
@@ -641,35 +1135,70 @@ def render_district_explorer():
     with insp_col:
         with st.container(key="card_inspector"):
             render_html(_inspector_html(sel, cfg, metric, national_est, lo, hi, n))
+            if mode == "Combined":
+                render_html(_combined_story_html(
+                    cfg, selected_district, est, national_est, diff, combined_entry,
+                    selected_state,
+                ))
+                intel_cross = (combined_intelligence or {}).get("cross_section", {})
+                intel_time = (combined_intelligence or {}).get("temporal", {})
+                render_recommendations(district_recommendations(
+                    district=selected_district,
+                    indicator=cfg["title"].lower(),
+                    polarity=cfg["polarity"],
+                    diff_pp=diff,
+                    margin_pp=margin,
+                    state=selected_state,
+                    nbr_label=combined_entry["metric_label"] if combined_entry else "",
+                    local_points=[p for e in local_entries for p in e["points"]],
+                    signal_found=(
+                        intel_cross.get("state") == "eligible_unusual_observation"
+                        or intel_time.get("state") == "eligible_unusual_observation"
+                    ),
+                ), title=f"Next steps for {selected_district}")
+            else:
+                render_html(_combined_story_html(
+                    cfg, selected_district, est, national_est, diff, combined_entry,
+                ))
             if combined_entry is not None:
                 render_combined_context(
                     cfg["variable"],
                     district=selected_district,
                     entries=[combined_entry],
                     source_version=combined_version,
+                    intelligence=combined_intelligence,
                 )
             st.button(
-                f"Highest: {highest['District']} · {highest[metric]:.1f}%",
+                f"{'Largest gap' if cfg['polarity'] != 'neutral' else 'Highest value'}: "
+                f"{largest_gap['District']} · {largest_gap[metric]:.1f}%",
                 key="dx_go_high",
                 on_click=_jump_to,
-                args=(highest["District"],),
+                args=(largest_gap["District"],),
                 use_container_width=True,
                 icon=":material/arrow_upward:",
             )
             st.button(
-                f"Lowest: {lowest['District']} · {lowest[metric]:.1f}%",
+                f"{'Smallest gap' if cfg['polarity'] != 'neutral' else 'Lowest value'}: "
+                f"{smallest_gap['District']} · {smallest_gap[metric]:.1f}%",
                 key="dx_go_low",
                 on_click=_jump_to,
-                args=(lowest["District"],),
+                args=(smallest_gap["District"],),
                 use_container_width=True,
                 icon=":material/arrow_downward:",
             )
             render_html(
                 f"""
                 <div class="insp-note"><b>{esc(cfg['description'])}</b><br>
-                {esc(cfg['interpretation'])}</div>
+                {esc(cfg['interpretation'])}<br>
+                The gap between extremes is {hi - lo:.1f} pp. {esc(cfg['interpretation'])}
+                Differences describe patterns, not causes. A district's rank is specific to this indicator and
+                is not an overall financial-inclusion rank. The district-only margin is a simple-random-sample
+                illustration, not a significance test against the national estimate; survey design information
+                is unavailable.</div>
                 """
             )
+            if mode == "Combined" and routed_note(cfg["variable"]):
+                render_html(f'<div class="insp-note">{esc(routed_note(cfg["variable"]))}</div>')
             nat_lookup = dict(zip(national["Indicator"], national["Estimate (%)"].astype(float)))
             st.download_button(
                 "Download district profile",
@@ -692,9 +1221,9 @@ def render_district_explorer():
     with rank_col:
         with st.container(key="card_ranking"):
             card_title(
-                "All districts, ranked",
-                "The highlighted bar is your selected district; the dotted "
-                "line is the national estimate.",
+                "District indicator estimates",
+                "Bars show this indicator's estimate, sorted by value; the dotted line is the national reference. "
+                "This is not an overall district financial-inclusion ranking.",
             )
             ordered = df.sort_values(metric, ascending=True)
             bar_colors = [
@@ -774,6 +1303,23 @@ def render_district_explorer():
                 key="dx_profile",
                 config={"displayModeBar": False},
             )
+            if mode == "Combined":
+                from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
+
+                labels_by_variable = {v["variable"]: k for k, v in present.items()}
+                mapped, unmapped = mapping_summary(
+                    labels_by_variable, "district",
+                    mapping_lookup=MAPPING_BY_VARIABLE, labels=labels_by_variable,
+                )
+                render_html(
+                    '<div class="micro">The bars above are FinScope estimates only. District-level '
+                    "NBR context is configured for "
+                    + (esc(", ".join(mapped)) if mapped else "none of these indicators")
+                    + "; select one of them to see it. "
+                    + (f"No approved district-level NBR counterpart: {esc(', '.join(unmapped))}."
+                       if unmapped else "")
+                    + "</div>"
+                )
 
         st.markdown("")
 
@@ -815,7 +1361,8 @@ def render_district_explorer():
     with st.container(key="card_table"):
         card_title(
             "District data",
-            "Every indicator for every district, sorted by the selected indicator.",
+            "Every indicator for every district, sorted by the indicator above. "
+            "Use the search icon in the table to find a district.",
         )
         show_district_table(
             df,
@@ -824,16 +1371,26 @@ def render_district_explorer():
             file_name="rwanda_district_explorer.csv",
             height=440,
         )
+        if mode == "Combined" and combined_entry is not None:
+            with st.expander("NBR observations behind the map markers"):
+                st.caption(
+                    f"{combined_entry['metric_label']} · "
+                    f"{combined_entry.get('unit') or 'unit not specified'} · {latest_date}. "
+                    "Same metric, filters and reporting date for every district; districts "
+                    "without a recorded observation are unknown, not zero."
+                )
+                st.dataframe(
+                    snapshot_table(overlay_points, names),
+                    use_container_width=True, hide_index=True, height=320,
+                )
 
-    st.markdown("")
-    page_footnotes(
-        [
-            ("Survey margins", f"The gap between the highest and lowest district is {hi - lo:.1f} pp. Margins "
-                               "assume simple random sampling, so true uncertainty is larger. Differences "
-                               "describe gaps and do not explain causes."),
-            ("NBR markers", "Marker size shows an NBR administrative value in NBR's own unit and reporting "
-                            "date. It is not a FinScope percentage and is not combined with one.")
-            if mode == "Combined" else None,
-        ],
-        source="Sources: FinScope Rwanda 2024; National Bank of Rwanda Financial Inclusion Dashboard.",
+    render_html(
+        '<div class="src-note">Source: FinScope Rwanda 2024'
+        + (" (survey) and NBR administrative observations (supply side)" if mode == "Combined" else "")
+        + ". Estimates are "
+        "weighted survey results, not live measurements. Differences alone "
+        "do not establish statistical significance or explain their causes."
+        + (" NBR values keep their own units, dates and filters and are never combined "
+           "with survey estimates." if mode == "Combined" else "")
+        + "</div>"
     )

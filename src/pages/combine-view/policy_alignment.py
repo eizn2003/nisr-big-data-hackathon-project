@@ -5,7 +5,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src import data
-from src.indicators import BY_NATIONAL
+from src.indicators import BY_NATIONAL, REGISTRY
+from src.pages.combined_support import (
+    contextual_variables,
+    inject_combined_styles,
+    latest_point,
+    load_context,
+    mapping_summary,
+)
 from src.pages.population_groups import load_group_data
 from src.pages.priority_explorer import DEFAULT_COMPONENTS, build_scores
 from src.styles import (
@@ -14,7 +21,7 @@ from src.styles import (
     esc,
     kpi_card,
     kpi_grid,
-    page_footnotes,
+    note,
     page_header,
     render_html,
     section_title,
@@ -91,10 +98,11 @@ def _evidence_actions(nat, district, groups):
                              + data.moe_pp(f, g.loc["Female", "Valid respondents"]) ** 2)
         verdict = "larger than" if abs(m - f) > combined else "within"
         actions.append((
-            "Close the gender gap in bank accounts",
+            "Investigate the observed gender difference in bank-account ownership",
             f"{f:.1f}% of women own a bank account against {m:.1f}% of men, a gap of {abs(m - f):.1f} pp that is "
-            f"{verdict} the sampling margin (±{combined:.1f} pp). Women are named as a priority group in national "
-            "financial inclusion planning.",
+            f"{verdict} an illustrative combined margin (±{combined:.1f} pp). This is a descriptive comparison, "
+            "not a design-correct significance test or causal finding. Women are named as a priority group in "
+            "national financial inclusion planning.",
             "Population groups › Gender › Bank account", "Population groups"))
     except Exception:
         pass
@@ -106,10 +114,11 @@ def _evidence_actions(nat, district, groups):
         top2 = a[col].sort_values(ascending=False).head(2)
         nat_ns = nat.get("Does not save")
         actions.append((
-            "Build saving habits where saving is weakest",
+            "Investigate saving constraints for groups with higher non-saving estimates",
             f"The share who do not save is highest among adults aged {top2.index[0]} ({top2.iloc[0]:.1f}%) and "
             f"{top2.index[1]} ({top2.iloc[1]:.1f}%), against {nat_ns:.1f}% nationally. Young adults are a named "
-            "priority in national financial inclusion planning.",
+            "priority in national financial inclusion planning. These descriptive results do not identify the "
+            "reasons; validate barriers and intervention suitability with further evidence.",
             "Population groups › Age group › Doesn't save", "Population groups"))
     except Exception:
         pass
@@ -118,11 +127,12 @@ def _evidence_actions(nat, district, groups):
     gs, bank, sacco = nat.get("Saves with a group"), nat.get("Own bank account"), nat.get("Currently uses Umurenge SACCO")
     if gs is not None and bank is not None:
         actions.append((
-            "Build on the channels people already use",
+            "Explore how existing community channels could support access",
             f"{gs:.1f}% of adults save with a group"
             + (f" and {sacco:.1f}% currently use an Umurenge SACCO" if sacco is not None else "")
-            + f", compared with {bank:.1f}% who own a bank account. Linking group and SACCO saving to formal, "
-              "safe products reaches people where they already are.",
+            + f", compared with {bank:.1f}% who own a bank account. This pattern may warrant exploring how "
+              "community channels relate to access to suitable formal products; the survey does not establish "
+              "that a particular linkage would increase inclusion.",
             "National overview › How people save and cope", "National overview"))
 
     # 4. Districts
@@ -132,10 +142,11 @@ def _evidence_actions(nat, district, groups):
         robust = top[top["Top-10 combos"] >= round(0.8 * combos)].head(3)["District"].tolist()
         if robust:
             actions.append((
-                "Target the districts that stay on the list however you score",
+                "Investigate districts that stay near the top across scoring scenarios",
                 f"{', '.join(robust)} remain in the top 10 under at least 80% of the indicator combinations tested, "
-                "which makes them the most defensible starting point for district-level attention. Other districts move a lot "
-                "depending on which indicators are used.",
+                "so their relative positions are less sensitive to indicator choice. This does not establish greater "
+                "absolute need or justify investment on its own. Other districts move more depending on which "
+                "indicators are used.",
                 "Priority explorer › Rank stability", "Priority explorer"))
     except Exception:
         pass
@@ -146,20 +157,129 @@ def _evidence_actions(nat, district, groups):
         fam = data.barrier_family_shares(barriers).set_index("Barrier family")["Weighted share (%)"]
         need = fam.get("No need or too little income", 0.0)
         actions.append((
-            "Match the response to the barrier",
+            "Investigate reported barriers before designing a response",
             f"{need:.1f}% of adults without an account say they do not need one or that their income is too "
-            "limited to justify it. Beyond income, cost and distance are the largest identifiable barriers, which suggests "
-            "low-cost entry products and livelihood-linked saving may matter more than branch coverage alone.",
+            "limited to justify it. Cost and distance are also reported barriers. These responses can inform "
+            "follow-up research into product affordability, access and suitability; they do not prove which "
+            "intervention would be effective.",
             "National overview › Why do people lack a bank account?", "National overview"))
     return actions
 
 
+# FinScope variables behind each worked example and each alignment row (Combined mode only).
+_ACTION_VARIABLES = {
+    "Investigate the observed gender difference in bank-account ownership": ("k1",),
+    "Explore how existing community channels could support access": ("g3a_11", "qf4_06"),
+    "Investigate reported barriers before designing a response": ("k1",),
+}
+_ROW_VARIABLES = {
+    "National Strategy for Transformation (NST2), 2024–2029": ("g3a_17", "e9b", "g3a_11", "qf4_06", "qf4_10"),
+    "National Financial Inclusion Roadmap, 2025–2030": ("k1",),
+    "Financial Sector Development Strategy": ("k1",),
+    "Umurenge SACCO network and cooperative reforms": ("qf4_06", "qf4_10"),
+    "District-level planning and targeting": ("k1", "g3a_11", "qf4_06", "qf4_10"),
+}
+
+
+def _labels():
+    return {item["variable"]: item["short"] for item in REGISTRY}
+
+
+def _filters_text(entry):
+    return " · ".join(f"{k}: {v}" for k, v in sorted((entry.get("filters") or {}).items()))
+
+
+def _nbr_row_text(title, mapping_lookup):
+    """What NBR can add to one policy priority, read from the mapping configuration."""
+    variables = _ROW_VARIABLES.get(title)
+    if not variables:
+        return ""
+    level = "district" if title.startswith("District-level") else "national"
+    mapped, unmapped = mapping_summary(
+        variables, level, mapping_lookup=mapping_lookup, labels=_labels(),
+    )
+    parts = []
+    if mapped:
+        parts.append(f"NBR administrative context (separate source) is approved for {', '.join(mapped)}.")
+    if unmapped:
+        parts.append(f"No approved NBR counterpart at the {level} level for {', '.join(unmapped)}.")
+    if title.startswith("National Financial Inclusion Roadmap"):
+        parts.append(
+            "Gender-specific NBR series appear only where the exact category is recorded; NBR has "
+            "no age crosswalk, education or urban/rural breakdown."
+        )
+    return " ".join(parts)
+
+
+def _nbr_line(variable, *, subgroup_type="", subgroup="", fmt_value):
+    """One plain-text, source-labelled NBR observation (or the reason there is none)."""
+    entries, _, state = load_context(
+        variable, level="national", subgroup_type=subgroup_type, subgroup=subgroup,
+    )
+    if not entries:
+        return f"{state.title}. {state.body}" if state.body else state.title
+    entry = entries[0]
+    latest = latest_point(entry["points"])
+    if latest is None:
+        return "No usable NBR observation."
+    unit = entry.get("unit") or "unit not specified"
+    scope = _filters_text(entry)
+    return (
+        f"NBR · {entry['metric_label']}: {fmt_value(latest['value'])} {unit} on "
+        f"{latest['reporting_date']} ({scope}). Administrative count, not comparable with the survey percentages."
+    )
+
+
+def _action_nbr_note(title, fmt_value):
+    variables = _ACTION_VARIABLES.get(title)
+    if not variables:
+        return ""
+    if title.startswith("Investigate the observed gender difference"):
+        return " ".join(
+            f"{group}: {_nbr_line('k1', subgroup_type='Gender', subgroup=group, fmt_value=fmt_value)}"
+            for group in ("Female", "Male")
+        )
+    return " ".join(_nbr_line(v, fmt_value=fmt_value) for v in variables)
+
+
+def _evidence_gap_action(mapping_lookup):
+    """A closing example about what the administrative evidence cannot yet support."""
+    registry_vars = [item["variable"] for item in REGISTRY]
+    mapped, unmapped = mapping_summary(
+        registry_vars, "national", mapping_lookup=mapping_lookup, labels=_labels(),
+    )
+    contextual = set(contextual_variables(mapping_lookup)) & set(registry_vars)
+    text = (
+        f"{len(mapped)} of {len(registry_vars)} survey indicators have an approved national NBR series "
+        f"({len(contextual)} have any approved contextual relationship). "
+        + (f"No supply-side reading is possible for {', '.join(unmapped)}. " if unmapped else "")
+        + "Before drawing supply-side conclusions for a district or group, confirm that an NBR observation "
+        "exists for that exact metric, filter and reporting date; absence is unknown, not zero."
+    )
+    return (
+        "Verify administrative coverage before drawing supply-side conclusions",
+        text,
+        "Methodology & sources › Using both sources",
+        "Methodology & sources",
+    )
+
+
 def render_policy_alignment():
-    from src.pages.nbr_dashboard import current_mode, render_methodology_mode_note
+    from src.pages.nbr_dashboard import (
+        context_strip_html,
+        current_mode,
+        fmt_value,
+        render_methodology_mode_note,
+    )
 
     mode = current_mode()
-    if mode != "Combined":
-        render_methodology_mode_note()
+    combined = mode == "Combined"
+    render_methodology_mode_note()
+    mapping_lookup = {}
+    if combined:
+        from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE as mapping_lookup
+
+        inject_combined_styles()
     try:
         national = data.load_national()
         district = data.load_district()
@@ -171,25 +291,51 @@ def render_policy_alignment():
     nat = dict(zip(national["Indicator"], national["Estimate (%)"].astype(float)))
 
     # ---- Hero --------------------------------------------------------------
+    strips, states = {}, {}
+    if combined:
+        for variable in ("k1", "e9b"):
+            entries, _, state = load_context(variable, level="national")
+            states[variable] = state
+            if entries:
+                strips[variable] = context_strip_html(
+                    entries[0], scope=_filters_text(entries[0]), other_series=len(entries) - 1,
+                )
     page_header(
         "Policy alignment and use",
-        "How the evidence in this tool connects to Rwanda's national priorities, and who can act on it.",
-        pill="NST2 · Vision 2050" if mode != "Combined" else "NST2 · Vision 2050 · FinScope + NBR",
-        size="tall",
+        "How the evidence in this tool connects to Rwanda's national priorities, and who can act on it."
+        + (" Where NBR administrative series are approved for a priority, they are named alongside the survey evidence." if combined else ""),
+        pill="NST2 · Vision 2050" + (" · FinScope + NBR" if combined else ""),
         mode=mode,
+        intro=(
+            "Policy priorities are framed by the survey; NBR administrative series add supply-side context "
+            "where an approved relationship exists. The two are never calculated against each other."
+            if combined else ""
+        ),
+        size="tall",
         below_html=kpi_grid([
             kpi_card("Financially included", f"{OFFICIAL['included']:.0f}", "%", OFFICIAL["included"], "#8FB0C2",
-                     "Formal or informal · published FinScope 2024 headline"),
+                     "Formal or informal · published FinScope 2024 headline", tag="fs" if combined else ""),
             kpi_card("Formally served", f"{OFFICIAL['formal']:.0f}", "%", OFFICIAL["formal"], "#8FB0C2",
-                     "Published headline · the 2024 target was 90%"),
+                     "Published headline · the 2024 target was 90%", tag="fs" if combined else ""),
             kpi_card("Own a bank account", f"{nat.get('Own bank account', float('nan')):.1f}", "%",
                      nat.get("Own bank account", 0), BY_NATIONAL["Own bank account"]["accent"],
-                     "This dashboard · in own name"),
+                     "This dashboard · in own name" + strips.get("k1", ""), tag="fs" if combined else ""),
             kpi_card("Have emergency funds", f"{nat.get('Has emergency funds', float('nan')):.1f}", "%",
                      nat.get("Has emergency funds", 0), BY_NATIONAL["Has emergency funds"]["accent"],
-                     "This dashboard · resilience"),
+                     "This dashboard · resilience" + strips.get("e9b", ""), tag="fs" if combined else ""),
         ]),
     )
+    if combined:
+        gaps = [
+            f"{label}: {states[var].title.lower()}"
+            for var, label in (("k1", "Bank account"), ("e9b", "Emergency funds"))
+            if not states[var].available
+        ]
+        st.caption(
+            "NBR context accompanies the cards that have an approved national series."
+            + (" " + "; ".join(gaps) + "." if gaps else "")
+            + " NBR values are administrative counts in their own units."
+        )
     st.markdown("")
 
     # ---- 1. The challenge ----------------------------------------------------
@@ -207,7 +353,7 @@ def render_policy_alignment():
     with right:
         with st.container(key="card_depth_read"):
             card_title("Which number answers which question?")
-            render_html(
+            depth_html = (
                 """
                 <table class="cmp">
                   <tr><th>Question</th><th>Measure</th></tr>
@@ -220,6 +366,14 @@ def render_policy_alignment():
                 they are not directly comparable with the indicators below.</div>
                 """
             )
+            if combined:
+                depth_html = depth_html.replace(
+                    "</table>",
+                    "<tr><td>What does the financial system record?</td><td><b>NBR</b> administrative counts "
+                    "(for example branches), in their own units. They are not rates of ownership or use.</td></tr></table>",
+                    1,
+                )
+            render_html(depth_html)
     st.markdown("")
 
     # ---- 2. Alignment ----------------------------------------------------------
@@ -251,10 +405,16 @@ def render_policy_alignment():
          _link("NST2 summary", SOURCES[2][1])),
         ("District-level planning and targeting",
          "National targets are delivered locally. District planning needs evidence on where gaps are largest "
-         "and how reliable the estimates are.",
-         "Priority explorer (rank stability, sampling margins) and a downloadable profile for every district.",
+         "and what additional evidence is needed before choosing an intervention.",
+         "Priority explorer comparisons and sensitivity analysis, plus a downloadable district profile. "
+         "These support investigation; they do not allocate funds or estimate investment reach.",
          "FinScope 2024 · NISR"),
     ]
+    if combined:
+        rows = [
+            (t, ask, tool + (" " + _nbr_row_text(t, mapping_lookup) if _nbr_row_text(t, mapping_lookup) else ""), src)
+            for t, ask, tool, src in rows
+        ]
     with st.container(key="card_alignment"):
         html = "".join(
             f"""
@@ -276,24 +436,32 @@ def render_policy_alignment():
     section_title("Who can use this, and for what", "Each audience can start from a different page.")
     users = [
         ("Policy makers and regulators", "MINECOFIN, BNR, sector regulators",
-         ["Which districts and groups fall furthest behind?", "Is a gap larger than sampling noise?",
-          "Does the conclusion hold under different indicator choices?"], "Priority explorer"),
+         ["Which districts and groups show comparatively large gaps?", "Which estimates and findings need validation?",
+          "Does the relative pattern change under different indicator choices?"], "Priority explorer"),
         ("District authorities", "Local government and planning teams",
          ["How does my district compare with the national level?", "What do people without an account say locally?",
           "Download a profile to support planning discussions."], "District explorer"),
         ("Financial service providers", "Banks, SACCOs, MFIs, mobile operators",
-         ["Where is entry-level demand likely to be largest?", "Where do cost or distance barriers dominate?",
-          "How much saving already happens in groups?"], "National overview"),
+         ["Where do survey indicators and reported barriers suggest questions to investigate?",
+          "Which access, affordability or service questions need local validation?",
+          "How common are community saving channels?"], "National overview"),
         ("Development partners and civil society", "Programme design and monitoring",
-         ["Which women, youth and rural groups are most behind?", "Where should limited resources go first?",
-          "What is the evidence base and how reliable is it?"], "Population groups"),
+         ["Which women, youth and rural groups show comparatively low estimates?",
+          "What additional evidence is needed before selecting an intervention?",
+          "What is the evidence base and what are its limitations?"], "Population groups"),
         ("Researchers and statisticians", "NISR and academic users",
          ["How is each indicator defined and weighted?", "Which automated data checks pass?",
           "What are the known limitations?"], "Methodology & sources"),
         ("Citizens and journalists", "Anyone curious about their area",
-         ["How does my district compare?", "Which groups are most behind?",
+         ["How does my district compare?", "Which groups have lower estimates on this indicator?",
           "What does the survey actually measure?"], "District explorer"),
     ]
+    if combined:
+        extra = {
+            "Policy makers and regulators": "Where is NBR coverage missing, so supply-side questions cannot yet be answered?",
+            "Financial service providers": "Which recorded NBR series exist for an area, and how recent are they?",
+        }
+        users = [(t, who, [*qs, extra[t]] if t in extra else qs, page) for t, who, qs, page in users]
     cards = "".join(
         f"""
         <div class="sh"><div class="sh-t">{esc(t)}</div>
@@ -309,9 +477,28 @@ def render_policy_alignment():
     # ---- 4. Evidence to action --------------------------------------------------------------
     section_title("From evidence to action",
                   "Starting points drawn directly from the data. They indicate where to look, not why gaps exist.")
+    note("How to interpret these results",
+         "Estimates come from one survey, carry sampling uncertainty, and describe differences rather than causes. "
+         "The priority score is an exploratory screening tool, not an official ranking. The dashboard does not "
+         "measure investment demand, readiness, beneficiary counts, costs, or returns; use the findings to guide "
+         "local validation, not as a funding allocation.", tone="info")
+    st.markdown("")
     actions = _evidence_actions(nat, district, groups)
+    notes = {}
+    if combined:
+        notes = {title: _action_nbr_note(title, fmt_value) for title, *_ in actions}
+        actions = [*actions, _evidence_gap_action(mapping_lookup)]
     with st.container(key="card_actions"):
         html = "".join(
+            f"""
+            <div class="act"><div class="act-n">{i}</div>
+              <div><div class="act-t">{esc(title)}</div><p class="act-p">{esc(text)}</p>
+              <div class="act-e">Survey evidence: {esc(evidence)}</div>
+              {f'<div class="act-e">Administrative context: {esc(notes[title])}</div>' if notes.get(title) else ""}
+              </div></div>
+            """
+            for i, (title, text, evidence, _) in enumerate(actions, start=1)
+        ) if combined else "".join(
             f"""
             <div class="act"><div class="act-n">{i}</div>
               <div><div class="act-t">{esc(title)}</div><p class="act-p">{esc(text)}</p>
@@ -327,17 +514,10 @@ def render_policy_alignment():
             st.button(f"Open {page}", key=f"pa_nav_{page}", on_click=_go, args=(page,), use_container_width=True)
     st.markdown("")
 
-    page_footnotes([
-        ("Reading these results", "Estimates come from one survey, carry sampling uncertainty and describe "
-                                  "differences rather than causes. The priority score is an exploratory screening "
-                                  "tool, not an official ranking."),
-        ("Where NBR fits", "Each action can be read alongside NBR supply observations on the analytical pages. "
-                           "NBR values keep their own units and are not combined with survey percentages.")
-        if mode == "Combined" else None,
-    ])
-    st.markdown("")
-
     # ---- Sources --------------------------------------------------------------------------------------
     with st.expander("Sources for this page"):
         render_html("".join(f'<div class="micro" style="margin:6px 0">{_link(label, url)}</div>'
                             for label, url in SOURCES))
+        if combined:
+            render_html('<div class="micro" style="margin:6px 0">NBR administrative observations: read from the '
+                        "project's read-only NBR source; see Methodology &amp; sources › Using both sources.</div>")

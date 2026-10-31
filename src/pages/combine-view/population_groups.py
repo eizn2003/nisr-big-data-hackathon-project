@@ -1,4 +1,3 @@
-from functools import partial
 import math
 
 import pandas as pd
@@ -7,24 +6,32 @@ import streamlit as st
 
 from src import data
 from src.data_sources.mongodb_population_groups import load_population_group_results
-from src.indicators import available
+from src.indicators import REGISTRY, available
+from src.pages.combined_support import (
+    context_state_html,
+    group_recommendations,
+    header_pill,
+    inject_combined_styles,
+    load_context,
+    render_recommendations,
+    scope_state,
+    source_row_html,
+    missing_indicator_note,
+    routed_note,
+)
 from src.styles import (
     PALETTE,
     badge,
     card_title,
     esc,
-    coverage_html,
-    kpi_card as _kpi_card,
+    kpi_card,
     kpi_grid,
-    mode_pill,
-    page_footnotes,
+    note,
     page_header,
     render_html,
     section_title,
     style_chart,
 )
-
-kpi_card = partial(_kpi_card, tag="fs")
 
 GROUP_TYPES = ["Gender", "Age group", "Education", "Area"]
 ORDINAL = {"Age group", "Education"}  # shown in natural order, not by value
@@ -118,10 +125,68 @@ def _controls(indicators):
                      default=list(indicators.keys())[0], key=KEY_IND)
 
 
+def _filters_text(entry):
+    return " · ".join(
+        f"{name}: {value}" for name, value in sorted((entry.get("filters") or {}).items())
+    )
+
+
+def _gender_context(item, groups):
+    """Exact-Gender NBR series for each FinScope gender group, with explicit states."""
+    result = {}
+    for group in groups:
+        entries, version, state = load_context(
+            item["variable"], level="national", subgroup_type="Gender", subgroup=str(group),
+        )
+        result[str(group)] = (entries, version, state)
+    return result
+
+
+def _render_group_context(group_type, item, groups, gender_context):
+    """NBR context for the compared groups, shown with the FinScope group cards."""
+    from src.pages.nbr_dashboard import context_strip_html, render_combined_context
+
+    with st.container(key="card_group_nbr_context"):
+        card_title(
+            "NBR administrative context for these groups",
+            "Separate source, separate units. Context only: NBR counts are not survey "
+            "percentages and are not compared with them.",
+        )
+        limit = scope_state(group_type)
+        if limit is not None:
+            render_html(context_state_html(limit, label=group_type))
+            return
+        if not any(state.available for _, _, state in gender_context.values()):
+            first = next(iter(gender_context.values()))[2]
+            render_html(context_state_html(first, label=f"{item['short']} by gender"))
+            return
+        columns = st.columns(len(gender_context), gap="medium")
+        for column, (group, (entries, _, state)) in zip(columns, gender_context.items()):
+            with column:
+                render_html(source_row_html("nbr", f"Gender: {group}"))
+                if entries:
+                    entry = entries[0]
+                    render_html(context_strip_html(
+                        entry, scope=_filters_text(entry), other_series=len(entries) - 1,
+                    ))
+                else:
+                    render_html(context_state_html(state))
+        with st.expander("NBR series detail by gender"):
+            tabs = st.tabs([str(g) for g in gender_context])
+            for tab, (group, (entries, version, state)) in zip(tabs, gender_context.items()):
+                with tab:
+                    if entries:
+                        render_combined_context(
+                            item["variable"], subgroup_type="Gender", subgroup=group,
+                            entries=entries, source_version=version,
+                        )
+                    else:
+                        render_html(context_state_html(state))
+
+
 def render_population_groups():
     from src.pages.nbr_dashboard import (
         current_mode,
-        render_combined_context,
         render_nbr_page,
     )
 
@@ -148,7 +213,7 @@ def render_population_groups():
     subset = subset.dropna(subset=["Group", metric]).reset_index(drop=True)
     if subset.empty:
         page_header("Population groups", "Compare financial inclusion across demographic and geographic groups.",
-                    pill="FinScope Rwanda 2024", size="compact")
+                    pill=header_pill(mode, "FinScope Rwanda 2024"), mode=mode, size="compact")
         st.warning(f"No estimates are available for {group_type.lower()} for this indicator.")
         _controls(indicators)
         return
@@ -164,37 +229,57 @@ def render_population_groups():
     clear = gap > combined
     count = len(subset)
     total = float(subset["Valid respondents"].sum(skipna=True))
+    value_direction = (
+        "A higher value indicates more reported access or resilience."
+        if item["polarity"] == "positive"
+        else "A higher value indicates greater vulnerability for this measure."
+        if item["polarity"] == "negative"
+        else "Higher and lower values are descriptive; neither is inherently better."
+    )
+
+    gender_context = {}
+    if mode == "Combined":
+        inject_combined_styles()
+        if group_type == "Gender":
+            gender_context = _gender_context(item, shown["Group"].astype(str).tolist())
 
     # ---- Hero + headline cards -------------------------------------------
     page_header(
         "Population groups",
-        f"How {item['label'].lower()} differs across {group_type.lower()} groups"
-        + (", with NBR coverage shown where the same group is reported." if mode == "Combined" else ", from FinScope Rwanda 2024."),
-        pill=mode_pill(mode),
-        size="tall",
+        f"How {item['label'].lower()} differs across {group_type.lower()} groups, from FinScope Rwanda 2024."
+        + (" NBR context is shown only where it covers the same group." if mode == "Combined" else ""),
+        pill=header_pill(mode, "FinScope Rwanda 2024"),
         mode=mode,
+        intro=(
+            "Group comparisons come from the survey. NBR administrative data covers only some "
+            "of these dimensions, so each source is shown separately and never combined."
+            if mode == "Combined" else ""
+        ),
+        size="tall",
         below_html=kpi_grid([
-            kpi_card("Highest group", f"{hi_row[metric]:.1f}", "%", hi_row[metric], item["accent"],
+            kpi_card("Highest value", f"{hi_row[metric]:.1f}", "%", hi_row[metric], item["accent"],
                      f"<b>{esc(hi_row['Group'])}</b>"),
-            kpi_card("Lowest group", f"{lo_row[metric]:.1f}", "%", lo_row[metric], PALETTE["ink2"],
+            kpi_card("Lowest value", f"{lo_row[metric]:.1f}", "%", lo_row[metric], PALETTE["ink2"],
                      f"<b>{esc(lo_row['Group'])}</b>"),
             kpi_card("Gap between groups", f"{gap:.1f}", " pp", gap, PALETTE["sun"],
-                     "Larger than the sampling margin" if clear else "Within the sampling margin"),
+                     "Exceeds combined illustrative margin" if clear else "Within combined illustrative margin"),
             kpi_card("Groups compared", f"{count}", "", 100, "#5FB8AB",
                      f"{total:,.0f} respondents across groups"),
         ]),
     )
     st.markdown("")
+    st.caption(
+        f"Highest and lowest refer to the displayed indicator value, not an overall group ranking. "
+        f"{value_direction} These are national group summaries, not district-by-group estimates."
+    )
     _controls(indicators)
     if mode == "Combined":
-        nbr_chip = {
-            "Gender": ("nbr", "Reported by NBR for some measures, in NBR's own units"),
-            "Age group": ("none", "NBR reports Youth / Non-Youth only, which does not map to these age groups"),
-            "Education": ("none", "NBR has no education breakdown"),
-            "Area": ("none", "NBR has no urban / rural breakdown"),
-        }.get(group_type, ("none", "No NBR breakdown for this group type"))
-        st.markdown("")
-        render_html(coverage_html([("fs", f"{group_type} groups · all indicators"), nbr_chip]))
+        for line in (
+            missing_indicator_note(REGISTRY, frame, "population-group"),
+            routed_note(item["variable"]),
+        ):
+            if line:
+                render_html(f'<div class="micro">{esc(line)}</div>')
     st.markdown("")
 
     # ---- Spread ------------------------------------------------------------------
@@ -204,16 +289,36 @@ def render_population_groups():
                    "gap between the highest and the lowest.")
         st.plotly_chart(_spread_figure(subset, metric, item), use_container_width=True,
                         key="population_groups_spread", config={"displayModeBar": False})
-        verdict = (badge("The gap is larger than the combined sampling margin", "ok") if clear
-                   else badge("The gap is within the combined sampling margin: treat it as uncertain", "warn"))
+        verdict = (badge("Observed gap exceeds the combined illustrative margin", "info") if clear
+                   else badge("Gap is within the combined illustrative margin", "warn"))
         render_html(f'<div class="micro" style="margin-top:0">{verdict} Combined indicative margin '
-                    f"of the two extreme groups: ±{combined:.1f} pp (simple random sampling; the true margin is larger).</div>")
+                    f"of the two extreme groups: ±{combined:.1f} pp (simple-random-sample approximation only; "
+                    "not a formal test of the group difference because the survey design is unavailable. "
+                    "The margin is an interpretation aid, not evidence that the observed difference is significant.</div>")
+        if mode == "Combined":
+            render_recommendations(group_recommendations(
+                group_type=group_type,
+                indicator=item["label"].lower(),
+                high_group=str(hi_row["Group"]),
+                low_group=str(lo_row["Group"]),
+                gap_pp=gap,
+                exceeds_margin=bool(clear),
+                small_groups=[str(r["Group"]) for _, r in subset.iterrows()
+                              if data.margin_flag(r["Valid respondents"]) == "wide"],
+                gender_states=(
+                    {g: state for g, (_, _, state) in gender_context.items()}
+                    if group_type == "Gender" else None
+                ),
+            ), title="What these results support")
     st.markdown("")
 
     # ---- Group by group --------------------------------------------------------------
     order_note = "in natural order" if group_type in ORDINAL else "from highest to lowest"
     section_title("Group by group", f"{item['label']}, {order_note}.")
     render_html(_group_cards(shown, metric, item, hi_row["Group"], lo_row["Group"]))
+    if mode == "Combined":
+        st.markdown("")
+        _render_group_context(group_type, item, shown["Group"].astype(str).tolist(), gender_context)
     st.markdown("")
 
     # ---- Bars + sample sizes -------------------------------------------------------------
@@ -224,8 +329,8 @@ def render_population_groups():
     with left:
         with st.container(key="card_group_compare"):
             card_title(f"{item['label']} by {group_type.lower()}",
-                       "Whiskers show the indicative 95% sampling margin. Differences describe the observed gap "
-                       "and do not establish causation.")
+                       "Whiskers show an indicative simple-random-sample margin, not a design-correct confidence "
+                       "interval. Differences are descriptive and do not establish significance or causation.")
             margins = [data.moe_pp(v, n) for v, n in zip(shown[metric], shown["Valid respondents"])]
             fig = go.Figure(go.Bar(
                 x=shown[metric], y=shown["Group"], orientation="h", marker=dict(color=item["accent"]),
@@ -242,10 +347,6 @@ def render_population_groups():
             st.plotly_chart(style_chart(fig, height, margin=dict(l=4, r=40, t=8, b=4)),
                             use_container_width=True, key="population_groups_chart",
                             config={"displayModeBar": False})
-            small = [str(r["Group"]) for _, r in subset.iterrows() if data.margin_flag(r["Valid respondents"]) == "wide"]
-            if small:
-                render_html('<div class="micro" style="margin-top:0">'
-                            + badge("Small sample", "warn") + f" {esc(', '.join(small))}: indicative only.</div>")
 
     with right:
         with st.container(key="card_group_sizes"):
@@ -280,7 +381,7 @@ def render_population_groups():
         with st.container(key="card_group_matrix"):
             card_title(f"Every indicator by {group_type.lower()}",
                        "Shading compares groups within each column, so the darkest cell marks the highest "
-                       "group for that indicator.")
+                       "value; whether that is favourable depends on the indicator.")
             norm = real.copy()
             for j in range(norm.shape[1]):
                 col = norm[:, j]
@@ -324,7 +425,9 @@ def render_population_groups():
 
     # ---- Table -----------------------------------------------------------------------------
     with st.container(key="card_group_table"):
-        card_title("Detailed results", "Every indicator for each group, with the sampling margin for the selected indicator.")
+        card_title("Detailed results",
+                   "Every indicator for each group. The selected-indicator margin is an illustrative "
+                   "simple-random-sample calculation, not a design-correct uncertainty interval.")
         table = shown[["Group", "Valid respondents"]].copy()
         table["Margin (±pp)"] = [round(data.moe_pp(v, n), 1) for v, n in zip(shown[metric], shown["Valid respondents"])]
         for it in items:
@@ -345,27 +448,20 @@ def render_population_groups():
                            file_name=f"population_groups_{group_type.lower().replace(' ', '_')}.csv",
                            mime="text/csv", key="population_groups_download", icon=":material/download:")
     st.markdown("")
-    if mode == "Combined" and group_type == "Gender":
-        with st.container(key="card_group_nbr"):
-            card_title("NBR context by gender",
-                       "Related NBR series for each group, in NBR's own units. "
-                       "Not comparable with the FinScope percentages above.")
-            names = shown["Group"].astype(str).tolist()
-            for tab, subgroup in zip(st.tabs(names), names):
-                with tab:
-                    render_combined_context(item["variable"], subgroup_type="Gender",
-                                            subgroup=subgroup)
-    st.markdown("")
 
-    page_footnotes(
-        [
-            ("About this indicator", item["interpretation"]),
-            ("Survey margins", "Percentages are weighted survey estimates; respondent counts are unweighted. Margins "
-                               "are indicative (simple random sampling) and understate design-based uncertainty. "
-                               "Differences do not establish causation."),
-            ("Source coverage", "Education is FinScope-only. NBR context appears only where NBR reports the same "
-                                "group for the selected measure, and is never merged with these estimates.")
-            if mode == "Combined" else None,
-        ],
-        source="Sources: FinScope Rwanda 2024; National Bank of Rwanda Financial Inclusion Dashboard.",
-    )
+    note("About this indicator", item["interpretation"])
+    wide = [str(r["Group"]) for _, r in subset.iterrows() if data.margin_flag(r["Valid respondents"]) == "wide"]
+    if wide:
+        st.markdown("")
+        note("Read small groups with care",
+             f"{', '.join(wide)} {'has' if len(wide) == 1 else 'have'} a small number of respondents, so the "
+             "estimate is indicative only. Interpret differences involving these groups with additional caution.",
+             tone="warn")
+    render_html('<div class="src-note">Source: FinScope Rwanda 2024. Percentages are weighted survey estimates; '
+                "respondent counts are unweighted valid sample sizes. Margins are indicative (simple random "
+                "sampling) and understate design-based uncertainty. "
+                + ("NBR context, where shown, is a separate administrative source that is never combined with "
+                   "these estimates; Age group, Education and Area are FinScope-only. "
+                   if mode == "Combined" else
+                   "NBR context is not combined with these estimates; Education is FinScope-only. ")
+                + "Differences alone do not establish causation.</div>")
