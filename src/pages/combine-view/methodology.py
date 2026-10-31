@@ -3,16 +3,20 @@ import streamlit as st
 
 from src import data, validation
 from src.indicators import CORE, PRIORITY_CANDIDATES, REGISTRY
+from src.pages.combined_support import (
+    STATE_TITLES,
+    contextual_variables,
+    header_pill,
+    mapping_rows,
+)
 from src.styles import (
     PALETTE,
     badge,
     card_title,
     esc,
-    mode_pill,
     note,
     page_header,
     render_html,
-    section_title,
 )
 
 SECTIONS = [
@@ -55,8 +59,18 @@ def _fact(label, value, src, accent, size=34):
     </div>"""
 
 
-def _toc():
-    links = "".join(f'<a href="#{a}"><b>{i}</b>{esc(t)}</a>' for i, (a, t) in enumerate(SECTIONS, start=1))
+COMBINED_SECTION = ("sec-combined", "Using both sources")
+
+
+def _sections(combined):
+    """Section list; Combined mode adds one section after the data source."""
+    if not combined:
+        return list(SECTIONS)
+    return [SECTIONS[0], COMBINED_SECTION, *SECTIONS[1:]]
+
+
+def _toc(sections=SECTIONS):
+    links = "".join(f'<a href="#{a}"><b>{i}</b>{esc(t)}</a>' for i, (a, t) in enumerate(sections, start=1))
     render_html(f'<div class="toc">{links}</div>')
 
 
@@ -90,45 +104,86 @@ def _checks_panel(results):
     render_html(rows)
 
 
-def _two_sources():
-    """Combined mode: how the survey and the administrative data differ and how each is used."""
-    section_title("How the two sources fit together",
-                  "They describe different things. They are shown side by side and never merged into one number.")
-    rows = [
-        ("What it is",
-         "A nationally representative household survey of adults, produced by Access to Finance Rwanda with NISR.",
-         "Administrative reports from regulated providers (banks, microfinance institutions, SACCOs, insurers and "
-         "e-money issuers) collected through the National Bank of Rwanda."),
-        ("What a number means",
-         "A weighted share of adults (%) who report a product or behaviour.",
-         "A count or volume recorded by providers, in the unit NBR reports it."),
-        ("Time",
-         "One survey round, 2024. Not updated.",
-         "Reporting dates as published by NBR. Some series have few or irregular dates; gaps are never filled in."),
-        ("Places and groups",
-         "30 districts; gender, age group, education and urban / rural.",
-         "Only where NBR reports them here: district and national levels, gender and Youth / Non-Youth for some "
-         "measures. No education or urban / rural breakdown."),
-        ("How this tool uses it",
-         "Source of every percentage, ranking and priority score.",
-         "Context beside related survey measures. Never added to, subtracted from or used to score them."),
-    ]
-    body = "".join(f"<tr><td><b>{esc(a)}</b></td><td>{esc(b)}</td><td>{esc(c)}</td></tr>" for a, b, c in rows)
-    with st.container(key="card_two_sources"):
-        render_html(
-            '<table class="cmp two-src"><thead><tr><th></th><th class="fs">FinScope survey</th>'
-            f'<th class="nbr">NBR administrative data</th></tr></thead><tbody>{body}</tbody></table>'
-            '<div class="micro">NBR Financial Inclusion Dashboard: fininclusion.bnr.rw · '
-            "FinScope Rwanda 2024: statistics.gov.rw</div>")
+_STATE_MEANING = {
+    "available": "An approved NBR series has observations for the selected geography and filters.",
+    "no_counterpart": "No approved NBR series is relevant to this FinScope indicator.",
+    "not_approved": "Only proxy series with unresolved definitions exist, so none is displayed.",
+    "level_unsupported": "Approved NBR context exists at another geographic level only.",
+    "scope_unsupported": "NBR does not cover the dimension, for example education or urban/rural area.",
+    "no_observation": "A series is approved but nothing is recorded for this geography or filter; missing is not zero.",
+    "load_error": "The NBR source could not be read; FinScope values are unaffected.",
+}
+
+_DIMENSIONS = [
+    ("National", "Yes", "Yes", "Both sources reported separately, with their own units and dates."),
+    ("District", "Yes", "Yes, for some series", "NBR peer comparisons use the same metric, filters and reporting date."),
+    ("Gender", "Yes", "Only exact observed Gender filters", "Shown when NBR stores that exact category for the metric."),
+    ("Age group", "Yes", "No equivalent", "NBR Youth and Non-Youth are not crosswalked to FinScope age groups."),
+    ("Education", "Yes", "No", "NBR has no education breakdown; no comparison is made."),
+    ("Urban/rural area", "Yes", "No", "NBR has no urban/rural breakdown; no comparison is made."),
+]
+
+
+def _render_combined_methodology():
+    from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
+
+    render_html("""
+        <div class="mgrid">
+          <div class="mcard"><div class="mc-t">FinScope: people's reported behaviour</div>
+            <p class="mc-p">A weighted household survey of Rwanda residents aged 16 and over (weight
+            <span class="code" style="margin:0">pop_wt</span>). It describes what people report about access, use and
+            experience, with sampling uncertainty. Values are percentages.</p></div>
+          <div class="mcard"><div class="mc-t">NBR: recorded financial-system activity</div>
+            <p class="mc-p">Administrative observations kept with the unit, filters and reporting date given by the
+            source, for example a count of branches. They describe what institutions recorded, not what people
+            report, and they are not rates of ownership or use.</p></div>
+          <div class="mcard"><div class="mc-t">What a mapping means</div>
+            <p class="mc-p">An approved mapping says an NBR series is thematically relevant to a survey indicator.
+            It does not make the two equivalent, and neither source validates, explains or predicts the other.</p></div>
+        </div>""")
     st.markdown("")
+    with st.container(key="card_combined_mapping"):
+        card_title(
+            "Approved relationships between survey indicators and NBR series",
+            "Read from the project configuration. Only relationships marked as contextual are ever shown on a page.",
+        )
+        rows = mapping_rows(MAPPING_BY_VARIABLE, REGISTRY)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True,
+                     height=min(480, 44 + 36 * len(rows)))
+    st.markdown("")
+    left, right = st.columns([1, 1], gap="medium")
+    with left:
+        with st.container(key="card_combined_dimensions"):
+            card_title("Where each source can be used", "By geography and population dimension.")
+            body = "".join(
+                f"<tr><td><b>{esc(d)}</b></td><td>{esc(fs)}</td><td>{esc(nbr)}</td><td>{esc(why)}</td></tr>"
+                for d, fs, nbr, why in _DIMENSIONS
+            )
+            render_html(f'<table class="cmp"><tr><th>Dimension</th><th>FinScope</th><th>NBR</th><th>How it is handled</th></tr>{body}</table>')
+    with right:
+        with st.container(key="card_combined_states"):
+            card_title("When NBR context is not shown", "Each case is named instead of left blank.")
+            body = "".join(
+                f"<tr><td><b>{esc(STATE_TITLES[k])}</b></td><td>{esc(v)}</td></tr>"
+                for k, v in _STATE_MEANING.items()
+            )
+            render_html(f'<table class="cmp"><tr><th>State</th><th>Meaning</th></tr>{body}</table>')
+    st.markdown("")
+    note(
+        "What Combined mode never does",
+        "It does not subtract, divide, correlate or score across the two sources, treat an administrative count "
+        "as a survey rate, fill missing observations with zero, or build a continuous history across missing dates. "
+        "The priority score uses FinScope only; NBR context is reference material beside it.",
+        tone="warn",
+    )
 
 
 def render_methodology():
     from src.pages.nbr_dashboard import current_mode, render_methodology_mode_note
 
     mode = current_mode()
-    if mode != "Combined":
-        render_methodology_mode_note()
+    combined = mode == "Combined"
+    render_methodology_mode_note()
     try:
         definitions = load_definitions()
     except (OSError, ValueError):
@@ -137,27 +192,36 @@ def render_methodology():
     counts = validation.summarize(results)
     total_checks = sum(counts.values())
 
+    n_context = 0
+    if combined:
+        from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE as _MAPPING
+
+        n_context = len(set(contextual_variables(_MAPPING)) & {i["variable"] for i in REGISTRY})
+
     facts = "".join([
         _fact("Survey", "2024", "FinScope Rwanda · NISR", PALETTE["teal"], 42),
         _fact("Estimates", "Weighted", 'Individual survey weight <span class="code" style="margin:0">pop_wt</span>',
               PALETTE["blue"], 32),
         _fact("Indicators documented", f"{len(REGISTRY)}",
-              f"{len(CORE)} core and {len(REGISTRY) - len(CORE)} supporting", PALETTE["amber"], 42),
+              f"{len(CORE)} core and {len(REGISTRY) - len(CORE)} supporting"
+              + (f" · {n_context} with approved NBR context" if combined else ""), PALETTE["amber"], 42),
         _fact("Automated data checks", f"{counts['pass']}/{total_checks}",
               f"{counts['fail']} failed · {counts['warn']} notes to read", PALETTE["coral"], 42),
     ])
     page_header(
         "Methodology & sources",
-        "The data, calculations, assumptions, checks and limitations behind the Rwanda Financial Inclusion Gap Explorer.",
-        pill=mode_pill(mode), size="tall", mode=mode, below_html=f'<div class="kpi-grid">{facts}</div>')
+        "The data, calculations, assumptions, checks and limitations behind the Rwanda Financial Inclusion Gap Explorer."
+        + (" This view also explains how NBR administrative observations are used alongside the survey." if combined else ""),
+        pill=header_pill(mode, "FinScope Rwanda 2024"), mode=mode, size="tall",
+        below_html=f'<div class="kpi-grid">{facts}</div>')
     st.markdown("")
     render_html('<div class="sec"><div class="cs" style="margin:0 0 6px">Jump to a section</div></div>')
-    _toc()
-    if mode == "Combined":
-        _two_sources()
+    sections = _sections(combined)
+    number = {anchor: i for i, (anchor, _) in enumerate(sections, start=1)}
+    _toc(sections)
 
     # ---- 1. Data source -------------------------------------------------------
-    _section("sec-source", 1, "Data source", "Where the numbers come from and what they represent.")
+    _section("sec-source", number["sec-source"], "Data source", "Where the numbers come from and what they represent.")
     with st.container(key="card_method_source"):
         render_html("""
             <p class="mc-p" style="font-size:15.5px">The analysis uses <b>FinScope Rwanda 2024</b>, the national
@@ -171,9 +235,18 @@ def render_methodology():
               <span class="chip"><i style="border-color:#2F6DB5"></i>30 districts</span>
               <span class="chip"><i style="border-color:#E0A12F"></i>Not a live measurement</span>
             </div>""")
+        if combined:
+            render_html('''<p class="mc-p" style="margin-top:12px">Combined mode adds
+            <b>NBR administrative observations</b> as a separate, labelled source. They are never merged into the
+            survey estimates described below.</p>''')
+
+    if combined:
+        _section("sec-combined", number["sec-combined"], "Using both sources",
+                 "What each source measures, which relationships are approved, and where evidence is unavailable.")
+        _render_combined_methodology()
 
     # ---- 2. Indicators ---------------------------------------------------------------
-    _section("sec-indicators", 2, "Indicator definitions",
+    _section("sec-indicators", number["sec-indicators"], "Indicator definitions",
              "Four core indicators and four supporting indicators, all defined in one registry.")
     _indicator_cards()
     if definitions is not None:
@@ -187,7 +260,7 @@ def render_methodology():
                            "estimate instead.")
 
     # ---- 3. Weighted estimates -----------------------------------------------------------
-    _section("sec-weights", 3, "Weighted estimates", "How each percentage in the dashboard is calculated.")
+    _section("sec-weights", number["sec-weights"], "Weighted estimates", "How each percentage in the dashboard is calculated.")
     f_left, f_right = st.columns([1.35, 1], gap="medium")
     with f_left:
         with st.container(key="card_formula"):
@@ -211,7 +284,7 @@ def render_methodology():
               totals.</p></div>""")
 
     # ---- 4. Uncertainty ---------------------------------------------------------------------
-    _section("sec-uncertainty", 4, "Uncertainty and sampling margins",
+    _section("sec-uncertainty", number["sec-uncertainty"], "Uncertainty and sampling margins",
              "How much an estimate could move by chance, and what the dashboard does about it.")
     u_left, u_right = st.columns([1.2, 1], gap="medium")
     with u_left:
@@ -221,11 +294,12 @@ def render_methodology():
             st.latex(r"\text{margin} = 1.96\sqrt{\frac{d\,\hat{p}(1-\hat{p})}{n}}\times 100")
             render_html("""<p class="mc-p"><b>n</b> is the number of respondents, <b>p̂</b> the estimate and
               <b>d</b> a design-effect multiplier (1.0 unless the user selects a higher assumption). The survey's
-              strata and cluster identifiers are not in the supplied dataset, so the formula assumes simple random
-              sampling. The true design-based margin is therefore <b>larger</b>, and every margin shown is a
-              minimum.</p>
-              <p class="mc-p" style="margin-top:10px">Where a gap is smaller than the margin, the dashboard labels it
-              as within the margin and does not treat it as a real difference.</p>""")
+              strata and cluster identifiers are not in the supplied dataset. This illustrative binomial calculation
+              uses a simple-random-sample assumption and does not account for the full survey design or weighting
+              variance; actual design-based uncertainty may differ.</p>
+              <p class="mc-p" style="margin-top:10px">A margin comparison is an illustrative caution flag only.
+              It is not a confidence interval for the district-versus-national difference and does not establish
+              whether that difference is statistically meaningful.</p>""")
     with u_right:
         rows = "".join(
             f"<tr><td><b>{n:,}</b></td><td>±{data.moe_pp(20, n):.1f} pp</td><td>±{data.moe_pp(20, n, 2):.1f} pp</td>"
@@ -239,7 +313,7 @@ def render_methodology():
             ±{data.WIDE_MARGIN_PP:.0f} pp.</div></div>""")
 
     # ---- 5. Comparisons --------------------------------------------------------------------------
-    _section("sec-districts", 5, "District and group comparisons",
+    _section("sec-districts", number["sec-districts"], "District and group comparisons",
              "District estimates are compared with national estimates to flag differences that may warrant closer investigation.")
     render_html("""
         <div class="mgrid">
@@ -248,28 +322,30 @@ def render_methodology():
           <div class="mcard"><div class="mc-ic">↔</div><div class="mc-t">Gap is not spread</div>
             <p class="mc-p">A district's gap from the national estimate is not the same as the spread between the
             highest and lowest districts.</p></div>
-          <div class="mcard"><div class="mc-ic">±</div><div class="mc-t">Compare with the margin</div>
-            <p class="mc-p">A difference smaller than the indicative margin should not be read as real. Ranks of
-            neighbouring districts are often not meaningfully different.</p></div>
+          <div class="mcard"><div class="mc-ic">±</div><div class="mc-t">Margins are caution flags</div>
+            <p class="mc-p">Displayed margins use district sample sizes and a simple-random-sample approximation.
+            They are not confidence intervals for the district-versus-national difference and do not establish
+            statistical significance.</p></div>
           <div class="mcard"><div class="mc-ic">≈</div><div class="mc-t">Descriptive only</div>
             <p class="mc-p">Comparisons are descriptive and do not establish why a difference exists.</p></div>
         </div>""")
 
     # ---- 6. Priority scoring ------------------------------------------------------------------------
-    _section("sec-scoring", 6, "Priority Explorer scoring",
+    _section("sec-scoring", number["sec-scoring"], "Priority Explorer scoring",
              "An exploratory screening score, with checks on how much it depends on choices.")
     render_html("""
         <div class="pipe">
           <div class="step"><div class="step-n">1</div><div class="mc-t">Measure the gap</div>
-            <p class="mc-p">Compare each district with the national estimate, in the direction that signals a
-            need. Only positive gaps count.</p></div>
+            <p class="mc-p">Compare each district with the national survey estimate, a descriptive reference rather
+            than a policy target. Only positive gaps in the selected direction count.</p></div>
           <div class="step"><div class="step-n">2</div><div class="mc-t">Normalize</div>
-            <p class="mc-p">Scale each gap against the largest observed gap for that indicator.</p></div>
+            <p class="mc-p">Scale each gap against the largest observed district gap for that indicator.</p></div>
           <div class="step"><div class="step-n">3</div><div class="mc-t">Average</div>
-            <p class="mc-p">The chosen components receive equal weight in the score (0 to 100).</p></div>
+            <p class="mc-p">The fixed baseline equally weights four indicators across access/use and resilience.
+            What-if scenarios equally weight their selected indicators. Scores are relative points, not percentages.</p></div>
           <div class="step"><div class="step-n">4</div><div class="mc-t">Test the choices</div>
             <p class="mc-p">Recompute the rank under every combination of two or more indicators and report how
-            stable each district's rank is.</p></div>
+            sensitive each district's position is to indicator choice. This is not a probability or confidence interval.</p></div>
         </div>""")
     st.markdown("")
     cards = "".join(f"""
@@ -282,11 +358,15 @@ def render_methodology():
     render_html(f'<div class="mgrid">{cards}</div>')
     st.markdown("")
     note("A relative screening measure",
-         "The priority score is an exploratory, relative screening measure. It is not an official poverty index, "
-         "a probability, or a measure of the number of people in need.", tone="info")
+         "The fixed baseline combines access/use (bank-account ownership and registered mobile-money use) with "
+         "resilience (not saving and emergency funds). The national survey estimate is a descriptive comparator, "
+         "not a policy target. Scores are exploratory relative points—not an official poverty index, probability, "
+         "absolute population need, or estimate of investment returns. Use them to identify where to investigate; "
+         "assess population reach, service availability, costs, intervention suitability, and current local context "
+         "separately before allocating investment.", tone="warn")
 
     # ---- 7. Barriers & group use ------------------------------------------------------------------------
-    _section("sec-barriers", 7, "Barriers and community channels",
+    _section("sec-barriers", number["sec-barriers"], "Barriers and community channels",
              "How the bank-account barriers and the SACCO and savings-group indicators are built.")
     b_left, b_right = st.columns([1.2, 1], gap="medium")
     with b_left:
@@ -312,7 +392,7 @@ def render_methodology():
               group' (a provider-use question) are different measures and give different national figures.</p></div>""")
 
     # ---- 8. Data quality ---------------------------------------------------------------------------------------
-    _section("sec-quality", 8, "Data quality and measurement notes",
+    _section("sec-quality", number["sec-quality"], "Data quality and measurement notes",
              "Automated checks run each time this page loads, and as tests before release.")
     with st.container(key="card_checks"):
         card_title("Automated data checks", "Every check reads the processed files used by the dashboard.")
@@ -347,14 +427,18 @@ def render_methodology():
                          use_container_width=True, hide_index=True)
 
     # ---- 9. Limitations -------------------------------------------------------------------------------------------
-    _section("sec-limits", 9, "Limitations", "What these results cannot tell you.")
+    _section("sec-limits", number["sec-limits"], "Limitations", "What these results cannot tell you.")
     limitations = [
         ("Not a live picture", "FinScope 2024 does not provide a live picture of financial inclusion."),
         ("Survey uncertainty", "Survey estimates may be affected by sampling and measurement uncertainty."),
-        ("Margins are minimums", "The dataset lacks the survey-design information (strata and clusters) needed "
-         "for design-correct confidence intervals, so the margins shown assume simple random sampling and understate "
-         "true uncertainty. Formal significance testing is not claimed."),
+        ("Margins are not a difference test", "The dataset lacks the survey-design information (strata and clusters) "
+         "needed for design-correct uncertainty. Displayed district-only margins are illustrative caution flags, "
+         "not confidence intervals for comparisons with the national estimate. Formal significance testing is not claimed."),
         ("Smaller samples", "District and group estimates are less stable when based on fewer respondents."),
+        ("Population reach and investment", "Respondent counts are survey sample sizes, not the number of people "
+         "who could benefit from investment. The dashboard does not estimate district population reach, costs, or "
+         "returns. Before allocating funds, combine the screening with current population, service availability, "
+         "intervention-eligibility data, and local validation."),
         ("No causation", "Differences between groups do not establish causation."),
         ("Mobile-money definition", "The mobile-money indicator is stricter than the published registered-wallet "
          "headline and should not be compared with it directly."),
@@ -363,6 +447,19 @@ def render_methodology():
         ("External data", "External indicators, if added later, must have their own dates, sources, geographic "
          "coverage, and definitions documented."),
     ]
+    if combined:
+        limitations += [
+            ("NBR counts are not rates", "Administrative counts describe recorded activity. They do not give the "
+             "share of people who own, use or can reach a service, and say nothing about who is missing."),
+            ("NBR units and filters", "Each NBR series keeps the unit and filters stored with the source; where the "
+             "source gives no unit, the page says so rather than inferring one."),
+            ("Missing is not zero", "A district or date without an NBR observation is unknown. It is never shown "
+             "as zero or filled from neighbouring dates."),
+            ("Demographic coverage", "NBR has no education or urban/rural breakdown, and its Youth and Non-Youth "
+             "categories are not matched to survey age groups. Only exact observed Gender categories are used."),
+            ("Experimental administrative data", "NBR observations are marked beta; unusual-observation signals "
+             "are review prompts, not findings of exclusion or causation."),
+        ]
     try:
         missing_ur = [i["short"] for i in REGISTRY if i["column"] not in data.read_urban_rural().columns]
         missing_pg = [i["short"] for i in REGISTRY if i["column"] not in data.read_population_groups().columns]
@@ -377,7 +474,7 @@ def render_methodology():
     render_html(f'<div class="mgrid">{cards}</div>')
 
     # ---- 10. Sources -----------------------------------------------------------------------------------------------
-    _section("sec-sources", 10, "Sources and reproducibility", "Citation, files, and how to reproduce the results.")
+    _section("sec-sources", number["sec-sources"], "Sources and reproducibility", "Citation, files, and how to reproduce the results.")
     with st.container(key="card_method_sources"):
         render_html("""
             <div class="ct" style="font-size:17px;margin:0 0 8px">Data citation</div>

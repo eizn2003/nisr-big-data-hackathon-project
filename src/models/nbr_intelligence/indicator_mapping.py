@@ -14,6 +14,18 @@ FINSCOPE_REFERENCE_PERIOD = "FinScope Rwanda 2024"
 FINSCOPE_POPULATION = "Rwanda residents aged 16 years and older"
 FINSCOPE_WEIGHT = "pop_wt"
 
+#: Relationships that are configured as contextual but intentionally NOT shown in
+#: Combined mode, keyed by (FinScope variable, NBR page). The approved source mapping
+#: is left untouched; this only records the display decision and why, so the loader,
+#: the evidence-state classifier and the Methodology page all read one declaration.
+SUPPRESSED_RELATIONSHIPS = {
+    ("g3a_11", "branches"): (
+        "SACCO branches describe cooperative infrastructure. They are not an approved "
+        "proxy for saving with a group (which also covers VSLAs, tontines and ikibina), "
+        "so this series is intentionally not shown."
+    ),
+}
+
 _STATA_LABELS = {
     "k1": "K1.  you have a bank account in your name?",
     "f5": "F5. Which of the following statements best describes your experience with mobile",
@@ -55,6 +67,10 @@ def build_indicator_mapping() -> list[dict[str, Any]]:
             "existing_mapping_status": mapping.status,
             "relevance": mapping.relevance,
             "limitations": mapping.limitations,
+            "suppressed": (mapping.indicator_variable, mapping.page_id) in SUPPRESSED_RELATIONSHIPS,
+            "suppression_reason": SUPPRESSED_RELATIONSHIPS.get(
+                (mapping.indicator_variable, mapping.page_id), ""
+            ),
             "unit_policy": (
                 "Retain the NBR source label and unit metadata. Customer/count "
                 "uniqueness and KPI denominators are not inferred."
