@@ -30,12 +30,12 @@ The project primarily uses the FinScope Rwanda 2024 survey dataset to calculate 
 
 The platform incorporates several analytical capabilities, including:
 
-- **National Overview:** Presents key financial inclusion indicators and national-level statistics to provide an overview of the country's financial inclusion landscape.
-- **District Explorer:** Enables users to compare financial inclusion indicators across Rwanda's 30 districts using interactive visualizations, tables, and geographical maps.
-- **Population Groups:** Examines differences in financial inclusion across demographic and geographical population groups.
-- **Priority Explorer:** Provides an exploratory screening mechanism that compares district-level indicators against national estimates and examines the stability of district rankings under different indicator combinations.
-- **Policy Alignment:** Presents selected survey findings alongside relevant policy references to help users understand their potential policy relevance.
-- **Methodology and Sources:** Explains indicator definitions, data processing, weighting approaches, data sources, and analytical limitations.
+- **National Overview:** Shows the national financial-inclusion picture and highlights how district, urban-rural, service-use, and reported-barrier patterns can differ behind the national headline.
+- **District Explorer:** Lets users compare selected indicators across Rwanda's districts and with national estimates, helping reveal local gaps that national averages can hide.
+- **Population Groups:** Compares available survey indicators across gender, age, education, and urban-rural groups to show how reported access and financial resilience differ.
+- **Priority Explorer:** Screens for districts with relatively larger gaps across a fixed four-indicator baseline, explains the score's drivers, and lets users test how rankings change in what-if scenarios. The score is a comparison aid, not a count of people in need or an investment decision.
+- **Policy Alignment:** Connects selected findings to national priorities and presents questions for further investigation; it does not prescribe interventions or decide where funding should go.
+- **Methodology and Sources:** Explains how indicators and comparisons are produced, where the data comes from, and what limitations users should consider.
 
 In addition to the FinScope survey analysis, the platform incorporates a separate data collection and analysis component based on publicly accessible National Bank of Rwanda (BNR) financial inclusion dashboard information. This component uses browser automation to collect selected administrative indicators, which are stored and managed separately for subsequent analysis and visualization.
 
@@ -476,47 +476,43 @@ The dashboard contains several components with distinct responsibilities.
 
 ### National Overview
 
-The National Overview presents high-level financial inclusion information and selected administrative evidence.
+The National Overview shows the national financial-inclusion picture and selected administrative context. It helps users see how a high national estimate can coexist with differences across districts, urban and rural areas, services, and reported barriers.
 
-It provides a starting point for examining national patterns and understanding what the available survey and administrative information indicates.
-
-The Combined National Overview also performs limited FinScope contextualization of eligible administrative observations. This does not mean every administrative indicator has a directly comparable survey equivalent.
+In Combined mode, the page provides limited contextualization between eligible FinScope findings and NBR administrative observations. The two sources remain distinct, and not every administrative indicator has a directly comparable survey measure.
 
 ### District Explorer
 
-The District Explorer provides geographical exploration of selected financial inclusion indicators.
+The District Explorer lets users examine selected financial inclusion indicators across Rwanda's 30 districts and compare a district's estimate with the national reference.
 
-It uses the district boundary GeoJSON and Plotly to display differences across Rwanda's 30 districts, allowing users to examine the geographical distribution of available indicators.
+Its map, indicator-specific comparisons, and available administrative context help users investigate local differences that can be hidden by national averages. The comparisons describe survey patterns; they do not establish why a gap exists or determine how resources should be allocated.
 
 ### Population Groups
 
-The Population Groups page supports comparisons across available demographic and residence categories, including gender, age, education and urban/rural residence.
+The Population Groups page compares available indicators across gender, age, education, and urban-rural categories. It helps users see how reported access, service use, saving, and resilience differ between groups nationally.
 
-The availability of a particular indicator depends on the processed breakdown files and the indicator's applicable denominator.
+These are descriptive group comparisons, not estimates for every group within every district. Indicator availability depends on the processed breakdown data and the applicable denominator.
 
 ### FinScope Priority Explorer
 
-The FinScope Priority Explorer is a descriptive statistical screening component.
+The FinScope Priority Explorer is a descriptive screening aid for finding districts with relatively larger gaps across selected access and resilience indicators.
 
-It compares district indicators with national estimates, normalizes directional gaps, combines selected indicators using equal weights and examines the stability of district rankings across different indicator combinations.
+Its fixed baseline combines four indicators using equal weights and compares district estimates with national references. Users can inspect the factors behind a score and test alternative indicator combinations; these what-if scenarios do not replace the baseline.
 
-The `build_scores` function implements the scoring logic.
-
-The resulting score is an exploratory screening measure. It is not an official poverty index, a definitive measure of financial need, a prediction of current district conditions or an automated policy recommendation.
+Scores are relative points, not percentages, beneficiary counts, definitive measures of need, predictions, or investment recommendations. The page supports further investigation; local evidence is needed before choosing an intervention.
 
 This component should also be distinguished from the experimental NBR anomaly-detection package described later in this section.
 
 ### Policy Alignment
 
-The Policy Alignment page connects selected survey findings with manually specified published policy values and policy references.
+The Policy Alignment page connects selected survey findings with published policy references and suggests questions that decision-makers and service providers can investigate.
 
-These references provide contextual interpretation but are not dynamically retrieved from policy APIs.
+It provides context, not proof of causes, predictions of demand, or instructions about where to invest. Findings should be validated locally before decisions are made.
 
 ### Methodology and Sources
 
-The Methodology and Sources page explains indicator definitions, source information, methodological decisions and relevant analytical limitations.
+The Methodology and Sources page explains what the indicators mean, how the data and comparisons are prepared, and where the information comes from.
 
-It supports transparency by making the underlying assumptions and qualifications more accessible to dashboard users.
+It also describes uncertainty, assumptions, and limitations so users can judge what the results support and what they do not.
 
 ## 3.8 Intelligent Model Architecture and Current Capabilities
 
@@ -842,35 +838,35 @@ The six implemented pages are:
 
 ### 4.2 National Overview
 
-The National Overview provides a high-level picture of financial inclusion in Rwanda. It introduces the main indicators and highlights important differences within the country.
+The National Overview shows the national financial-inclusion picture and helps explain why a strong national headline does not necessarily mean every district or community has the same experience.
 
-The page presents core FinScope indicators, including bank account ownership, mobile-money registration, borrowing, and saving status. It also provides urban-rural comparisons, summaries of district-level variation, and information about barriers to bank account ownership.
+The page presents core FinScope indicators, urban-rural comparisons, district-level variation, saving and resilience patterns, and reported barriers to bank-account ownership. Weighted population figures associated with reported barriers are not counts of potential beneficiaries.
 
-Users can use this page to understand national patterns and identify areas that may require further investigation. In Combined mode, selected NBR administrative observations are also presented as contextual information alongside the survey findings.
+Users can use these summaries to identify differences worth exploring further. In Combined mode, eligible NBR administrative observations may provide additional context, but they remain distinct from survey estimates.
 
 The page therefore serves as the starting point for exploring the country's financial inclusion landscape before moving into more detailed geographical or demographic analysis.
 
 ### 4.3 District Explorer
 
-The District Explorer enables users to investigate geographical differences in financial inclusion across Rwanda's 30 districts.
+The District Explorer enables users to investigate geographical differences across Rwanda's 30 districts and see how a selected district compares with the national estimate.
 
-Its main purpose is to reveal how selected indicators vary between districts and how individual districts compare with national estimates.
+The map, indicator-specific ranking, district details, and available NBR supply information help reveal local patterns that can be hidden by national averages.
 
 The page provides:
 - An interactive district-level map.
 - An indicator selection control.
-- District rankings and a summary table.
-- Comparisons against national benchmarks.
+- Indicator-specific comparisons and a district summary table.
+- Comparisons against national survey estimates.
 - Indicator descriptions and interpretation.
 - Map highlighting, hover information, and display options.
 
-By selecting an indicator, users can examine its distribution across districts and identify areas with relatively higher or lower values.
+For each indicator, higher or lower values can have different meanings. The page explains the indicator's direction so users can interpret the comparison rather than treat every high value as good or every district rank as an overall inclusion score.
 
-This makes it possible to investigate geographical disparities that may not be apparent from national averages alone. The displayed differences should, however, be interpreted as descriptive survey findings rather than explanations of why those differences exist.
+These descriptive comparisons can point to areas for further investigation, but they do not explain why a gap exists or establish that a difference is statistically significant.
 
 ### 4.4 Population Groups
 
-The Population Groups page focuses on differences in financial inclusion across demographic and residential categories.
+The Population Groups page compares available financial-inclusion indicators across demographic and residential categories at the national group level.
 
 Users can explore indicators across:
 - Gender.
@@ -880,35 +876,33 @@ Users can explore indicators across:
 
 The page presents percentage-based comparisons using the available processed population-group datasets. Users can select an indicator and examine how its values differ between the relevant groups.
 
-This analysis helps identify population segments that may experience different levels of access to or use of financial services.
+The comparisons help show how reported access, service use, and resilience vary between groups. They are descriptive summaries, not district-by-group estimates or evidence of what caused a difference. The displayed margins are illustrative guides, not formal significance tests.
 
 The availability of indicators depends on the columns present in the corresponding processed datasets. Consequently, not every registered indicator is necessarily available across every population-group breakdown.
 
 ### 4.5 Priority Explorer
 
-The Priority Explorer provides an exploratory approach to identifying districts that show relatively larger financial inclusion gaps compared with national benchmarks.
+The Priority Explorer helps screen for districts with relatively larger access and resilience gaps compared with national survey estimates.
 
-It uses selected candidate indicators to calculate a district-level priority score. The calculation considers the difference between district values and national estimates, applies directional gap logic, and combines the selected indicators using equal weights.
+The fixed baseline equally combines directional gaps for four indicators: bank-account ownership, registered mobile-money use, adults who do not save, and emergency funds. The page shows the baseline score and rank, the indicators contributing to a score, and how selected what-if scenarios may change district comparisons.
 
-Negative gaps are floored at zero so that districts performing above the national benchmark do not receive positive priority contributions from those indicators. The process also considers indicative sampling margins and examines how district rankings change across different indicator combinations.
+It also shows how stable rankings are across alternative indicator combinations and provides illustrative uncertainty context.
 
 Users can explore the Top 10, Top 15, or all districts and examine whether the resulting rankings remain stable or are sensitive to indicator selection.
 
-The resulting score is an exploratory screening measure. It is not an official poverty index, a definitive measure of financial exclusion, or an automated policy recommendation. Its purpose is to help users identify geographical differences that may deserve closer examination.
+Scores are relative comparison points—not percentages, probabilities, counts of people in need, or funding recommendations. They help users decide what may warrant closer investigation; they do not establish causes or investment reach.
 
 ### 4.6 Policy Alignment
 
-The Policy Alignment page connects selected financial inclusion findings with relevant national policy priorities and published policy references.
+The Policy Alignment page connects selected findings with national priorities and published policy references, and offers examples of questions stakeholders may investigate.
 
-It provides thematic explanations and worked examples showing how observed financial inclusion challenges relate to broader development objectives.
-
-The page is intended to help users interpret analytical findings within a policy context. It does not automatically determine which policies should be implemented, simulate policy outcomes, or retrieve policy information through an automated external policy service.
+It helps users consider the relevance of the evidence without claiming that the survey establishes causes, predicts demand, or decides which intervention or investment should be chosen. Local validation is needed before acting on a gap.
 
 Its role is to provide context for interpreting the evidence presented elsewhere in the dashboard.
 
 ### 4.7 Methodology and Sources
 
-The Methodology and Sources page explains how the dashboard's analytical results are produced and where the underlying information originates.
+The Methodology and Sources page explains what the dashboard's indicators mean, how its estimates and comparisons are produced, and where the information originates.
 
 It covers:
 - Survey weighting and the calculation of weighted estimates.
@@ -918,7 +912,7 @@ It covers:
 - Descriptions of the underlying data sources.
 - Methodological assumptions and analytical limitations.
 
-This page supports transparency by allowing users to understand how indicators are constructed and what limitations should be considered when interpreting the results.
+It also sets out uncertainty and limitations, helping users understand what conclusions the results can support and where caution is needed.
 
 ### 4.8 Analysis Mode
 

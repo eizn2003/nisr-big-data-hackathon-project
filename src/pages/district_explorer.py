@@ -203,7 +203,49 @@ def build_map(
     differences = df["diff"].to_numpy() if "diff" in df else [None] * len(df)
     customdata = list(zip(respondents, ranks, differences))
     n = len(df)
-    rank_label = "Gap rank" if cfg["polarity"] != "neutral" else "Value rank"
+    if nbr_style:
+        hovertemplate = (
+            "<b>%{location}</b><br>"
+            + esc(short)
+            + ": <b>%{z:,.4g}</b> "
+            + esc(value_unit or "unit not specified")
+            + "<br>Reporting date: "
+            + esc(hover_context.split("\n", 1)[0])
+            + "<br>Filters: "
+            + esc(hover_context.split("\n", 1)[1] if "\n" in hover_context else "")
+            + "<extra></extra>"
+        )
+        colorbar_title = f"{short} · {value_unit or 'unit not specified'}"
+        colorbar_suffix = ""
+        colorbar_tickformat = (
+            ",.0f" if str(value_unit).strip().casefold() == "count"
+            else ",.2~f"
+        )
+    elif national_est is None:
+        hovertemplate = (
+            "<b>%{location}</b><br>"
+            + esc(short)
+            + ": <b>%{z:,.4g}</b> "
+            + esc(value_unit or "unit not specified")
+            + "<br>Rank %{customdata[1]:.0f} of "
+            + str(n)
+            + "<extra></extra>"
+        )
+        colorbar_title = f"{short} · {value_unit or 'unit not specified'}"
+        colorbar_suffix = ""
+        colorbar_tickformat = None
+    else:
+        hovertemplate = (
+            "<b>%{location}</b><br>"
+            + short
+            + ": <b>%{z:.1f}%</b><br>"
+            + f"Rank %{{customdata[1]:.0f}} of {n} · "
+            + "%{customdata[2]:+.1f} pp vs national<br>"
+            + "%{customdata[0]:,.0f} respondents<extra></extra>"
+        )
+        colorbar_title = short
+        colorbar_suffix = "%"
+        colorbar_tickformat = None
 
     fig = go.Figure(
         Choropleth(
@@ -224,14 +266,7 @@ def build_map(
             selected=dict(marker=dict(opacity=settings["opacity"])),
             unselected=dict(marker=dict(opacity=settings["opacity"])),
             customdata=customdata,
-            hovertemplate=(
-                "<b>%{location}</b><br>"
-                + short
-                + ": <b>%{z:.1f}%</b><br>"
-                + f"{rank_label} %{{customdata[1]:.0f}} of {n} · "
-                + "%{customdata[2]:+.1f} pp vs national reference<br>"
-                + "%{customdata[0]:,.0f} unweighted respondents (n)<extra></extra>"
-            ),
+            hovertemplate=hovertemplate,
             colorbar=dict(
                 title=dict(text=colorbar_title, side="top", font=dict(size=11)),
                 orientation="h",
