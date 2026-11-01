@@ -27,7 +27,6 @@ HEAT_SCALE = ["#EAF6F3", "#9FD3CB", "#3AA597", "#17746A", "#0E2A35"]
 KEY_GROUP, KEY_IND = "population_groups_type", "population_groups_indicator"
 
 
-@st.cache_data
 def load_group_data():
     frame = load_population_group_results().observations
     needed = {"Group type", "Group", "Valid respondents"}

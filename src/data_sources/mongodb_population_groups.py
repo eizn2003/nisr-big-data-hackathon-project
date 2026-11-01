@@ -154,9 +154,9 @@ def build_population_group_results(
 
 def load_population_group_results() -> PopulationGroupResults:
     """Load the established processed FinScope table through the project loader."""
-    from src.data import read_population_groups
+    from src.data import load_population_groups
 
-    return build_population_group_results(read_population_groups())
+    return build_population_group_results(load_population_groups())
 
 
 def query_population_groups(

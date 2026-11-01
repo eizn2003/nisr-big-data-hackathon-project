@@ -26,6 +26,19 @@ def _csv(name, required=True):
     return pd.read_csv(path)
 
 
+def _file_revision(*names):
+    revision = []
+    for name in names:
+        path = DATA_DIR / name
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            revision.append((str(path.resolve()), None, None))
+        else:
+            revision.append((str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+    return tuple(revision)
+
+
 # --------------------------------------------------------------------------
 # Plain loaders
 # --------------------------------------------------------------------------
@@ -93,9 +106,36 @@ def read_geojson():
 # Cached wrappers for pages
 # --------------------------------------------------------------------------
 load_national = st.cache_data(read_national)
-load_district = st.cache_data(read_district)
+
+
+@st.cache_data
+def _cached_district(source_revision):
+    return read_district()
+
+
+def load_district():
+    return _cached_district(
+        _file_revision(
+            "district_financial_inclusion.csv",
+            "district_extended_indicators.csv",
+        )
+    )
+
+
 load_urban_rural = st.cache_data(read_urban_rural)
-load_population_groups = st.cache_data(read_population_groups)
+
+
+@st.cache_data
+def _cached_population_groups(source_revision):
+    return read_population_groups()
+
+
+def load_population_groups():
+    return _cached_population_groups(
+        _file_revision("population_group_indicators.csv")
+    )
+
+
 load_barriers_national = st.cache_data(read_barriers_national)
 load_barriers_district = st.cache_data(read_barriers_district)
 load_definitions = st.cache_data(read_definitions)

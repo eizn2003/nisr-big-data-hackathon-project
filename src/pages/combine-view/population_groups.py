@@ -45,7 +45,6 @@ def _open_district_evidence(indicator):
     st.session_state["selected_page"] = "District explorer"
 
 
-@st.cache_data
 def load_group_data():
     frame = load_population_group_results().observations
     needed = {"Group type", "Group", "Valid respondents"}

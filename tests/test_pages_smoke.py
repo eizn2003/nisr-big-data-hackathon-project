@@ -477,12 +477,10 @@ def test_population_hero_matches_source():
         "import src.pages.population_groups as page\n"
         "_original_loader = page.load_population_group_results\n"
         f"page.load_population_group_results = lambda: SimpleNamespace(observations=pd.read_csv(r'{population_data}'))\n"
-        "page.load_group_data.clear()\n"
         "try:\n"
         "    page.render_population_groups()\n"
         "finally:\n"
         "    page.load_population_group_results = _original_loader\n"
-        "    page.load_group_data.clear()\n"
     )
     at = AppTest.from_string(script, default_timeout=90).run()
     at.session_state["population_groups_type"] = "Gender"
