@@ -242,6 +242,14 @@ def current_mode() -> str:
     return mode if mode in MODES else DEFAULT_MODE
 
 
+def render_national_overview() -> None:
+    from importlib import import_module
+
+    import_module(
+        "src.pages.combine-view.national_overview"
+    ).render_national_overview()
+
+
 def render_mode_selector() -> None:
     if MODE_KEY not in st.session_state:
         st.session_state[MODE_KEY] = DEFAULT_MODE

@@ -9,6 +9,7 @@ from pymongo.errors import PyMongoError
 
 from src import data
 from src.indicators import BY_COLUMN, CORE, REGISTRY
+from src.pages.barrier_charts import district_family_figure
 from src.pages.combined_support import (
     STATE_AVAILABLE,
     context_state_html,
@@ -434,39 +435,6 @@ def _district_barrier_stack(district_barriers):
     )
     fig.update_yaxes(title=None, showgrid=False, tickfont=dict(size=11))
     return style_chart(fig, 780, margin=dict(l=4, r=30, t=34, b=4))
-
-
-def _district_family_figure(rows):
-    fam = data.barrier_family_shares(rows).set_index("Barrier family")[
-        "Weighted share (%)"
-    ]
-    fam = fam.reindex(data.BARRIER_FAMILY_ORDER).dropna().sort_values(ascending=True)
-    fig = go.Figure(
-        go.Bar(
-            x=fam.values,
-            y=fam.index,
-            orientation="h",
-            marker=dict(color=[data.BARRIER_FAMILY_COLORS[f] for f in fam.index]),
-            text=fam.values,
-            texttemplate="%{text:.1f}%",
-            textposition="outside",
-            textfont=dict(size=12, color=PALETTE["ink"]),
-            cliponaxis=False,
-            hovertemplate="<b>%{y}</b><br>%{x:.2f}%<extra></extra>",
-        )
-    )
-    fig.update_layout(bargap=0.3)
-    fig.update_xaxes(
-        range=[0, 100],
-        ticksuffix="%",
-        title=None,
-        gridcolor=PALETTE["grid"],
-        zeroline=False,
-    )
-    fig.update_yaxes(
-        title=None, showgrid=False, automargin=True, tickfont=dict(size=12)
-    )
-    return style_chart(fig, 330, margin=dict(l=4, r=40, t=8, b=4))
 
 
 # --------------------------------------------------------------------------
@@ -1288,7 +1256,7 @@ def render_national_overview():
                             "Weighted shares grouped by barrier family.",
                         )
                         st.plotly_chart(
-                            _district_family_figure(rows),
+                            district_family_figure(rows),
                             use_container_width=True,
                             key="ov_district_barriers_chart",
                             config={"displayModeBar": False},

@@ -8,7 +8,7 @@ import streamlit as st
 from src import data
 from src.briefs import district_brief
 from src.indicators import BY_COLUMN, BY_NATIONAL, PRIORITY_CANDIDATES
-from src.pages.national_overview import _district_family_figure
+from src.pages.barrier_charts import district_family_figure
 from src.styles import (
     PALETTE,
     badge,
@@ -422,7 +422,7 @@ def render_priority_explorer():
                     "constraint, product design and livelihoods may matter more than branch coverage. Read as an "
                     "indication, not a causal diagnosis.</div>")
             with b2:
-                st.plotly_chart(_district_family_figure(rows), use_container_width=True,
+                st.plotly_chart(district_family_figure(rows), use_container_width=True,
                                 key="priority_barrier_chart", config={"displayModeBar": False})
         st.markdown("")
 
