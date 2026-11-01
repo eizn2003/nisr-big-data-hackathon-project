@@ -14,17 +14,10 @@ FINSCOPE_REFERENCE_PERIOD = "FinScope Rwanda 2024"
 FINSCOPE_POPULATION = "Rwanda residents aged 16 years and older"
 FINSCOPE_WEIGHT = "pop_wt"
 
-#: Relationships that are configured as contextual but intentionally NOT shown in
-#: Combined mode, keyed by (FinScope variable, NBR page). The approved source mapping
-#: is left untouched; this only records the display decision and why, so the loader,
-#: the evidence-state classifier and the Methodology page all read one declaration.
-SUPPRESSED_RELATIONSHIPS = {
-    ("g3a_11", "branches"): (
-        "SACCO branches describe cooperative infrastructure. They are not an approved "
-        "proxy for saving with a group (which also covers VSLAs, tontines and ikibina), "
-        "so this series is intentionally not shown."
-    ),
-}
+DISPLAYABLE_RELATIONSHIPS = frozenset({
+    "contextual_indicator",
+    "conditional_contextual_indicator",
+})
 
 _STATA_LABELS = {
     "k1": "K1.  you have a bank account in your name?",
@@ -37,7 +30,41 @@ _STATA_LABELS = {
     "qf4_10": (
         "qf4_10. Do you currently use - Savings group you save with or borrow from"
     ),
+    "qf4_05": "qf4_05. Do you currently use - Mobile money operator",
+    "qf5_05_6": (
+        "qf5_05_6. Mobile money operator-Sent money to, or received money from someone"
+    ),
+    "h3_09": (
+        "h3. Borrowed money from a group such as a co-op, VLSA, tontine, ikibina"
+    ),
+    "i5a_1": "i5a_1. Medical insurance",
+    "qf1_06": "qf1_06. Ever used - Umurenge SACCO",
+    "qf1_10": "qf1_10. Ever used - Savings group",
 }
+
+
+def _survey_denominator(variable: str) -> str:
+    validation_file = "data/processed/indicator_denominator_validation.csv"
+    if variable in {"qf4_06", "qf4_10"}:
+        ever_use_variable = "qf1_06" if variable == "qf4_06" else "qf1_10"
+        return (
+            "All respondents aged 16+; the processed estimate treats non-Yes "
+            "current-use responses as non-use. In the current dataset, missing "
+            f"values align exactly with respondents answering No to {ever_use_variable}; "
+            "questionnaire routing was not independently verified. Estimates use "
+            f"pop_wt. Item-valid and missing counts are in {validation_file}."
+        )
+    if variable in {"qf4_05", "qf5_05_6"}:
+        return (
+            "Valid responses among respondents aged 16+ who reported ever using "
+            "a mobile-money operator (qf1_05=Yes); respondents outside this routed "
+            "base are excluded. Estimates use pop_wt. Per-indicator valid counts "
+            f"are in {validation_file}."
+        )
+    return (
+        "Valid item responses among respondents aged 16+; estimates use pop_wt. "
+        f"Per-indicator valid counts are in {validation_file}."
+    )
 
 
 def build_indicator_mapping() -> list[dict[str, Any]]:
@@ -60,6 +87,8 @@ def build_indicator_mapping() -> list[dict[str, Any]]:
             "relationship": (
                 "contextual_indicator"
                 if mapping.status == "relevant"
+                else "conditional_contextual_indicator"
+                if mapping.status == "conditional"
                 else "proxy_with_unresolved_definition"
                 if mapping.status == "uncertain"
                 else "unsuitable"
@@ -67,10 +96,9 @@ def build_indicator_mapping() -> list[dict[str, Any]]:
             "existing_mapping_status": mapping.status,
             "relevance": mapping.relevance,
             "limitations": mapping.limitations,
-            "suppressed": (mapping.indicator_variable, mapping.page_id) in SUPPRESSED_RELATIONSHIPS,
-            "suppression_reason": SUPPRESSED_RELATIONSHIPS.get(
-                (mapping.indicator_variable, mapping.page_id), ""
-            ),
+            "conditions": mapping.conditions,
+            "suppressed": False,
+            "suppression_reason": "",
             "unit_policy": (
                 "Retain the NBR source label and unit metadata. Customer/count "
                 "uniqueness and KPI denominators are not inferred."
@@ -82,8 +110,9 @@ def build_indicator_mapping() -> list[dict[str, Any]]:
                 ) if labels
             ],
             "demographic_policy": (
-                "Use only exact observed Gender filters. NBR Youth/Non-Youth "
-                "categories are not crosswalked to FinScope age bins."
+                "Use exact observed Gender or Youth/Non-Youth filters only where "
+                "the NBR page exposes that filter. NBR Youth/Non-Youth categories "
+                "are displayed separately and are not crosswalked to FinScope age bins."
             ),
         })
 
@@ -98,11 +127,7 @@ def build_indicator_mapping() -> list[dict[str, Any]]:
             "survey_reference_period": FINSCOPE_REFERENCE_PERIOD,
             "survey_population": FINSCOPE_POPULATION,
             "survey_weight": FINSCOPE_WEIGHT,
-            "survey_denominator": (
-                "Valid item responses among respondents aged 16+; estimates use "
-                "pop_wt. Per-indicator valid counts are in "
-                "data/processed/indicator_denominator_validation.csv."
-            ),
+            "survey_denominator": _survey_denominator(variable),
             "geographic_and_demographic_scope": {
                 "national": True,
                 "district": True,

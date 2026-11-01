@@ -15,7 +15,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.indicators import REGISTRY
 from src.models.nbr_intelligence.indicator_mapping import (
     MAPPING_BY_VARIABLE,
-    SUPPRESSED_RELATIONSHIPS,
 )
 from src.pages import combined_support as cs
 
@@ -48,13 +47,19 @@ def _mapping(*rels, reason=None):
 # --------------------------------------------------------------- real configuration
 EXPECTED = {  # variable -> (national, district) as configured today
     "k1": ("approved", "approved"),
-    "f5": (cs.STATE_NOT_APPROVED, cs.STATE_NOT_APPROVED),
+    "f5": ("approved", "approved"),
     "h2_1": (cs.STATE_NOT_APPROVED, cs.STATE_NOT_APPROVED),
     "g3a_17": (cs.STATE_NOT_APPROVED, cs.STATE_NOT_APPROVED),
     "e9b": (cs.STATE_NO_COUNTERPART, cs.STATE_NO_COUNTERPART),
-    "g3a_11": (cs.STATE_SUPPRESSED, cs.STATE_SUPPRESSED),
+    "g3a_11": ("approved", "approved"),
     "qf4_06": ("approved", "approved"),
     "qf4_10": (cs.STATE_NO_COUNTERPART, cs.STATE_NO_COUNTERPART),
+    "qf4_05": ("approved", "approved"),
+    "qf5_05_6": ("approved", "approved"),
+    "h3_09": ("approved", "approved"),
+    "i5a_1": ("approved", "approved"),
+    "qf1_06": ("approved", "approved"),
+    "qf1_10": (cs.STATE_NO_COUNTERPART, cs.STATE_NO_COUNTERPART),
 }
 
 
@@ -73,47 +78,120 @@ def test_real_configuration_classification(variable):
         assert (state.state if state else "approved") == expected, (variable, level)
 
 
-def test_g3a_11_is_suppressed_not_a_missing_observation():
+def test_g3a_11_branch_context_is_available_not_suppressed():
     mapping = MAPPING_BY_VARIABLE["g3a_11"]
     state = cs.classify_context(mapping, "district", [], geography="Gasabo")
-    assert state.state == cs.STATE_SUPPRESSED
-    assert state.state != cs.STATE_NO_OBSERVATION
-    assert "Missing is not zero" not in state.body
-    assert "not an approved proxy" in state.body
-    # the declaration is the single source of truth for the loader and the classifier
-    assert ("g3a_11", "branches") in SUPPRESSED_RELATIONSHIPS
-    flagged = [r for r in mapping["nbr_relationships"] if r["suppressed"]]
-    assert [r["page"] for r in flagged] == ["branches"]
+    assert state.state == cs.STATE_NO_OBSERVATION
+    assert "Missing is not zero" in state.body
+    branch = next(r for r in mapping["nbr_relationships"] if r["page"] == "branches")
+    assert branch["relationship"] == "contextual_indicator"
+    assert branch["suppressed"] is False
     # qf4_06 uses the same SACCO branch page and stays approved
     assert not any(
         r["suppressed"] for r in MAPPING_BY_VARIABLE["qf4_06"]["nbr_relationships"]
     )
 
 
-def test_suppression_does_not_alter_the_approved_source_relationship():
-    rel = next(
-        r
-        for r in MAPPING_BY_VARIABLE["g3a_11"]["nbr_relationships"]
-        if r["page"] == "branches"
+def test_gender_context_uses_only_pages_with_dynamic_gender_filters():
+    for variable in ("k1", "f5", "g3a_11", "qf4_05", "qf1_06"):
+        state = cs.classify_subgroup_scope(
+            MAPPING_BY_VARIABLE[variable], "national", "Gender", PAGE_FILTERS
+        )
+        assert state is not None and state.state == cs.STATE_SCOPE_UNSUPPORTED, variable
+    for variable in ("h3_09", "i5a_1"):
+        assert cs.classify_subgroup_scope(
+            MAPPING_BY_VARIABLE[variable], "national", "Gender", PAGE_FILTERS
+        ) is None
+
+
+def test_youth_segments_are_separate_and_conditional_scope_is_restricted():
+    assert cs.scope_state("Age group") is None
+    for variable in ("h3_09", "i5a_1"):
+        assert cs.classify_subgroup_scope(
+            MAPPING_BY_VARIABLE[variable], "national", "Age group", PAGE_FILTERS
+        ) is None
+    state = cs.classify_subgroup_scope(
+        MAPPING_BY_VARIABLE["qf5_05_6"], "national", "Age group", PAGE_FILTERS
     )
-    assert (
-        rel["relationship"] == "contextual_indicator"
-    )  # NBR Supply mode still reads it as before
-    assert rel["existing_mapping_status"] == "relevant"
+    assert state.state == cs.STATE_SCOPE_UNSUPPORTED
+    assert "all-demographic filters" in state.body
 
 
-def test_no_gender_context_exists_for_any_indicator_in_the_real_configuration():
-    """Every approved contextual series is on the Branches page, which has no Gender filter."""
-    for variable, mapping in MAPPING_BY_VARIABLE.items():
-        for level in ("national", "district"):
-            if cs.classify_mapping(mapping, level) is None:
-                state = cs.classify_subgroup_scope(
-                    mapping, level, "Gender", PAGE_FILTERS
-                )
-                assert (
-                    state is not None and state.state == cs.STATE_SCOPE_UNSUPPORTED
-                ), variable
-                assert "Branches" in state.body
+def test_combined_context_requires_exact_filters_and_supports_distinct_youth_slices():
+    from src.models.nbr_intelligence.indicator_mapping import DISPLAYABLE_RELATIONSHIPS
+    from src.pages.nbr_dashboard import _mapped_series
+
+    insurance = MAPPING_BY_VARIABLE["i5a_1"]["nbr_relationships"][0]
+    filters = dict(insurance["filter_scope"])
+    filters["Gender"] = "Female"
+    female = {
+        "page": "insurance",
+        "metric_label": "Total Policy Holders",
+        "geography_level": "national",
+        "geography": "Rwanda",
+        "filters": filters,
+        "value": 20,
+        "reporting_date": "2026-10-24",
+        "unit": "count",
+        "source_record_id": "insurance-female",
+    }
+    entries = _mapped_series(
+        [female],
+        "i5a_1",
+        geography_level="national",
+        geography=None,
+        subgroup_type="Gender",
+        subgroup="Female",
+        relationships=DISPLAYABLE_RELATIONSHIPS,
+    )
+    assert len(entries) == 1
+    assert entries[0]["filters"]["Gender"] == "Female"
+    extra_filter = {**female, "filters": {**filters, "Unexpected": "Other"}}
+    assert _mapped_series(
+        [extra_filter], "i5a_1", geography_level="national", geography=None,
+        subgroup_type="Gender", subgroup="Female",
+        relationships=DISPLAYABLE_RELATIONSHIPS,
+    ) == []
+
+    youth_filters = dict(insurance["filter_scope"])
+    youth_filters["Age Segment"] = "Youth"
+    youth = {
+        **female,
+        "filters": youth_filters,
+        "source_record_id": "insurance-youth",
+    }
+    assert len(_mapped_series(
+        [youth], "i5a_1", geography_level="national", geography=None,
+        subgroup_type="Age group", subgroup="Youth",
+        relationships=DISPLAYABLE_RELATIONSHIPS,
+    )) == 1
+    assert _mapped_series(
+        [youth], "i5a_1", geography_level="national", geography=None,
+        subgroup_type="Age group", subgroup="16–24",
+        relationships=DISPLAYABLE_RELATIONSHIPS,
+    ) == []
+
+    conditional = MAPPING_BY_VARIABLE["qf5_05_6"]["nbr_relationships"][0]
+    all_demographics = {
+        "page": "mobile_banking",
+        "metric_label": "Use Mobile Banking",
+        "geography_level": "national",
+        "geography": "Rwanda",
+        "filters": dict(conditional["filter_scope"]),
+        "value": 20,
+        "reporting_date": "2026-10-24",
+        "unit": "count",
+        "source_record_id": "mobile-banking-all",
+    }
+    assert len(_mapped_series(
+        [all_demographics], "qf5_05_6", geography_level="national", geography=None,
+        relationships=DISPLAYABLE_RELATIONSHIPS,
+    )) == 1
+    assert _mapped_series(
+        [all_demographics], "qf5_05_6", geography_level="national", geography=None,
+        subgroup_type="Gender", subgroup="Female",
+        relationships=DISPLAYABLE_RELATIONSHIPS,
+    ) == []
 
 
 def test_page_filter_configuration_matches_the_scraper_file():
@@ -282,13 +360,24 @@ def test_snapshot_uses_only_the_chosen_date():
 # --------------------------------------------------------------- mapping rows / reconciliation
 def test_mapping_rows_label_the_suppressed_relationship():
     rows = cs.mapping_rows(MAPPING_BY_VARIABLE, REGISTRY)
-    sup = [r for r in rows if "suppressed" in r["NBR relationship"]]
-    assert len(sup) == 1 and sup[0]["FinScope variable"] == "g3a_11"
-    assert (
-        sup[0]["Where shown"] == "Not shown"
-        and "not an approved proxy" in sup[0]["Limitations / reason"]
-    )
-    assert cs.contextual_variables(MAPPING_BY_VARIABLE) == ["k1", "qf4_06"]
+    branch = [
+        r for r in rows
+        if r["FinScope variable"] == "g3a_11" and r["NBR page"] == "branches"
+    ]
+    assert len(branch) == 1
+    assert branch[0]["NBR relationship"] == "Contextual indicator (shown)"
+    assert branch[0]["Where shown"] == "national and district"
+    conditional = [
+        r for r in rows if r["FinScope variable"] == "qf5_05_6"
+        and r["NBR page"] == "mobile_banking"
+    ]
+    assert len(conditional) == 1
+    assert "Conditional" in conditional[0]["NBR relationship"]
+    assert "exact active-account" in conditional[0]["Limitations / reason"]
+    assert cs.contextual_variables(MAPPING_BY_VARIABLE) == [
+        "k1", "f5", "g3a_11", "qf4_06", "qf4_05", "qf5_05_6",
+        "h3_09", "i5a_1", "qf1_06",
+    ]
 
 
 def test_missing_indicator_note_names_columns_and_invents_nothing():
@@ -352,3 +441,19 @@ def test_routed_question_check_reports_shares_and_does_not_claim_confirmed_non_u
         missing["status"] == "warn"
         and "not in the denominator file" in missing["detail"]
     )
+
+
+def test_processed_registry_and_denominators_cover_every_active_indicator():
+    from src import data
+
+    register = data.read_candidate_register()
+    denominators = data.read_denominators()
+    active = register.loc[register["Status"].str.startswith("Implemented")]
+    active_variables = set(active["Variable"])
+    assert active["Variable"].is_unique
+    assert active_variables == {item["variable"] for item in REGISTRY}
+    assert active_variables <= set(denominators["Variable"])
+
+    sacco = denominators.set_index("Variable").loc["qf4_06"]
+    assert int(sacco["Valid responses"]) == 4172
+    assert int(sacco["Missing responses"]) == 9822

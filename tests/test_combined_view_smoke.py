@@ -1,6 +1,7 @@
 """AppTest smoke tests: real page files, synthetic data (see smoke_stubs)."""
 import sys
 from pathlib import Path
+import re
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -19,10 +20,15 @@ def _script(module, func):
 import sys
 sys.path.insert(0, r"{ROOT}"); sys.path.insert(0, r"{ROOT}/tests")
 import importlib
-for k in [k for k in list(sys.modules) if k == "src" or k.startswith("src.")]: del sys.modules[k]
-import smoke_stubs; smoke_stubs.install()
-page = importlib.import_module("{module}")
-page.{func}()
+original_src_modules = {{k: v for k, v in sys.modules.items() if k == "src" or k.startswith("src.")}}
+try:
+    for k in [k for k in list(sys.modules) if k == "src" or k.startswith("src.")]: del sys.modules[k]
+    import smoke_stubs; smoke_stubs.install()
+    page = importlib.import_module("{module}")
+    page.{func}()
+finally:
+    for k in [k for k in list(sys.modules) if k == "src" or k.startswith("src.")]: del sys.modules[k]
+    sys.modules.update(original_src_modules)
 '''
 
 def run(page, mode, setup=None):
@@ -143,7 +149,7 @@ def test_population_gender_partial_nbr_coverage():
     body = text(at)
     assert not at.exception
     assert "NBR administrative context for these groups" in body
-    assert "No NBR observation" in body            # Male has no exact-gender series
+    assert "Supported, no matching observation" in body  # Male has no exact-gender series
     assert "Verify data" in body
 
 def test_population_gender_is_scope_unsupported_where_the_nbr_page_has_no_gender_filter():
@@ -153,13 +159,25 @@ def test_population_gender_is_scope_unsupported_where_the_nbr_page_has_no_gender
     assert "has no Gender breakdown" in body
     assert "No NBR observation" not in body        # unsupported scope is not a missing observation
 
-@pytest.mark.parametrize("group", ["Age group", "Education", "Area"])
+@pytest.mark.parametrize("group", ["Education", "Area"])
 def test_population_unsupported_dimensions(group):
     def setup(at): at.session_state["population_groups_type"] = group
     at = run("population", "Combined", setup)
     assert not at.exception
-    assert "NBR does not cover this dimension" in text(at)
+    expected = (
+        "NBR has no education breakdown"
+        if group == "Education"
+        else "NBR has no urban/rural breakdown"
+    )
+    assert expected in text(at)
 
+def test_population_age_shows_nbr_age_as_separate_categories():
+    def setup(at): at.session_state["population_groups_type"] = "Age group"
+    at = run("population", "Combined", setup)
+    assert not at.exception
+    body = text(at)
+    assert "separate NBR Youth / Non-Youth categories" in body
+    assert "never crosswalked to FinScope age groups" in body
 def test_priority_combined_explains_missing_counterparts_and_keeps_score_separate():
     at = run("priority", "Combined")
     body = text(at)
@@ -203,6 +221,90 @@ def test_national_nbr_reporting_date_drives_markers_and_resets_with_the_indicato
     pills[0].set_value("Mobile money").run()
     assert not at.exception and _select(at, "NBR reporting date") is None
 
+
+def test_combined_indicator_explorer_covers_all_registered_indicators():
+    at = run("national", "Combined")
+    selector = next(
+        box
+        for box in at.selectbox
+        if box.key == "combined_indicator_selectbox"
+    )
+    assert len(selector.options) == 14
+    for indicator in selector.options:
+        selector.select(indicator).run()
+        assert not at.exception, [error.value for error in at.exception]
+        assert any(
+            metric.label == "Weighted survey estimate" for metric in at.metric
+        )
+
+
+def test_combined_indicator_explorer_shows_conditional_mobile_banking_limitations():
+    at = run("national", "Combined")
+    selector = next(
+        box
+        for box in at.selectbox
+        if box.key == "combined_indicator_selectbox"
+    )
+    selector.select("Mobile-money transfers").run()
+    body = text(at)
+    assert not at.exception
+    assert "Conditional relationship" in body
+    assert "Mobile banking is not mobile money" in body
+    assert "NBR KPI unit is unknown" in body
+    assert "unit not specified" in body
+
+
+def test_combined_indicator_explorer_explains_unresolved_and_missing_context():
+    at = run("national", "Combined")
+    selector = next(
+        box
+        for box in at.selectbox
+        if box.key == "combined_indicator_selectbox"
+    )
+    selector.select("Savings group").run()
+    assert not at.exception
+    assert "Uncertain or unapproved relationship" in text(at)
+
+    def empty_branch_observations(test_app):
+        test_app.session_state["_stub_empty_vars"] = ("k1",)
+
+    at = run("national", "Combined", empty_branch_observations)
+    assert not at.exception
+    assert "Supported, no matching observation" in text(at)
+    assert "Missing is not zero" in text(at)
+
+
+def test_combined_indicator_explorer_keeps_national_only_context_out_of_district_scope():
+    at = run("national", "Combined")
+    selector = next(
+        box
+        for box in at.selectbox
+        if box.key == "combined_indicator_selectbox"
+    )
+    selector.select("SACCO").run()
+    assert not at.exception
+    assert "district level only" in text(at)
+
+def test_unresolved_national_series_remain_descriptive_and_unsuitable_series_are_suppressed():
+    at = run("national", "Combined")
+    selector = next(
+        box for box in at.selectbox if box.key == "combined_indicator_selectbox"
+    )
+    selector.select("Bank account").run()
+    body = text(at)
+    assert not at.exception
+    assert "Descriptive administrative observations" in body
+    for metric in (
+        "Banked",
+        "Total Customers",
+        "Have Transactional Accounts",
+        "Are Depositors",
+    ):
+        assert f"snapshot-trend:{metric}" in body
+    assert "unit not specified" in body
+    assert "Total Cards" not in body
+    assert "Unsuitable" in body
+
 def test_district_reporting_date_and_indicator_change_update_the_evidence():
     at = run("district", "Combined")
     box = _select(at, "NBR reporting date for map markers")
@@ -212,24 +314,23 @@ def test_district_reporting_date_and_indicator_change_update_the_evidence():
     def setup(at2): at2.session_state["dx_indicator"] = "Mobile money"
     at2 = run("district", "Combined", setup)
     assert _select(at2, "NBR reporting date for map markers") is None
-    assert "not approved" in text(at2).lower() or "NBR series not approved" in text(at2)
+    assert "No NBR observation" in text(at2) or "NBR context available" not in text(at2)
 
-def test_suppressed_series_is_reported_as_suppressed_everywhere_it_appears():
+def test_group_saving_context_is_not_silently_suppressed():
     def setup(at): at.session_state["dx_indicator"] = "Group saving"
     at = run("district", "Combined", setup)
     body = text(at)
     assert not at.exception
-    assert "intentionally not shown" in body.lower()
-    assert "No NBR observation" not in body and "Missing is not zero" not in body
-    nat = text(run("national", "Combined"))
-    assert "intentionally not shown" in nat.lower()           # national saving-context block
+    assert "Supported, no matching observation" in body
+    assert "Missing is not zero" in body
+    assert "intentionally not shown" not in body.lower()
 
 def test_failed_nbr_read_is_not_presented_as_absence():
     def setup(at): at.session_state["_stub_fail_vars"] = ["k1"]
     at = run("national", "Combined", setup)
     body = text(at)
     assert not at.exception
-    assert "Bank account: NBR context unavailable" in body      # the failed indicator, named
+    assert "Bank account: Data-loading failure" in body      # the failed indicator, named
     assert "Bank account: no nbr" not in body.lower()           # not reported as absence
     assert "no approved counterpart" not in body.lower()
 
@@ -242,7 +343,7 @@ def test_priority_score_stays_finscope_only_and_names_suppressed_context():
     body = text(run("priority", "Combined"))
     assert "does not change the score" in body and "NBR evidence (not scored)" in body
 
-def test_methodology_lists_all_eight_classifications_and_the_routed_card():
+def test_methodology_lists_evidence_states_conditional_context_and_routed_card():
     at = run("methodology", "Combined")
     body = text(at)
     assert not at.exception
@@ -250,7 +351,75 @@ def test_methodology_lists_all_eight_classifications_and_the_routed_card():
                   "Uncertain or unapproved relationship", "Unsupported dimension or level"):
         assert label in body
     assert "Questions with routed or missing answers" in body
-    assert "Contextual, intentionally suppressed" in str([df.value.to_dict() for df in at.dataframe])
+    assert "skipped respondents are excluded from the estimate" in body
+    assert "reported as current use among all respondents" not in body
+    assert "Conditional context" in str([df.value.to_dict() for df in at.dataframe])
+    assert "at least 10 distinct same-scope district observations" in body
+    assert "at least 3 independent reporting dates" in body
+    assert "third, experimental evidence layer" in body
+    assert "not interpreted as mobile-money users or transactions" in body
+
+def test_district_explorer_exposes_experimental_intelligence_with_exact_scope():
+    def setup(at):
+        at.session_state["dx_district"] = "District 01"
+    at = run("district", "Combined", setup)
+    body = text(at)
+    assert not at.exception
+    assert "NBR intelligence" in body
+    assert "Experimental, NBR-only review signals" in body
+    assert "temporal review:" in body
+
+def test_priority_explorer_surfaces_experimental_nbr_evidence_outside_the_score():
+    at = run("priority", "Combined")
+    body = text(at)
+    assert not at.exception
+    assert "Experimental NBR review" in body
+    assert "unusual signal(s)" in body
+    assert any(
+        button.label == "Inspect this district in District Explorer"
+        for button in at.button
+    )
+    assert "do not change the score or ranking" in body
+
+def test_priority_score_is_invariant_to_changes_in_supplementary_nbr_values():
+    at = run("priority", "Combined")
+    body_before = "\n".join(str(markdown.value) for markdown in at.markdown)
+    score_before = re.search(
+        r"Baseline score.*?<div class=\"kpi-value\">([^<]+)",
+        body_before,
+        flags=re.DOTALL,
+    )
+    assert score_before
+    at.session_state["_stub_nbr_scale"] = 25.0
+    at.run()
+    body_after = "\n".join(str(markdown.value) for markdown in at.markdown)
+    score_after = re.search(
+        r"Baseline score.*?<div class=\"kpi-value\">([^<]+)",
+        body_after,
+        flags=re.DOTALL,
+    )
+    assert score_after
+    assert score_before.group(1) == score_after.group(1)
+    assert body_before != body_after
+
+def test_policy_alignment_distinguishes_thematic_links_from_policy_impact():
+    at = run("policy", "Combined")
+    body = text(at)
+    assert not at.exception
+    assert "thematic alignment" in body
+    assert "do not demonstrate that a policy caused" in body
+    assert "Assessment signals relevant to policy priorities" in body
+    assert "No eligible national trend finding" in body
+
+def test_population_group_intelligence_does_not_imply_demographic_scope():
+    at = run("population", "Combined")
+    body = text(at)
+    assert not at.exception
+    assert "A district-level signal is not evidence about a demographic subgroup" in body
+    assert any(
+        button.label == "Explore district evidence for this indicator"
+        for button in at.button
+    )
 
 def _chart_keys(at):
     keys = []

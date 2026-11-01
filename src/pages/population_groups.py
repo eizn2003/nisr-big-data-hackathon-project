@@ -38,8 +38,21 @@ def load_group_data():
     items = available(frame)
     if not items:
         raise ValueError("The population-group dataset has no recognised indicator columns.")
+    missing_denominators = [
+        item["valid_count_column"]
+        for item in items
+        if item["valid_count_column"] not in frame.columns
+    ]
+    if missing_denominators:
+        raise ValueError(
+            "The population-group dataset is missing indicator-specific respondent "
+            "counts: " + ", ".join(missing_denominators)
+        )
     for item in items:
         frame[item["column"]] = pd.to_numeric(frame[item["column"]], errors="coerce")
+        frame[item["valid_count_column"]] = pd.to_numeric(
+            frame[item["valid_count_column"]], errors="coerce"
+        )
     return frame
 
 
@@ -126,7 +139,7 @@ def render_population_groups():
         return
 
     try:
-        frame = load_group_data()
+        frame = load_group_data().copy()
     except (FileNotFoundError, ValueError) as error:
         st.error("Could not load the population-group analysis data.")
         st.caption(str(error))
@@ -138,6 +151,8 @@ def render_population_groups():
     chosen = st.session_state.get(KEY_IND)
     item = indicators.get(chosen) or list(indicators.values())[0]
     metric = item["column"]
+    denominator = item["valid_count_column"]
+    frame["Valid respondents"] = frame[denominator]
 
     subset = frame.loc[frame["Group type"].astype(str).eq(group_type)].copy()
     subset = subset.dropna(subset=["Group", metric]).reset_index(drop=True)

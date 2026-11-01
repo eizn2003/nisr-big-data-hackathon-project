@@ -1,4 +1,5 @@
 import math
+from pymongo.errors import PyMongoError
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -49,6 +50,10 @@ SOURCES = [
 
 def _go(page):
     st.session_state["main_nav"] = page
+
+
+def _open_national_overview():
+    st.session_state["selected_page"] = "National overview"
 
 
 def _link(label, url):
@@ -264,6 +269,95 @@ def _evidence_gap_action(mapping_lookup):
     )
 
 
+def _render_policy_signal_alignment():
+    from importlib import import_module
+
+    section_title(
+        "Assessment signals relevant to policy priorities",
+        "Eligible national NBR trend findings are linked to relevant priorities as prompts for review, "
+        "not as evidence of policy impact.",
+    )
+    national_page = import_module("src.pages.combine-view.national_overview")
+    try:
+        _, report = national_page._load_national_combined_assessment()
+        _, headline_entries, _ = national_page._combined_headline()
+        findings, _ = national_page._approved_national_findings(
+            report,
+            headline_entries,
+        )
+    except (
+        FileNotFoundError,
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        PyMongoError,
+    ) as error:
+        st.warning(
+            "The experimental national signal assessment could not be loaded. "
+            "Policy alignment and FinScope estimates are unchanged."
+        )
+        st.caption(str(error))
+        return
+
+    rows = []
+    for priority, variables in _ROW_VARIABLES.items():
+        for finding in findings:
+            if finding.get("indicator_variable") not in variables:
+                continue
+            evidence = (finding.get("supporting_evidence") or [{}])[0]
+            observations = evidence.get("observations") or []
+            dates = sorted({
+                str(point.get("reporting_date"))
+                for point in observations
+                if point.get("reporting_date")
+            })
+            filters = " · ".join(
+                f"{name}: {value}"
+                for name, value in sorted((evidence.get("filters") or {}).items())
+            )
+            unit = evidence.get("unit") or "unit not specified"
+            rows.append(
+                "<tr>"
+                f"<td><b>{esc(priority)}</b></td>"
+                f"<td>{esc(finding.get('indicator_label', 'FinScope indicator'))} · "
+                f"{esc(finding.get('nbr_observed_direction', 'direction not assessed'))}</td>"
+                f"<td>{esc(evidence.get('page', 'NBR'))} · "
+                f"{esc(evidence.get('metric_label', 'metric unavailable'))} · {esc(unit)}</td>"
+                f"<td>{esc(f'{dates[0]} to {dates[-1]}' if dates else 'dates unavailable')} · "
+                f"{esc(filters or 'filters unavailable')} · "
+                f"{esc(finding.get('evidence_sufficiency_state', 'unassessed'))}</td>"
+                "</tr>"
+            )
+
+    if rows:
+        render_html(
+            '<table class="cmp"><tr><th>Related policy priority</th>'
+            '<th>Survey indicator · NBR direction</th><th>NBR administrative evidence</th>'
+            '<th>Observed dates · exact filters · evidence state</th></tr>'
+            + "".join(rows)
+            + "</table>"
+        )
+        st.caption(
+            "Only selected relevant/conditional national relationships appear here. "
+            "Direction and evidence sufficiency describe the recorded snapshots, not policy "
+            "success, causality, or statistical confidence."
+        )
+    else:
+        st.info(
+            "No eligible national trend finding currently links to these policy priorities. "
+            "This is not evidence that no issue or change exists."
+        )
+    st.button(
+        "Inspect national trends and their source details",
+        key="policy_to_national_trends",
+        on_click=_open_national_overview,
+        use_container_width=True,
+        icon=":material/arrow_forward:",
+    )
+
+
 def render_policy_alignment():
     from src.pages.nbr_dashboard import (
         context_strip_html,
@@ -431,6 +525,15 @@ def render_policy_alignment():
         render_html('<div class="micro">The indicators shown here are not themselves official strategy targets; '
                     "they are evidence that bears on the priorities above.</div>")
     st.markdown("")
+    if combined:
+        note(
+            "Evidence versus alignment",
+            "The policy links above are thematic alignment with published priorities. "
+            "They do not demonstrate that a policy caused the observed survey estimates or NBR changes.",
+            tone="info",
+        )
+        _render_policy_signal_alignment()
+        st.markdown("")
 
     # ---- 3. Users ---------------------------------------------------------------------
     section_title("Who can use this, and for what", "Each audience can start from a different page.")

@@ -13,6 +13,8 @@ from src.pages.barrier_charts import district_family_figure
 from src.pages.combined_support import (
     STATE_NO_OBSERVATION,
     context_state_html,
+    district_state,
+    entries_for_geography,
     header_pill,
     inject_combined_styles,
     load_context,
@@ -35,6 +37,13 @@ from src.styles import (
 
 _combined_district_explorer = import_module("src.pages.combine-view.district_explorer")
 _filtered_combined_entries = _combined_district_explorer._filtered_combined_entries
+
+
+def _open_district_evidence(district, indicator):
+    st.session_state["dx_district"] = district
+    st.session_state["dx_indicator"] = indicator
+    st.session_state["selected_page"] = "District explorer"
+
 
 KEY_DISTRICT = "priority_explorer_district"
 KEY_SHOW = "priority_explorer_show"
@@ -74,7 +83,10 @@ def build_scores(districts, nat, components, deff):
         top = gap.max()
         df[f"gap::{col}"] = gap
         df[f"norm::{col}"] = gap / top * 100 if top and top > 0 else 0.0
-        margin = pd.Series([data.moe_pp(v, n, deff) for v, n in zip(df[col], df["Valid respondents"])],
+        denominator = item["valid_count_column"]
+        if denominator not in df.columns:
+            raise ValueError(f"District data is missing {denominator!r}.")
+        margin = pd.Series([data.moe_pp(v, n, deff) for v, n in zip(df[col], df[denominator])],
                            index=df.index)
         df[f"moe::{col}"] = margin
         df[f"signal::{col}"] = (gap > margin) & gap.notna()
@@ -385,12 +397,52 @@ def render_priority_explorer():
                 inject_combined_styles()
                 for s in components:
                     entries, version, state = load_context(
-                        CANDIDATES[s]["variable"], level="district", geography=selected_district,
+                        CANDIDATES[s]["variable"], level="district",
                     )
                     entries = _filtered_combined_entries(entries, CANDIDATES[s]["variable"])
                     state = eligible_state(state, entries)
-                    nbr_context[s] = (entries, version, state)
-                with_nbr = sum(1 for _, _, st_ in nbr_context.values() if st_.available)
+                    local_entries = entries_for_geography(entries, selected_district)
+                    state = district_state(
+                        state,
+                        local_entries,
+                        selected_district,
+                        label=CANDIDATES[s]["label"],
+                    )
+                    assessments = [
+                        (
+                            entry,
+                            _combined_district_explorer._combined_intelligence_assessment(
+                                entry["points"],
+                                districts["District"].astype(str).tolist(),
+                                selected_district,
+                            ),
+                        )
+                        for entry in entries
+                    ]
+                    nbr_context[s] = (
+                        entries,
+                        version,
+                        state,
+                        local_entries,
+                        assessments,
+                    )
+                with_nbr = sum(1 for _, _, st_, _, _ in nbr_context.values() if st_.available)
+                assessed_series = sum(
+                    1
+                    for _, _, _, _, assessments in nbr_context.values()
+                    for _, assessment in assessments
+                    if assessment.get("state") == "available"
+                )
+                signal_series = sum(
+                    1
+                    for _, _, _, _, assessments in nbr_context.values()
+                    for _, assessment in assessments
+                    if any(
+                        assessment.get(method, {}).get("state")
+                        == "eligible_unusual_observation"
+                        for method in ("cross_section", "temporal")
+                    )
+                )
                 render_html(
                     '<div class="cmb-three">'
                     f'<div>Analytical priority<b>#{int(sel["Rank"])} of {total}</b>'
@@ -402,31 +454,47 @@ def render_priority_explorer():
                     f"have a recorded observation for {esc(selected_district)}</div>"
                     "</div>"
                 )
+                st.caption(
+                    f"Experimental NBR review: {signal_series} unusual signal(s) across "
+                    f"{assessed_series} assessable series. These signals are supplementary "
+                    "and do not change the score or ranking."
+                )
+                st.button(
+                    "Inspect this district in District Explorer",
+                    key="priority_to_district_explorer",
+                    on_click=_open_district_evidence,
+                    args=(selected_district, driver),
+                    use_container_width=True,
+                    icon=":material/map:",
+                )
             for s in components:
                 # Combined mode: related NBR context sits inside the evidence it relates to.
                 # It is shown for reference only and is never part of the score. Every
                 # indicator without NBR context says why, rather than being silently omitted.
                 context = ""
                 if mode == "Combined":
-                    entries, version, state = nbr_context[s]
-                    if entries:
-                        entry = entries[0]
+                    entries, version, state, local_entries, assessments = nbr_context[s]
+                    if local_entries:
+                        entry = local_entries[0]
                         context = context_strip_html(
                             entry,
                             scope=" · ".join(f"{k}: {v}" for k, v in sorted((entry.get("filters") or {}).items())),
-                            other_series=len(entries) - 1,
+                            other_series=len(local_entries) - 1,
                             show_limitations=True,
                         )
                     else:
                         context = context_state_html(state, label=f"NBR · {s}")
                 render_html(_evidence_html(sel, nat, ranked, CANDIDATES[s], deff, context))
                 if mode == "Combined" and nbr_context[s][0]:
-                    render_combined_context(
-                        CANDIDATES[s]["variable"],
-                        district=selected_district,
-                        entries=nbr_context[s][0],
-                        source_version=nbr_context[s][1],
-                    )
+                    for entry, assessment in nbr_context[s][4]:
+                        render_combined_context(
+                            CANDIDATES[s]["variable"],
+                            district=selected_district,
+                            entries=[entry],
+                            source_version=nbr_context[s][1],
+                            intelligence=assessment,
+                            expanded=True,
+                        )
             if mode == "Combined":
                 states = {s: nbr_context[s][2] for s in components}
                 render_recommendations(priority_recommendations(

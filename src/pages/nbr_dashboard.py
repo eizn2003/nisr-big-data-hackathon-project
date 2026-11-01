@@ -25,7 +25,10 @@ from src.models.nbr_intelligence.contextualization import (
     prepare_source_points,
 )
 from src.models.nbr_intelligence.experiment import load_mongodb_history
-from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
+from src.models.nbr_intelligence.indicator_mapping import (
+    DISPLAYABLE_RELATIONSHIPS,
+    MAPPING_BY_VARIABLE,
+)
 from src.styles import (
     PALETTE,
     card_title,
@@ -1552,6 +1555,22 @@ def _filters_key(filters: Mapping[str, Any]) -> str:
     return json.dumps(filters, sort_keys=True, ensure_ascii=False, default=str)
 
 
+def _filters_match_exact(
+    actual: Mapping[str, Any] | None,
+    expected: Mapping[str, Any],
+) -> bool:
+    if not isinstance(actual, Mapping):
+        return False
+
+    def normalize(values: Mapping[str, Any]) -> dict[str, str]:
+        return {
+            str(key).strip().casefold(): str(value).strip().casefold()
+            for key, value in values.items()
+        }
+
+    return normalize(actual) == normalize(expected)
+
+
 def _filter_label(filters: Mapping[str, Any]) -> str:
     if not filters:
         return "Filters not recorded"
@@ -1708,6 +1727,7 @@ def _render_trend(
     title: str,
     compact: bool = False,
     key_suffix: str | None = None,
+    snapshots: bool = False,
 ) -> None:
     if not points:
         empty_state(
@@ -1720,7 +1740,7 @@ def _render_trend(
     fig = go.Figure(go.Scatter(
         x=[item["reporting_date"] for item in ordered],
         y=[item["value"] for item in ordered],
-        mode="lines+markers+text",
+        mode="markers+text" if snapshots else "lines+markers+text",
         text=[f"{fmt_value(item['value'])}" for item in ordered],
         textposition="top center",
         marker=dict(size=9, color=PALETTE["blue"]),
@@ -1765,7 +1785,7 @@ def _mapped_series(
     subgroup: str = "",
     relationships: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    if subgroup_type and subgroup_type not in {"Gender"}:
+    if subgroup_type and subgroup_type not in {"Gender", "Age group"}:
         return []
     mapping = MAPPING_BY_VARIABLE.get(indicator_variable)
     if not mapping:
@@ -1774,6 +1794,10 @@ def _mapped_series(
     for relationship in mapping["nbr_relationships"]:
         if (
             relationship["relationship"] == "unsuitable"
+            or (
+                subgroup_type
+                and relationship["relationship"] == "conditional_contextual_indicator"
+            )
             or (
                 relationships is not None
                 and relationship["relationship"] not in relationships
@@ -1789,16 +1813,18 @@ def _mapped_series(
         if subgroup_type == "Gender" and subgroup:
             expected_filters["Gender"] = subgroup
         elif subgroup_type == "Age group":
-            # NBR Youth/Non-Youth is deliberately not crosswalked to FinScope age bins.
-            continue
+            if subgroup not in {"Youth", "Non-Youth"}:
+                continue
+            expected_filters["Age Segment"] = subgroup
         for point in points:
             filters = point.get("filters")
+            filters_match = _filters_match_exact(filters, expected_filters)
             if (
                 point.get("page") != relationship["page"]
                 or point.get("metric_label") not in labels
                 or point.get("geography_level") != geography_level
                 or not isinstance(filters, Mapping)
-                or not _filters_match(filters, expected_filters)
+                or not filters_match
                 or (geography is not None and point.get("geography") != geography)
             ):
                 continue
@@ -1851,12 +1877,8 @@ def load_combined_context_data(
         return [], None
     relationships = [
         item for item in mapping["nbr_relationships"]
-        if item["relationship"] == "contextual_indicator"
+        if item["relationship"] in DISPLAYABLE_RELATIONSHIPS
         and geography_level in item["available_levels"]
-        and not (
-            indicator_variable == "g3a_11"
-            and str(item.get("page", "")).casefold() == "branches"
-        )
     ]
     pages = tuple(sorted({str(item["page"]) for item in relationships}))
     if not pages:
@@ -1872,7 +1894,7 @@ def load_combined_context_data(
         geography=geography,
         subgroup_type=subgroup_type,
         subgroup=subgroup,
-        relationships={"contextual_indicator"},
+        relationships=DISPLAYABLE_RELATIONSHIPS,
     )
     return entries, source_version
 
@@ -1908,7 +1930,7 @@ def load_combined_national_evidence(
         "k1",
         geography_level="national",
         geography=None,
-        relationships={"contextual_indicator"},
+        relationships=DISPLAYABLE_RELATIONSHIPS,
     )
     return national_kpis, bank_account_entries
 
@@ -4037,6 +4059,7 @@ def _render_combined_context(
     subgroup: str = "",
     source_version: str | None = None,
     intelligence: Mapping[str, Any] | None = None,
+    expanded: bool = False,
 ) -> None:
     source_version = source_version or _source_data_version(points)
     level = "district" if district else "national"
@@ -4047,14 +4070,14 @@ def _render_combined_context(
         geography= district,
         subgroup_type=subgroup_type,
         subgroup=subgroup,
-        relationships={"contextual_indicator"},
+        relationships=DISPLAYABLE_RELATIONSHIPS,
     )
     if not entries:
         if district and intelligence:
             with st.expander(
                 f"NBR supply context · "
                 f"{MAPPING_BY_VARIABLE[indicator_variable]['original_indicator_label']}",
-                expanded=False,
+                expanded=expanded,
             ):
                 render_html(
                     '<span class="nbr-tag">NBR supply</span> '
@@ -4070,7 +4093,7 @@ def _render_combined_context(
     with st.expander(
         f"NBR supply context · "
         f"{MAPPING_BY_VARIABLE[indicator_variable]['original_indicator_label']}",
-        expanded=False,
+        expanded=expanded or bool(district and intelligence),
     ):
         render_html('<span class="nbr-tag">NBR supply</span> <span class="nbr-tag beta">Beta</span>')
         labels = [_series_label(entry) for entry in entries]
@@ -4087,6 +4110,12 @@ def _render_combined_context(
         else:
             entry = entries[0]
         series_points = entry["points"]
+        relationship = humanize(entry.get("relationship", "contextual_indicator"))
+        st.caption(f"Relationship class: {relationship}.")
+        st.caption(
+            "Exact NBR filters: "
+            + _filter_label(entry.get("filters", {}))
+        )
         dates = sorted({str(point["reporting_date"]) for point in series_points})
         if not dates:
             empty_state("No NBR observations", "NBR has not reported this series for the selected geography.")
@@ -4106,10 +4135,15 @@ def _render_combined_context(
             f"Observed source dates: {len(dates)} · latest reporting date {latest_date}."
         )
         st.warning(entry["limitations"])
+        st.caption(
+            "Periodic reported snapshots are shown on their actual dates; "
+            "missing dates are not interpolated."
+        )
         _render_trend(
             series_points,
             title=f"{entry['metric_label']} · {unit_label}",
             compact=True,
+            snapshots=True,
             key_suffix=(
                 f"{indicator_variable}_{district or 'national'}_"
                 f"{subgroup_type}_{subgroup}_{source_version}"
@@ -4383,6 +4417,7 @@ def render_combined_context(
     entries: Sequence[Mapping[str, Any]] | None = None,
     source_version: str | None = None,
     intelligence: Mapping[str, Any] | None = None,
+    expanded: bool = False,
 ) -> None:
     if entries is None:
         try:
@@ -4407,6 +4442,7 @@ def render_combined_context(
         subgroup=subgroup,
         source_version=source_version,
         intelligence=intelligence,
+        expanded=expanded,
     )
 
 

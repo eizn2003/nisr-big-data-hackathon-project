@@ -4,6 +4,7 @@ import streamlit as st
 from src import data, validation
 from src.indicators import CORE, PRIORITY_CANDIDATES, REGISTRY
 from src.pages.combined_support import (
+    ROUTED_INDICATOR_NOTES,
     STATE_TITLES,
     contextual_variables,
     header_pill,
@@ -107,26 +108,87 @@ def _checks_panel(results):
 _STATE_MEANING = {
     "available": "An approved NBR series has observations for the selected geography and filters.",
     "no_counterpart": "No approved NBR series is relevant to this FinScope indicator.",
-    "not_approved": "Only proxy series with unresolved definitions exist, so none is displayed.",
-    "level_unsupported": "Approved NBR context exists at another geographic level only.",
-    "scope_unsupported": "NBR does not cover the dimension, for example education or urban/rural area.",
-    "no_observation": "A series is approved but nothing is recorded for this geography or filter; missing is not zero.",
-    "load_error": "The NBR source could not be read; FinScope values are unaffected.",
+    "not_approved": "Uncertain or unapproved relationship: only proxy series with unresolved definitions exist, so none is displayed.",
+    "suppressed": "Intentionally suppressed by configuration; this is not a missing observation.",
+    "level_unsupported": "Unsupported dimension or level: approved NBR context exists at another geographic level only.",
+    "scope_unsupported": "Unsupported dimension or level: NBR does not cover the dimension, for example education or urban/rural area.",
+    "no_observation": "Supported, no matching observation: nothing is recorded for this geography or filter; missing is not zero.",
+    "load_error": "Data-loading failure: the NBR source could not be read; FinScope values are unaffected.",
+    "unresolved": "Unresolved relationship: source observations may be inspected descriptively, but are not eligible cross-source findings.",
+    "unsuitable": "Unsuitable relationship: excluded from contextual comparisons and intelligence findings.",
 }
+
+_RELATIONSHIP_MEANING = [
+    ("Relevant", "Eligible contextual evidence when exact metric, geography and filters match."),
+    ("Conditional", "Eligible only under the configured conditions; limitations remain visible. Mobile Banking retains an unknown KPI unit and is not interpreted as mobile-money users or transactions."),
+    ("Unresolved", "Not eligible as a contextual finding; source values can be inspected descriptively without an inferred denominator or equivalence."),
+    ("Unsuitable", "Suppressed from contextual display and intelligence findings."),
+]
 
 _DIMENSIONS = [
     ("National", "Yes", "Yes", "Both sources reported separately, with their own units and dates."),
     ("District", "Yes", "Yes, for some series", "NBR peer comparisons use the same metric, filters and reporting date."),
     ("Gender", "Yes", "Only exact observed Gender filters", "Shown when NBR stores that exact category for the metric."),
-    ("Age group", "Yes", "No equivalent", "NBR Youth and Non-Youth are not crosswalked to FinScope age groups."),
+    ("Age group", "Yes", "Separate NBR Youth / Non-Youth slices where exact filters exist",
+     "Displayed only as NBR categories; never crosswalked to FinScope age bands."),
     ("Education", "Yes", "No", "NBR has no education breakdown; no comparison is made."),
     ("Urban/rural area", "Yes", "No", "NBR has no urban/rural breakdown; no comparison is made."),
 ]
 
 
+def _routed_questions_card():
+    """Show valid-response shares and denominator caveats for routed indicators."""
+    frame = data.load_denominators()
+    shares = {}
+    if frame is not None and {"Variable", "Valid response (%)"} <= set(frame.columns):
+        shares = dict(zip(frame["Variable"], frame["Valid response (%)"]))
+    with st.container(key="card_combined_routed"):
+        card_title(
+            "Questions with routed or missing answers",
+            "Existing calculations are unchanged; this states what the figures do and do not establish.",
+        )
+        rows = []
+        for item in REGISTRY:
+            variable = item["variable"]
+            if variable not in ROUTED_INDICATOR_NOTES:
+                continue
+            share = shares.get(variable)
+            rows.append(
+                f"<tr><td><b>{esc(item['label'])}</b></td>"
+                f"<td>{f'{float(share):.1f}%' if share is not None else 'Not available in the denominator file'}</td>"
+                f"<td>{esc(ROUTED_INDICATOR_NOTES[variable])}</td></tr>"
+            )
+        render_html(
+            '<table class="cmp"><tr><th>Indicator</th><th>Valid responses</th><th>How to read it</th></tr>'
+            + "".join(rows)
+            + "</table>"
+        )
+        render_html(
+            '<div class="micro">For qf4_05 and qf5_05_6, skipped respondents are excluded from the estimate. '
+            "The existing qf4_06 and qf4_10 current-use estimates use the full respondent population and treat "
+            "missing answers as non-use; because the routing has not been verified, they are not confirmed "
+            "non-use rates.</div>"
+        )
+
+
 def _render_combined_methodology():
     from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
 
+    from src.models.nbr_intelligence.contextualization import (
+        MIN_TREND_OBSERVATIONS,
+        SUFFICIENT_DIRECTIONAL_OBSERVATIONS,
+    )
+    from src.models.nbr_intelligence.experiment import (
+        CROSS_SECTION_ROBUST_Z_THRESHOLD,
+        MIN_CROSS_SECTION_DISTRICTS,
+        MIN_TRAINING_RATES,
+        ROBUST_SCORE_THRESHOLD,
+    )
+
+    relationship_rows = "".join(
+        f"<tr><td><b>{esc(name)}</b></td><td>{esc(description)}</td></tr>"
+        for name, description in _RELATIONSHIP_MEANING
+    )
     render_html("""
         <div class="mgrid">
           <div class="mcard"><div class="mc-t">FinScope: people's reported behaviour</div>
@@ -140,12 +202,54 @@ def _render_combined_methodology():
           <div class="mcard"><div class="mc-t">What a mapping means</div>
             <p class="mc-p">An approved mapping says an NBR series is thematically relevant to a survey indicator.
             It does not make the two equivalent, and neither source validates, explains or predicts the other.</p></div>
+          <div class="mcard"><div class="mc-t">Experimental intelligence assessments</div>
+            <p class="mc-p">Existing national trend summaries and district-level peer/temporal review results are a
+            third, experimental evidence layer. They flag observations for verification; they are not survey
+            measures, causal explanations, statistical confidence, or part of the priority score.</p></div>
         </div>""")
+    render_html(
+        '<table class="cmp"><tr><th>Mapping classification</th><th>How Combined mode treats it</th></tr>'
+        + relationship_rows
+        + "</table>"
+    )
+    st.markdown("")
+    with st.container(key="card_combined_intelligence_method"):
+        card_title(
+            "How NBR intelligence signals are selected",
+            "National trend suggestions and district anomaly reviews are separate methods with separate thresholds.",
+        )
+        national_rules = (
+            f"National trend suggestions require at least {MIN_TREND_OBSERVATIONS} independent reporting dates; "
+            f"{SUFFICIENT_DIRECTIONAL_OBSERVATIONS} are needed for the report's sufficient-directional-evidence "
+            "label. The national view selects at most four approved, direction-bearing suggestions after "
+            "deduplicating headline bank-account evidence. The sufficiency label is not statistical confidence."
+        )
+        district_rules = (
+            f"District peer review requires at least {MIN_CROSS_SECTION_DISTRICTS} distinct same-scope district "
+            f"observations, nonzero peer MAD, and a robust-score threshold of {CROSS_SECTION_ROBUST_Z_THRESHOLD:g}. "
+            f"Temporal review requires {MIN_TRAINING_RATES} prior change rates (at least "
+            f"{MIN_TRAINING_RATES + 2} observations including the target) and a robust-score threshold of "
+            f"{ROBUST_SCORE_THRESHOLD:g}. More history is required for the assessment's stronger evidence label."
+        )
+        render_html(
+            '<div class="mgrid">'
+            f'<div class="mcard"><div class="mc-t">National trend suggestions</div><p class="mc-p">{esc(national_rules)}</p></div>'
+            f'<div class="mcard"><div class="mc-t">District peer and temporal review</div><p class="mc-p">{esc(district_rules)}</p></div>'
+            '<div class="mcard"><div class="mc-t">Experimental limitations</div><p class="mc-p">'
+            "Snapshots are periodic and may be irregular. Assessment outputs have no adjudicated anomaly labels "
+            "for accuracy calibration. Insufficient, incomparable, or provenance-incomplete series are not "
+            "scored as normal; they remain unavailable or unassessable. Signals are prompts to verify the source "
+            "row, reporting date, collection run, and exact filters.</p></div></div>"
+        )
+        st.caption(
+            "NBR observations retain their actual reporting dates and units. No snapshots are interpolated; "
+            "unknown units remain unknown, including for the conditional Mobile Banking relationship."
+        )
     st.markdown("")
     with st.container(key="card_combined_mapping"):
         card_title(
-            "Approved relationships between survey indicators and NBR series",
-            "Read from the project configuration. Only relationships marked as contextual are ever shown on a page.",
+            "Configured relationships between survey indicators and NBR series",
+            "Read from the runtime registry. Only relevant and conditional relationships can supply analytical context.",
         )
         rows = mapping_rows(MAPPING_BY_VARIABLE, REGISTRY)
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True,
@@ -164,10 +268,12 @@ def _render_combined_methodology():
         with st.container(key="card_combined_states"):
             card_title("When NBR context is not shown", "Each case is named instead of left blank.")
             body = "".join(
-                f"<tr><td><b>{esc(STATE_TITLES[k])}</b></td><td>{esc(v)}</td></tr>"
+                f"<tr><td><b>{esc(STATE_TITLES.get(k, k.title()))}</b></td><td>{esc(v)}</td></tr>"
                 for k, v in _STATE_MEANING.items()
             )
             render_html(f'<table class="cmp"><tr><th>State</th><th>Meaning</th></tr>{body}</table>')
+    st.markdown("")
+    _routed_questions_card()
     st.markdown("")
     note(
         "What Combined mode never does",

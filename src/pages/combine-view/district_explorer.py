@@ -66,6 +66,7 @@ INDICATORS = {
         "interpretation": item["interpretation"],
         "polarity": item["polarity"],
         "variable": item["variable"],
+        "valid_count_column": item["valid_count_column"],
     }
     for item in REGISTRY
 }
@@ -506,9 +507,7 @@ def _jump_to(name):
 
 
 def _filtered_combined_entries(entries, indicator_variable):
-    """Series eligible for display. Suppression is declared in the indicator mapping
-    (SUPPRESSED_RELATIONSHIPS); the loader already honours it, and this is a defensive
-    second check so a suppressed page can never reach a chart or marker."""
+    """Keep only mapped pages that are not explicitly suppressed."""
     from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
 
     mapping = MAPPING_BY_VARIABLE.get(indicator_variable) or {}
@@ -854,6 +853,17 @@ def render_district_explorer():
 
     try:
         district = data.load_district()
+        missing_denominators = [
+            item["valid_count_column"]
+            for item in REGISTRY
+            if item["column"] in district.columns
+            and item["valid_count_column"] not in district.columns
+        ]
+        if missing_denominators:
+            raise ValueError(
+                "The district dataset is missing indicator-specific respondent "
+                "counts: " + ", ".join(missing_denominators)
+            )
         national = data.load_national()
         geojson = data.load_geojson()
         centers, center = data.geo_summary(geojson)
@@ -890,6 +900,10 @@ def render_district_explorer():
         indicator_name = list(present.keys())[0]
     cfg = present[indicator_name]
     metric = cfg["column"]
+    district = district.copy()
+    district["Valid respondents"] = pd.to_numeric(
+        district[cfg["valid_count_column"]], errors="coerce"
+    )
     selected_district = st.session_state["dx_district"]
     combined_entries = []
     combined_version = None

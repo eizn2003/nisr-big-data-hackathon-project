@@ -1,7 +1,13 @@
-Indicator,Estimate (%),Source variable,Interpretation
-Own bank account,20.2,k1,Respondents who own a bank account
-Registered mobile-money user,66.61,f5,Respondents classified as registered mobile-money users
-Borrowed in the past 12 months,39.51,h2_1,Respondents who borrowed in the past 12 months
-Does not save,20.25,g3a_17,Respondents reporting that they do not save
-Has emergency funds,20.78,e9b,Respondents who report setting aside emergency or rainy-day funds.
-Saves with a group,51.83,g3a_11,"Respondents who report saving with a group such as a cooperative, VSLA, tontine, or ikibina."
+Indicator,Estimate (%),Valid respondents,Source variable,Interpretation
+Own bank account,20.1969,13994,k1,Respondents who own a bank account
+Registered mobile-money user,66.608,13994,f5,Respondents who describe themselves as registered mobile-money users
+Borrowed in the past 12 months,39.5119,13994,h2_1,Respondents who reported borrowing in the past 12 months
+Does not save,20.2482,13994,g3a_17,Respondents classified as not saving
+Has emergency funds,20.7752,13994,e9b,Respondents who report setting aside emergency or rainy-day funds.
+Saves with a group,51.8279,13994,g3a_11,"Respondents who report saving with a group such as a cooperative, VSLA, tontine, or ikibina."
+Currently uses mobile-money operator,96.2235,4915,qf4_05,Current use among respondents with a valid answer to the routed question; skipped respondents are not counted as non-users.
+Sent or received money via mobile money,51.7381,4915,qf5_05_6,Transaction activity among respondents with a valid answer to the routed question; skipped respondents are excluded.
+Borrowed from an informal group,33.2738,13994,h3_09,"Borrowed from a group such as a cooperative, VSLA, tontine, or ikibina in the past 12 months."
+Has medical insurance,8.0668,13994,i5a_1,"Respondents reporting medical insurance, including RAMA, MMI, or Mediplan."
+Ever used Umurenge SACCO,26.1043,13994,qf1_06,Respondents who have ever used an Umurenge SACCO.
+Ever used a savings group,48.1527,13994,qf1_10,Respondents who have ever used a savings group they save with or borrow from.

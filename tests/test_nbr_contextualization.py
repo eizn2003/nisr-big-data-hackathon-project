@@ -123,7 +123,7 @@ def _source_records(values, filters=None):
 
 
 def test_mapping_preserves_survey_scope_and_marks_proxy_boundaries():
-    assert len(INDICATOR_MAPPING) == 8
+    assert len(INDICATOR_MAPPING) == 14
     assert MAPPING_BY_VARIABLE["k1"]["survey_reference_period"] == (
         FINSCOPE_REFERENCE_PERIOD
     )
@@ -135,6 +135,19 @@ def test_mapping_preserves_survey_scope_and_marks_proxy_boundaries():
     )
     assert MAPPING_BY_VARIABLE["qf4_10"]["nbr_relationships"] == []
     assert MAPPING_BY_VARIABLE["e9b"]["nbr_no_relevant_data_reason"]
+
+
+def test_mapping_denominator_metadata_respects_routed_indicator_bases():
+    for variable, ever_use_variable in (("qf4_06", "qf1_06"), ("qf4_10", "qf1_10")):
+        denominator = MAPPING_BY_VARIABLE[variable]["survey_denominator"]
+        assert "All respondents aged 16+" in denominator
+        assert "non-Yes current-use responses as non-use" in denominator
+        assert f"answering No to {ever_use_variable}" in denominator
+        assert "questionnaire routing was not independently verified" in denominator
+    for variable in ("qf4_05", "qf5_05_6"):
+        denominator = MAPPING_BY_VARIABLE[variable]["survey_denominator"]
+        assert "qf1_05=Yes" in denominator
+        assert "outside this routed base are excluded" in denominator
 
 
 def test_processed_finscope_baselines_reuse_existing_estimates():
@@ -154,8 +167,8 @@ def test_processed_finscope_baselines_reuse_existing_estimates():
         if item["analytical_level"] == "national"
         and item["indicator_variable"] == "k1"
     )
-    assert kirehe["estimate_percent"] == 5.41
-    assert national["estimate_percent"] == 20.2
+    assert round(kirehe["estimate_percent"], 2) == 5.41
+    assert round(national["estimate_percent"], 1) == 20.2
     assert national["valid_respondents"] == 13994
 
 

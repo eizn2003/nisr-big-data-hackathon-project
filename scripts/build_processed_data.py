@@ -6,8 +6,8 @@ Usage (from the project root):
 
 It mirrors the logic in notebooks 02, 03 and 04 and removes the hand-typed
 values (the notebooks hard-code the national emergency-fund and group-saving
-estimates). It also fills in the newer indicators for the urban/rural and
-population-group tables so every page can show all eight indicators.
+estimates). It also fills in the registered supporting indicators for the urban/rural and
+population-group tables, with a respondent count specific to each indicator.
 
 Definitions
 -----------
@@ -24,9 +24,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.indicators import REGISTRY
+
 WEIGHT = "pop_wt"
 DISTRICT = "a2"
 MOBILE_MONEY_ACTIVE = "You are a registered mobile money user"
+VALID_RESPONSE_COLUMNS = {
+    item["column"]: item["valid_count_column"] for item in REGISTRY
+}
 
 # column label -> (survey variable, positive answer, full_population)
 RULES = {
@@ -38,6 +43,12 @@ RULES = {
     "Saves with a group (%)": ("g3a_11", "Yes", False),
     "Currently uses Umurenge SACCO (%)": ("qf4_06", "Yes", True),
     "Currently uses a savings group (%)": ("qf4_10", "Yes", True),
+    "Currently uses mobile-money operator (%)": ("qf4_05", "Yes", False),
+    "Sent or received money via mobile money (%)": ("qf5_05_6", "Yes", False),
+    "Borrowed from an informal group (%)": ("h3_09", "Yes", False),
+    "Has medical insurance (%)": ("i5a_1", "Yes", False),
+    "Ever used Umurenge SACCO (%)": ("qf1_06", "Yes", True),
+    "Ever used a savings group (%)": ("qf1_10", "Yes", True),
 }
 EXTENDED_RULES = {
     "Ever used Umurenge SACCO (%)": ("qf1_06", "Yes", True),
@@ -46,7 +57,12 @@ EXTENDED_RULES = {
     "Currently uses a savings group (%)": ("qf4_10", "Yes", True),
 }
 CORE_FOUR = list(RULES)[:4]
-DISTRICT_ORDER = CORE_FOUR[:4] + ["Valid respondents"] + list(RULES)[4:6]
+DISTRICT_ORDER = (
+    CORE_FOUR
+    + ["Valid respondents"]
+    + list(RULES)[4:]
+    + [VALID_RESPONSE_COLUMNS[label] for label in RULES]
+)
 
 NATIONAL_ROWS = {
     "Own bank account": ("Owns a bank account (%)", "k1", "Respondents who own a bank account"),
@@ -59,6 +75,33 @@ NATIONAL_ROWS = {
                             "Respondents who report setting aside emergency or rainy-day funds."),
     "Saves with a group": ("Saves with a group (%)", "g3a_11",
                            "Respondents who report saving with a group such as a cooperative, VSLA, tontine, or ikibina."),
+    "Currently uses mobile-money operator": (
+        "Currently uses mobile-money operator (%)", "qf4_05",
+        "Current use among respondents with a valid answer to the routed question; "
+        "skipped respondents are not counted as non-users.",
+    ),
+    "Sent or received money via mobile money": (
+        "Sent or received money via mobile money (%)", "qf5_05_6",
+        "Transaction activity among respondents with a valid answer to the routed "
+        "question; skipped respondents are excluded.",
+    ),
+    "Borrowed from an informal group": (
+        "Borrowed from an informal group (%)", "h3_09",
+        "Borrowed from a group such as a cooperative, VSLA, tontine, or ikibina "
+        "in the past 12 months.",
+    ),
+    "Has medical insurance": (
+        "Has medical insurance (%)", "i5a_1",
+        "Respondents reporting medical insurance, including RAMA, MMI, or Mediplan.",
+    ),
+    "Ever used Umurenge SACCO": (
+        "Ever used Umurenge SACCO (%)", "qf1_06",
+        "Respondents who have ever used an Umurenge SACCO.",
+    ),
+    "Ever used a savings group": (
+        "Ever used a savings group (%)", "qf1_10",
+        "Respondents who have ever used a savings group they save with or borrow from.",
+    ),
 }
 NATIONAL_EXTENDED = {
     "Ever used Umurenge SACCO": ("Ever used Umurenge SACCO (%)", "qf1_06",
@@ -94,8 +137,24 @@ def valid_respondents(frame, weight=WEIGHT):
     return int((w.notna() & (w > 0)).sum())
 
 
+def valid_response_count(frame, column, full_population=False, weight=WEIGHT):
+    w = pd.to_numeric(frame[weight], errors="coerce")
+    usable = w.notna() & (w > 0)
+    if full_population:
+        return int(usable.sum())
+    return int((usable & frame[column].notna()).sum())
+
+
 def estimate_row(frame, rules):
-    return {label: weighted_percent(frame, col, pos, full) for label, (col, pos, full) in rules.items()}
+    estimates = {}
+    for label, (column, positive, full_population) in rules.items():
+        estimates[label] = weighted_percent(
+            frame, column, positive, full_population
+        )
+        estimates[VALID_RESPONSE_COLUMNS[label]] = valid_response_count(
+            frame, column, full_population
+        )
+    return estimates
 
 
 def _grouped(frame, by):
@@ -112,12 +171,14 @@ def build_tables(df):
     # national
     rows = [
         {"Indicator": name, "Estimate (%)": weighted_percent(df, var, *(RULES[label][1:])),
+         "Valid respondents": valid_response_count(df, var, RULES[label][2]),
          "Source variable": var, "Interpretation": text}
         for name, (label, var, text) in NATIONAL_ROWS.items()
     ]
     out["national_financial_inclusion.csv"] = pd.DataFrame(rows)
     rows = [
         {"Indicator": name, "Estimate (%)": weighted_percent(df, var, "Yes", True),
+         "Valid respondents": valid_response_count(df, var, True),
          "Source variable": var, "Interpretation": text}
         for name, (label, var, text) in NATIONAL_EXTENDED.items()
     ]
@@ -127,14 +188,13 @@ def build_tables(df):
     d_rows, e_rows = [], []
     for name, group in _grouped(df, DISTRICT):
         base = {"District": str(name), "Valid respondents": valid_respondents(group)}
-        d_rows.append({**base, **estimate_row(group, {k: v for k, v in RULES.items()
-                                                      if k in DISTRICT_ORDER})})
+        d_rows.append({**base, **estimate_row(group, RULES)})
         e_rows.append({**base, **estimate_row(group, EXTENDED_RULES)})
     district = pd.DataFrame(d_rows)
     out["district_financial_inclusion.csv"] = district[["District"] + DISTRICT_ORDER]
     out["district_extended_indicators.csv"] = pd.DataFrame(e_rows)
 
-    # urban / rural and population groups (all eight dashboard indicators)
+    # urban / rural and population groups (all registered dashboard indicators)
     area_rows = []
     for name, group in _grouped(df, "a6"):
         area_rows.append({"Area": str(name), "Valid respondents": valid_respondents(group),

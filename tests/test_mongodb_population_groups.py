@@ -152,5 +152,7 @@ def test_current_processed_population_groups_preserve_available_dimensions_and_i
     assert results.dimensions["Age group"]["categories"] == (
         "16–24", "25–34", "35–44", "45–54", "55–64", "65+"
     )
-    assert results.indicators["qf4_06"]["status"] == "unavailable"
-    assert results.indicators["qf4_10"]["status"] == "unavailable"
+    assert all(
+        results.indicators[item["variable"]]["status"] == "available"
+        for item in REGISTRY
+    )

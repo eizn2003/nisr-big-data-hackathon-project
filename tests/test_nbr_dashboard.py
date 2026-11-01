@@ -3245,7 +3245,7 @@ def test_nbr_supply_pages_render_with_observed_synthetic_points(view, expected_t
             for chart in app.get("plotly_chart")
         ) == 1
         assert rendered.count("Descriptive rank") == 1
-        assert any(box.label == "Measure" for box in app.selectbox)
+        assert not any(box.label == "Measure" for box in app.selectbox)
         assert not any(
             caption.value.startswith(("Measure:", "Source:"))
             for caption in app.caption
@@ -3255,9 +3255,12 @@ def test_nbr_supply_pages_render_with_observed_synthetic_points(view, expected_t
         assert any(box.label == "Reporting date" for box in app.selectbox)
         assert any(box.label == "District" for box in app.selectbox)
         district_key = f"nbr_district_selected_{_source_data_version(points)}"
-        app.selectbox(key=district_key).select("Muhanga").run()
+        district_selector = next(
+            box for box in app.selectbox if box.label == "District"
+        )
+        district_selector.select("Muhanga").run()
         assert not app.exception, [error.value for error in app.exception]
-        assert app.session_state[district_key] == "Muhanga"
+        assert app.session_state[district_selector.key] == "Muhanga"
         rerendered = "\n".join(markdown.value for markdown in app.markdown)
         assert "Muhanga" in rerendered
         assert sum(chart.key == "nbr_dx_map" for chart in app.get("plotly_chart")) == 1
@@ -3632,16 +3635,25 @@ def test_combined_national_context_keeps_primary_chart_visible():
     app = AppTest.from_string(script, default_timeout=45).run()
 
     assert not app.exception, [error.value for error in app.exception]
-    assert app.session_state["requested_pages"]
-    assert len(app.session_state["requested_pages"]) == 1
+    requested_pages = app.session_state["requested_pages"]
+    assert requested_pages
+    assert ("branches",) in requested_pages
+    assert ("agents",) in requested_pages
+    assert tuple(sorted({
+        relationship["page"]
+        for mapping in dashboard.MAPPING_BY_VARIABLE.values()
+        for relationship in mapping["nbr_relationships"]
+        if "national" in relationship["available_levels"]
+        and relationship["relationship"] != "unsuitable"
+    })) in requested_pages
     chart_keys = {chart.key for chart in app.get("plotly_chart")}
     assert not any(key.startswith("ov_combined_finding_") for key in chart_keys)
     rendered = " ".join(
         [item.value for item in app.markdown]
         + [item.value for item in app.caption]
     )
-    assert rendered.split('<div class="sec">', 1)[0].count('class="kpi"') == 2
-    assert "Financial inclusion in Rwanda: people and the financial system" in rendered
+    assert rendered.split('<div class="sec">', 1)[0].count('class="kpi"') == 4
+    assert "Financial inclusion across Rwanda" in rendered
     assert "Different measures, not a direct comparison" not in rendered
 
 
@@ -3676,19 +3688,23 @@ def test_combined_national_overview_uses_only_approved_national_branch_context()
         "import plotly.graph_objects as go\n"
         "import streamlit as st\n"
         "import src.pages.nbr_dashboard as dashboard\n"
-        "import src.pages.national_overview as overview\n"
+        "from importlib import import_module\n"
+        "overview = import_module('src.pages.combine-view.national_overview')\n"
         "st.session_state['global_dashboard_mode'] = 'Combined'\n"
         "_original_shared_loader = dashboard.load_combined_national_evidence\n"
         "_original_nbr_loader = dashboard.load_nbr_dashboard_data\n"
         "_original_map_figure = overview._map_figure\n"
         f"entry = {entry!r}\n"
+        "point = entry['points'][0]\n"
         "def test_shared_loader():\n"
         "    st.session_state.setdefault('shared_requests', []).append('called')\n"
         "    return [], [entry]\n"
         "dashboard.load_combined_national_evidence = test_shared_loader\n"
-        "def empty_nbr_loader(version, pages=None):\n"
-        "    return [], {'eligible_source_point_count': 0}, [], 'empty-fixture'\n"
-        "dashboard.load_nbr_dashboard_data = empty_nbr_loader\n"
+        "def branch_context_loader(version, pages=None):\n"
+        "    selected = [point] if pages == ('branches',) else []\n"
+        "    return selected, {'eligible_source_point_count': len(selected)}, "
+        "dashboard.build_nbr_indicator_registry(selected), 'branch-fixture'\n"
+        "dashboard.load_nbr_dashboard_data = branch_context_loader\n"
         "def capture_map(*args, **kwargs):\n"
         "    st.session_state['map_called'] = True\n"
         "    return go.Figure()\n"
@@ -3704,11 +3720,10 @@ def test_combined_national_overview_uses_only_approved_national_branch_context()
     assert not app.exception, [error.value for error in app.exception]
     rendered = "\n".join(markdown.value for markdown in app.markdown)
     assert app.session_state["shared_requests"] == ["called"]
-    assert "Recorded active bank branches" in rendered
+    assert "Total Branches" in rendered
     assert "152" in rendered
     assert "2026-10-24" in rendered
-    assert "Where the gaps are" not in rendered
-    assert "map_called" not in app.session_state
+    assert app.session_state["map_called"]
 
 
 def test_nbr_national_map_uses_only_exact_unit_and_reporting_date(monkeypatch):

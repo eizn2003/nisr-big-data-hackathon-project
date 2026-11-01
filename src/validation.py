@@ -13,6 +13,8 @@ from src.indicators import BY_COLUMN, CORE, REGISTRY
 
 NATIONAL_N_FALLBACK = None
 
+ROUTED_VARIABLES = {"qf4_05", "qf5_05_6", "qf4_06", "qf4_10"}
+
 
 def _result(status, name, detail, group):
     return {"status": status, "name": name, "detail": detail, "group": group}
@@ -22,6 +24,56 @@ def _check(condition, name, ok_detail, fail_detail, group, severity="fail"):
     if condition:
         return _result("pass", name, ok_detail, group)
     return _result(severity, name, fail_detail, group)
+
+
+def indicator_coverage_check(population_groups, urban_rural):
+    """Confirm active indicators are present in both subgroup datasets."""
+    missing = []
+    for label, frame in (
+        ("population-group", population_groups),
+        ("urban/rural", urban_rural),
+    ):
+        missing_columns = [
+            item["short"] for item in REGISTRY
+            if item["column"] not in frame.columns
+        ]
+        if missing_columns:
+            missing.append(f"{label}: {', '.join(missing_columns)}")
+    return _result(
+        "warn" if missing else "pass",
+        "Indicator coverage in subgroup tables",
+        "Every registered indicator is present in the population-group and urban/rural tables."
+        if not missing else "Missing indicator columns — " + "; ".join(missing) + ".",
+        "Indicators",
+    )
+
+
+def routed_question_check(denominators):
+    """Explain routed response coverage without treating skips as negative answers."""
+    if denominators is None or not {"Variable", "Valid response (%)"} <= set(denominators.columns):
+        return _result(
+            "warn",
+            "Routed-question denominators",
+            "The denominator validation table is unavailable or missing required columns.",
+            "Denominators",
+        )
+    by_variable = denominators.set_index("Variable")["Valid response (%)"].to_dict()
+    missing = sorted(ROUTED_VARIABLES.difference(by_variable))
+    shares = [
+        f"{variable}: {float(by_variable[variable]):.1f}% valid responses"
+        for variable in ("qf4_06", "qf4_10")
+        if variable in by_variable
+    ]
+    detail = "; ".join(shares) if shares else "No routed-question response shares are available."
+    if missing:
+        detail += "; not in the denominator file: " + ", ".join(missing)
+    detail += (
+        ". qf4_05 and qf5_05_6 use only valid responses; skipped respondents are excluded, "
+        "not coded as No. For qf4_06 and qf4_10, the full-population calculation counts "
+        "never-users as non-users; this is not confirmed non-use, and the routed status "
+        "has not been verified."
+    )
+    return _result("warn", "Routed-question denominators", detail, "Denominators")
 
 
 def run_checks():
@@ -39,6 +91,7 @@ def run_checks():
     barriers_n = data.read_barriers_national()
     barriers_d = data.read_barriers_district()
     denominators = data.read_denominators()
+    add(indicator_coverage_check(groups, urban_rural))
 
     # reference sample size from the denominator validation (k1 has no missing)
     total_n = None
@@ -94,7 +147,10 @@ def run_checks():
     for item in REGISTRY:
         col = item["column"]
         if col in district.columns and item["national"] in nat:
-            mean_n = np.average(district[col], weights=district["Valid respondents"])
+            mean_n = np.average(
+                district[col],
+                weights=district[item["valid_count_column"]],
+            )
             if abs(mean_n - nat[item["national"]]) > 3.0:
                 off.append(f"{item['short']} ({mean_n:.1f} vs {nat[item['national']]:.1f})")
     add(_check(not off, "Sample-weighted district averages sit close to national estimates",
@@ -137,9 +193,10 @@ def run_checks():
 
     # ---- Barriers ---------------------------------------------------------
     if barriers_n is not None:
-        add(_check(abs(barriers_n["Weighted share (%)"].sum() - 100) < 1e-6,
+        add(_check(np.isclose(barriers_n["Weighted share (%)"].sum(), 100, atol=1e-3),
                    "National barrier shares add up to 100%",
-                   "Weighted shares sum to 100%.", "National barrier shares do not sum to 100%.", "Barriers"))
+                   "Weighted shares sum to 100% within output rounding.",
+                   "National barrier shares do not sum to 100%.", "Barriers"))
     if barriers_d is not None:
         sums = barriers_d.groupby("District")["Weighted share (%)"].sum()
         add(_check(np.allclose(sums, 100, atol=1e-4) and len(sums) == 30,
@@ -169,17 +226,16 @@ def run_checks():
 
     # ---- Denominators -----------------------------------------------------
     if denominators is not None:
-        core_vars = [i["variable"] for i in REGISTRY if i["variable"] in set(denominators["Variable"])
-                     and i["variable"] not in ("qf4_06", "qf4_10")]
+        core_vars = [
+            item["variable"] for item in REGISTRY
+            if item["variable"] in set(denominators["Variable"])
+            and item["variable"] not in ROUTED_VARIABLES
+        ]
         sub = denominators[denominators["Variable"].isin(core_vars)]
         add(_check((sub["Valid response (%)"] >= 99.99).all(), "Dashboard indicators have full response coverage",
                    f"{len(sub)} indicator questions have no missing responses.",
                    "Some dashboard indicator has missing responses.", "Denominators"))
-        routed = denominators[denominators["Valid response (%)"] < 99.99]
-        add(_result("pass", "Routed questions are kept out of headline indicators",
-                    f"{len(routed)} routed questions (e.g. current mobile-money use) are documented but "
-                    "not used as full-population indicators; SACCO and savings-group use are computed on "
-                    "the full sample with never-users counted as non-users.", "Denominators"))
+        add(routed_question_check(denominators))
 
     # ---- Sample size warnings ---------------------------------------------
     small = groups.sort_values("Valid respondents").iloc[0]

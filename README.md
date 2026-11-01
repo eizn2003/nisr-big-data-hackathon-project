@@ -62,7 +62,7 @@ The project focuses on exploring financial inclusion in Rwanda using the 2024 Fi
 
 Geographically, the survey analysis covers Rwanda's 30 districts, allowing users to examine variations in financial inclusion across different parts of the country. The analysis focuses on adults aged 16 years and above, consistent with the survey population.
 
-The FinScope component covers eight indicators defined in the application's indicator registry:
+The FinScope component currently covers fourteen indicators defined in the application's indicator registry:
 
 **Core indicators:**
 
@@ -77,6 +77,16 @@ The FinScope component covers eight indicators defined in the application's indi
 - Saving through groups.
 - Current use of an Umurenge SACCO.
 - Current use of savings groups.
+- Current mobile-money use among respondents with valid answers to the routed question.
+- Sending or receiving mobile-money transfers among respondents with valid answers to the routed question.
+- Borrowing from informal groups during the previous 12 months.
+- Medical-insurance coverage reported by respondents.
+- Ever-use of an Umurenge SACCO.
+- Ever-use of a savings group.
+
+Routed-question estimates use their item-specific valid-response denominators where specified. Skipped answers are
+not treated as “No” for the mobile-money use and transfer measures. Existing full-population current-use estimates
+for SACCOs and savings groups retain their original calculation and are not confirmed non-use rates.
 
 The dashboard further supports selected comparisons based on gender, age, education, and urban or rural residence, as well as an examination of reported barriers to bank account ownership.
 

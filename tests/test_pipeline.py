@@ -24,6 +24,10 @@ def _toy():
         "k1": yn(0.2), "h2_1": yn(0.4), "g3a_17": yn(0.2), "e9b": yn(0.2), "g3a_11": yn(0.5),
         "f5": rng.choice([bp.MOBILE_MONEY_ACTIVE, "You are registered but you have never used mobile money services"], n),
         "qf1_06": yn(0.25), "qf1_10": yn(0.5),
+        "qf4_05": rng.choice(["Yes", "No", None], n, p=[0.35, 0.35, 0.3]),
+        "qf5_05_6": rng.choice(["Yes", "No", None], n, p=[0.25, 0.45, 0.3]),
+        "h3_09": yn(0.15),
+        "i5a_1": yn(0.7),
     })
     df["qf4_06"] = np.where(df["qf1_06"].eq("Yes"), yn(0.8), None)   # routed
     df["qf4_10"] = np.where(df["qf1_10"].eq("Yes"), yn(0.9), None)
@@ -60,3 +64,16 @@ def test_tables_have_expected_structure():
     assert np.allclose(shares, 100)
     for col in bp.RULES:
         assert col in pg.columns and col in tables["urban_rural_financial_inclusion.csv"].columns
+    for column, count_column in bp.VALID_RESPONSE_COLUMNS.items():
+        assert count_column in pg.columns
+        assert count_column in tables["district_financial_inclusion.csv"].columns
+
+
+def test_routed_indicators_use_their_own_valid_response_counts():
+    df = _toy()
+    tables = bp.build_tables(df)
+    pg = tables["population_group_indicators.csv"]
+    mobile = pg.loc[pg["Group type"].eq("Gender")]
+    expected = df.groupby("b2", observed=True)["qf4_05"].count().to_dict()
+    observed = mobile.set_index("Group")[bp.VALID_RESPONSE_COLUMNS["Currently uses mobile-money operator (%)"]]
+    assert observed.to_dict() == expected

@@ -60,7 +60,10 @@ def build_scores(districts, nat, components, deff):
         top = gap.max()
         df[f"gap::{col}"] = gap
         df[f"norm::{col}"] = gap / top * 100 if top and top > 0 else 0.0
-        margin = pd.Series([data.moe_pp(v, n, deff) for v, n in zip(df[col], df["Valid respondents"])],
+        denominator = item["valid_count_column"]
+        if denominator not in df.columns:
+            raise ValueError(f"District data is missing {denominator!r}.")
+        margin = pd.Series([data.moe_pp(v, n, deff) for v, n in zip(df[col], df[denominator])],
                            index=df.index)
         df[f"moe::{col}"] = margin
         df[f"signal::{col}"] = (gap > margin) & gap.notna()

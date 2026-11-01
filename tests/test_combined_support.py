@@ -89,13 +89,17 @@ def test_available_when_points_exist():
     assert cs.classify_context(_mapping(_relationship()), "district", entries).available
 
 
-@pytest.mark.parametrize("group", ["Age group", "Education", "Area"])
+@pytest.mark.parametrize("group", ["Education", "Area"])
 def test_unsupported_population_dimensions(group):
     assert cs.scope_state(group).state == cs.STATE_SCOPE_UNSUPPORTED
 
 
 def test_gender_is_not_scope_limited():
     assert cs.scope_state("Gender") is None
+
+
+def test_age_groups_are_not_crosswalked_but_may_have_separate_nbr_segments():
+    assert cs.scope_state("Age group") is None
 
 
 # ---------------------------------------------------------------- observations

@@ -8,6 +8,7 @@ from src import data
 from src.data_sources.mongodb_population_groups import load_population_group_results
 from src.indicators import REGISTRY, available
 from src.pages.combined_support import (
+    ContextState,
     context_state_html,
     group_recommendations,
     header_pill,
@@ -39,6 +40,11 @@ HEAT_SCALE = ["#EAF6F3", "#9FD3CB", "#3AA597", "#17746A", "#0E2A35"]
 KEY_GROUP, KEY_IND = "population_groups_type", "population_groups_indicator"
 
 
+def _open_district_evidence(indicator):
+    st.session_state["dx_indicator"] = indicator
+    st.session_state["selected_page"] = "District explorer"
+
+
 @st.cache_data
 def load_group_data():
     frame = load_population_group_results().observations
@@ -50,8 +56,21 @@ def load_group_data():
     items = available(frame)
     if not items:
         raise ValueError("The population-group dataset has no recognised indicator columns.")
+    missing_denominators = [
+        item["valid_count_column"]
+        for item in items
+        if item["valid_count_column"] not in frame.columns
+    ]
+    if missing_denominators:
+        raise ValueError(
+            "The population-group dataset is missing indicator-specific respondent "
+            "counts: " + ", ".join(missing_denominators)
+        )
     for item in items:
         frame[item["column"]] = pd.to_numeric(frame[item["column"]], errors="coerce")
+        frame[item["valid_count_column"]] = pd.to_numeric(
+            frame[item["valid_count_column"]], errors="coerce"
+        )
     return frame
 
 
@@ -131,18 +150,24 @@ def _filters_text(entry):
     )
 
 
-def _gender_context(item, groups):
-    """Exact-Gender NBR series for each FinScope gender group, with explicit states."""
+def _population_context(item, group_type, groups):
+    """Fetch exact NBR demographic slices without crosswalking survey age bands."""
+    if group_type not in {"Gender", "Age group"}:
+        return {}
+    subgroup_type = "Gender" if group_type == "Gender" else "Age group"
+    requested_groups = groups if group_type == "Gender" else ["Youth", "Non-Youth"]
     result = {}
-    for group in groups:
+    for group in requested_groups:
         entries, version, state = load_context(
-            item["variable"], level="national", subgroup_type="Gender", subgroup=str(group),
+            item["variable"], level="national",
+            subgroup_type=subgroup_type,
+            subgroup=str(group),
         )
         result[str(group)] = (entries, version, state)
     return result
 
 
-def _render_group_context(group_type, item, groups, gender_context):
+def _render_group_context(group_type, item, subgroup_context):
     """NBR context for the compared groups, shown with the FinScope group cards."""
     from src.pages.nbr_dashboard import context_strip_html, render_combined_context
 
@@ -156,14 +181,33 @@ def _render_group_context(group_type, item, groups, gender_context):
         if limit is not None:
             render_html(context_state_html(limit, label=group_type))
             return
-        if not any(state.available for _, _, state in gender_context.values()):
-            first = next(iter(gender_context.values()))[2]
-            render_html(context_state_html(first, label=f"{item['short']} by gender"))
+        if not subgroup_context:
+            render_html(context_state_html(
+                ContextState(
+                    "no_counterpart",
+                    "NBR context is not available for this dimension.",
+                ),
+                label=group_type,
+            ))
             return
-        columns = st.columns(len(gender_context), gap="medium")
-        for column, (group, (entries, _, state)) in zip(columns, gender_context.items()):
+        if not any(state.available for _, _, state in subgroup_context.values()):
+            first = next(iter(subgroup_context.values()))[2]
+            dimension_label = (
+                "separate NBR Youth / Non-Youth categories"
+                if group_type == "Age group" else f"{item['short']} by gender"
+            )
+            render_html(context_state_html(first, label=dimension_label))
+            return
+        if group_type == "Age group":
+            st.caption(
+                "NBR Youth and Non-Youth are shown as separate administrative categories; "
+                "they are not matched to FinScope's age bands."
+            )
+        columns = st.columns(len(subgroup_context), gap="medium")
+        for column, (group, (entries, _, state)) in zip(columns, subgroup_context.items()):
             with column:
-                render_html(source_row_html("nbr", f"Gender: {group}"))
+                label = "NBR age segment" if group_type == "Age group" else "Gender"
+                render_html(source_row_html("nbr", f"{label}: {group}"))
                 if entries:
                     entry = entries[0]
                     render_html(context_strip_html(
@@ -171,13 +215,16 @@ def _render_group_context(group_type, item, groups, gender_context):
                     ))
                 else:
                     render_html(context_state_html(state))
-        with st.expander("NBR series detail by gender"):
-            tabs = st.tabs([str(g) for g in gender_context])
-            for tab, (group, (entries, version, state)) in zip(tabs, gender_context.items()):
+        detail_label = "NBR age-segment detail" if group_type == "Age group" else "NBR series detail by gender"
+        with st.expander(detail_label):
+            tabs = st.tabs([str(g) for g in subgroup_context])
+            for tab, (group, (entries, version, state)) in zip(tabs, subgroup_context.items()):
                 with tab:
                     if entries:
                         render_combined_context(
-                            item["variable"], subgroup_type="Gender", subgroup=group,
+                            item["variable"],
+                            subgroup_type=("Gender" if group_type == "Gender" else "Age group"),
+                            subgroup=group,
                             entries=entries, source_version=version,
                         )
                     else:
@@ -196,7 +243,7 @@ def render_population_groups():
         return
 
     try:
-        frame = load_group_data()
+        frame = load_group_data().copy()
     except (FileNotFoundError, ValueError) as error:
         st.error("Could not load the population-group analysis data.")
         st.caption(str(error))
@@ -208,6 +255,11 @@ def render_population_groups():
     chosen = st.session_state.get(KEY_IND)
     item = indicators.get(chosen) or list(indicators.values())[0]
     metric = item["column"]
+    denominator = item["valid_count_column"]
+    if denominator not in frame.columns:
+        raise ValueError(f"The population-group dataset is missing {denominator!r}.")
+    frame[denominator] = pd.to_numeric(frame[denominator], errors="coerce")
+    frame["Valid respondents"] = frame[denominator]
 
     subset = frame.loc[frame["Group type"].astype(str).eq(group_type)].copy()
     subset = subset.dropna(subset=["Group", metric]).reset_index(drop=True)
@@ -237,17 +289,24 @@ def render_population_groups():
         else "Higher and lower values are descriptive; neither is inherently better."
     )
 
-    gender_context = {}
+    subgroup_context = {}
     if mode == "Combined":
         inject_combined_styles()
-        if group_type == "Gender":
-            gender_context = _gender_context(item, shown["Group"].astype(str).tolist())
+        subgroup_context = _population_context(
+            item, group_type, shown["Group"].astype(str).tolist(),
+        )
 
     # ---- Hero + headline cards -------------------------------------------
     page_header(
         "Population groups",
         f"How {item['label'].lower()} differs across {group_type.lower()} groups, from FinScope Rwanda 2024."
-        + (" NBR context is shown only where it covers the same group." if mode == "Combined" else ""),
+        + (
+            " NBR Youth and Non-Youth are shown separately when exact filtered series exist; "
+            "they are not matched to these FinScope age bands."
+            if mode == "Combined" and group_type == "Age group"
+            else " NBR context is shown only where it covers the same group."
+            if mode == "Combined" else ""
+        ),
         pill=header_pill(mode, "FinScope Rwanda 2024"),
         mode=mode,
         intro=(
@@ -306,7 +365,7 @@ def render_population_groups():
                 small_groups=[str(r["Group"]) for _, r in subset.iterrows()
                               if data.margin_flag(r["Valid respondents"]) == "wide"],
                 gender_states=(
-                    {g: state for g, (_, _, state) in gender_context.items()}
+                    {g: state for g, (_, _, state) in subgroup_context.items()}
                     if group_type == "Gender" else None
                 ),
             ), title="What these results support")
@@ -318,7 +377,20 @@ def render_population_groups():
     render_html(_group_cards(shown, metric, item, hi_row["Group"], lo_row["Group"]))
     if mode == "Combined":
         st.markdown("")
-        _render_group_context(group_type, item, shown["Group"].astype(str).tolist(), gender_context)
+        _render_group_context(group_type, item, subgroup_context)
+        st.caption(
+            "NBR intelligence checks use exact district series and filters. A district-level "
+            "signal is not evidence about a demographic subgroup; NBR Youth/Non-Youth are not "
+            "crosswalked to FinScope age bands."
+        )
+        st.button(
+            "Explore district evidence for this indicator",
+            key="population_to_district_explorer",
+            on_click=_open_district_evidence,
+            args=(item["short"],),
+            use_container_width=True,
+            icon=":material/map:",
+        )
     st.markdown("")
 
     # ---- Bars + sample sizes -------------------------------------------------------------
@@ -461,7 +533,7 @@ def render_population_groups():
                 "respondent counts are unweighted valid sample sizes. Margins are indicative (simple random "
                 "sampling) and understate design-based uncertainty. "
                 + ("NBR context, where shown, is a separate administrative source that is never combined with "
-                   "these estimates; Age group, Education and Area are FinScope-only. "
+                   "these estimates; NBR Youth/Non-Youth are not mapped to FinScope age groups. "
                    if mode == "Combined" else
                    "NBR context is not combined with these estimates; Education is FinScope-only. ")
                 + "Differences alone do not establish causation.</div>")

@@ -134,8 +134,8 @@ _DIMENSIONS = [
     (
         "Age group",
         "Yes",
-        "No equivalent",
-        "NBR Youth and Non-Youth are not crosswalked to FinScope age groups.",
+        "Separate NBR Youth / Non-Youth slices where exact filters exist",
+        "Shown only as NBR categories; never crosswalked to FinScope age bands.",
     ),
     (
         "Education",
@@ -153,9 +153,7 @@ _DIMENSIONS = [
 
 
 def _routed_questions_card():
-    """Valid-response share for the routed SACCO / savings-group questions, read from the
-    existing denominator validation. Estimates are not changed; only the limitation is stated.
-    """
+    """Show valid-response shares and denominator caveats for routed indicators."""
     frame = data.load_denominators()
     shares = {}
     if frame is not None and {"Variable", "Valid response (%)"} <= set(frame.columns):
@@ -182,9 +180,10 @@ def _routed_questions_card():
             + "</table>"
         )
         render_html(
-            '<div class="micro">Whether a missing answer reflects never having used the service, a skipped '
-            "question, or a recording gap has not been verified against the survey routing, so the figures are "
-            "reported as current use among all respondents.</div>"
+            '<div class="micro">For qf4_05 and qf5_05_6, skipped respondents are excluded from the estimate. '
+            "The existing qf4_06 and qf4_10 current-use estimates use the full respondent population and treat "
+            "missing answers as non-use; because the routing has not been verified, they are not confirmed "
+            "non-use rates.</div>"
         )
 
 

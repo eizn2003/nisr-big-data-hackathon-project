@@ -9,6 +9,10 @@ from pymongo.errors import PyMongoError
 
 from src import data
 from src.indicators import BY_COLUMN, CORE, REGISTRY
+from src.models.nbr_intelligence.indicator_mapping import (
+    DISPLAYABLE_RELATIONSHIPS,
+    MAPPING_BY_VARIABLE,
+)
 from src.pages.barrier_charts import district_family_figure
 from src.pages.combined_support import (
     STATE_AVAILABLE,
@@ -49,6 +53,11 @@ build_map = _combined_district_explorer.build_map
 
 
 def _open_district_explorer():
+    st.session_state["selected_page"] = "District explorer"
+
+
+def _open_indicator_district_explorer(indicator):
+    st.session_state["dx_indicator"] = indicator
     st.session_state["selected_page"] = "District explorer"
 
 
@@ -593,7 +602,7 @@ def _combined_nbr_figure(observations, *, metric_label, unit_label):
         go.Scatter(
             x=[item["reporting_date"] for item in ordered],
             y=[item["value"] for item in ordered],
-            mode="lines+markers+text",
+            mode="markers+text",
             text=[f"{item['value']:,.0f}" for item in ordered],
             textposition="top center",
             textfont=dict(family="Fraunces, Georgia, serif", size=15, color="#F1F6F8"),
@@ -686,6 +695,7 @@ def _render_combined_contextual_finding(index, finding):
     if not observations:
         return
 
+    trend = finding.get("nbr_trend_summary") or {}
     latest = max(
         source_points,
         key=lambda point: str(point.get("reporting_date", "")),
@@ -723,6 +733,22 @@ def _render_combined_contextual_finding(index, finding):
                 config={"displayModeBar": False},
             )
             st.caption(f"NBR · {latest.get('reporting_date', '')} · {filters_label}")
+            change = trend.get("absolute_change")
+            change_text = (
+                f"Recorded change across {trend.get('observation_count', len(observations))} "
+                f"snapshots: {float(change):+,.3g} {unit_label or '(unit not specified)'}."
+                if change is not None
+                else f"{len(observations)} recorded snapshots; no change magnitude is available."
+            )
+            st.caption(
+                f"{observations[0]['reporting_date']} to "
+                f"{observations[-1]['reporting_date']} · {change_text}"
+            )
+            if trend.get("percent_change") is not None:
+                st.caption(
+                    f"Change between recorded values: {float(trend['percent_change']):+.1f}% "
+                    "(not a FinScope percentage)."
+                )
             with st.expander("NBR source details"):
                 st.dataframe(
                     _combined_branch_provenance(entry),
@@ -760,8 +786,12 @@ def _render_combined_contextual_finding(index, finding):
             )
             st.caption(
                 f"NBR direction: {finding.get('nbr_observed_direction', 'not assessed')} · "
-                f"Mapping: {finding.get('mapping_status', 'unresolved')} · "
-                f"Evidence: {finding.get('evidence_sufficiency_state', 'unassessed')}"
+                f"Relationship: {finding.get('mapping_status', 'unresolved')} · "
+                f"Evidence sufficiency: {finding.get('evidence_sufficiency_state', 'unassessed')}"
+            )
+            st.caption(
+                "This trend is not an anomaly confidence score. No adjudicated labels "
+                "are available to estimate detector accuracy."
             )
             st.markdown(
                 f"**What this may suggest:** "
@@ -775,7 +805,186 @@ def _render_combined_contextual_finding(index, finding):
                         "NBR channel context is a separate administrative "
                         "comparison; it does not establish a survey change."
                     )
+            st.button(
+                "Inspect this indicator by district",
+                key=f"national_finding_to_district_{finding_key}",
+                on_click=_open_indicator_district_explorer,
+                args=(
+                    next(
+                        (
+                            item["short"]
+                            for item in REGISTRY
+                            if item["variable"] == finding.get("indicator_variable")
+                        ),
+                        "",
+                    ),
+                ),
+                use_container_width=True,
+                icon=":material/map:",
+            )
     st.markdown("")
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _build_national_contextualization_report(points):
+    from pathlib import Path
+
+    from src.models.nbr_intelligence.contextualization import (
+        build_national_contextualization_report,
+        load_finscope_baselines,
+    )
+
+    baselines = load_finscope_baselines(
+        Path(__file__).resolve().parents[2] / "data" / "processed"
+    )
+    return build_national_contextualization_report(points, baselines)
+
+
+def _load_national_combined_assessment():
+    from src.pages.nbr_dashboard import load_combined_national_evidence
+
+    points, _ = load_combined_national_evidence()
+    return points, _build_national_contextualization_report(points)
+
+
+def _national_signal_diagnostics(report, findings, excluded_source_record_ids=()):
+    suggestions = [
+        item
+        for item in report.get("suggestions", [])
+        if item.get("analytical_level") == "national"
+        and str(item.get("geography", "")).casefold() == "rwanda"
+    ]
+    excluded_sources = {str(item) for item in excluded_source_record_ids}
+    no_observations = []
+    insufficient_history = []
+    evaluated = []
+    for item in suggestions:
+        evidence = (item.get("supporting_evidence") or [{}])[0]
+        observations = evidence.get("observations") or []
+        if not observations:
+            no_observations.append(item)
+            continue
+        dates = {
+            str(point.get("reporting_date", ""))
+            for point in observations
+            if point.get("reporting_date")
+        }
+        if len(dates) < 3:
+            insufficient_history.append(item)
+        else:
+            evaluated.append(item)
+    selected_ids = {
+        (
+            str(item.get("indicator_variable", "")),
+            str(item.get("nbr_page", "")),
+            str(item.get("nbr_metric", "")),
+        )
+        for item in findings
+    }
+    headline_exclusions = [
+        item
+        for item in evaluated
+        if str(item.get("indicator_variable", "")) == "k1"
+        or excluded_sources.intersection(
+            str(source_id)
+            for evidence in item.get("supporting_evidence", [])
+            for source_id in evidence.get("source_record_ids", [])
+        )
+    ]
+    selected_count = len(selected_ids)
+    return {
+        "national_suggestion_count": len(suggestions),
+        "no_observation_count": len(no_observations),
+        "insufficient_history_count": len(insufficient_history),
+        "evaluated_count": len(evaluated),
+        "headline_exclusion_count": len(headline_exclusions),
+        "selected_count": selected_count,
+        "evaluated_not_selected_count": max(
+            0, len(evaluated) - len(headline_exclusions) - selected_count
+        ),
+    }
+
+
+def _approved_national_findings(report, headline_entries, limit=4):
+    from src.models.nbr_intelligence.contextualization import (
+        select_national_contextualization_findings,
+    )
+
+    shown_ids = []
+    for entry in headline_entries.values():
+        latest = latest_point(entry.get("points", []))
+        if latest and latest.get("source_record_id"):
+            shown_ids.append(str(latest["source_record_id"]))
+    approved_report = {
+        **report,
+        "suggestions": [
+            suggestion
+            for suggestion in report.get("suggestions", [])
+            if suggestion.get("mapping_status") in {"relevant", "conditional"}
+        ],
+    }
+    return select_national_contextualization_findings(
+        approved_report,
+        limit=limit,
+        excluded_indicator_variables=("k1",),
+        excluded_source_record_ids=shown_ids,
+    ), shown_ids
+
+
+def _render_descriptive_nbr_context(points, item):
+    if points is None:
+        return
+    from src.pages.nbr_dashboard import (
+        _mapped_series,
+        _render_observation_table,
+        _render_trend,
+        NBR_PAGE_LABELS,
+    )
+
+    allowed = set(DISPLAYABLE_RELATIONSHIPS) | {
+        "proxy_with_unresolved_definition"
+    }
+    entries = _mapped_series(
+        points,
+        item["variable"],
+        geography_level="national",
+        geography=None,
+        relationships=allowed,
+    )
+    descriptive = [
+        entry
+        for entry in entries
+        if entry.get("relationship") not in DISPLAYABLE_RELATIONSHIPS
+    ]
+    if not descriptive:
+        return
+
+    st.markdown("**Descriptive administrative observations · not comparisons**")
+    st.caption(
+        "These original NBR measures are available to inspect, but their relationship "
+        "to the selected FinScope indicator remains unresolved. No denominator, unique "
+        "customer count, or survey-equivalent rate is inferred."
+    )
+    for index, entry in enumerate(descriptive):
+        page_label = NBR_PAGE_LABELS.get(str(entry.get("page")), entry.get("page", "NBR"))
+        unit = entry.get("unit") or "unit not specified"
+        filters = _filters_text(entry)
+        st.markdown(f"**{page_label} · {entry['metric_label']} · {unit}**")
+        st.caption(
+            f"National NBR observations · exact filters: {filters or 'not recorded'} · "
+            f"mapping remains {_relationship_label(entry.get('relationship')).lower()}."
+        )
+        st.warning(str(entry.get("limitations") or "The relationship is unresolved."))
+        _render_trend(
+            entry["points"],
+            title=f"{entry['metric_label']} · {unit}",
+            snapshots=True,
+            key_suffix=(
+                f"descriptive_{item['variable']}_{entry['page']}_"
+                f"{entry['metric_label']}_{index}"
+            ),
+        )
+        _render_observation_table(entry["points"])
 
 
 def _filters_text(entry):
@@ -796,8 +1005,8 @@ def _headline_entry(entries):
 def _combined_headline():
     """NBR strips for the four headline cards, keyed by FinScope variable.
 
-    Returns (strips, entries, states). Cards without an approved national NBR
-    series get no strip; their explanation is shown once under the header.
+    Returns (strips, entries, states). Each card gets either approved series
+    context or an explicit state explaining why it is unavailable.
     """
     from src.pages.nbr_dashboard import context_strip_html
 
@@ -807,6 +1016,10 @@ def _combined_headline():
         entries, _, state = load_context(variable, level="national")
         states[variable] = state
         if not entries:
+            strips[variable] = context_state_html(
+                state,
+                label="NBR",
+            )
             continue
         entry = _headline_entry(entries)
         entries_by_variable[variable] = entry
@@ -842,63 +1055,126 @@ def _headline_coverage_caption(states):
     )
 
 
-def _render_combined_findings(headline_entries, nbr_error):
-    """Paired NBR signal + FinScope baseline findings from the existing assessment."""
-    from pathlib import Path
-
-    from src.models.nbr_intelligence.contextualization import (
-        build_national_contextualization_report,
-        load_finscope_baselines,
-        select_national_contextualization_findings,
-    )
-    from src.pages.nbr_dashboard import load_combined_national_evidence
-
+def _render_combined_findings(
+    headline_entries,
+    nbr_error,
+    *,
+    assessment_snapshot=None,
+    assessment_error=None,
+):
+    """Render approved national trend suggestions from the existing assessment."""
     section_title(
         "What the financial system is recording",
-        "Signals surfaced by the NBR intelligence assessment, each shown beside the related "
-        "FinScope estimate without combining the two.",
+        "Observed NBR movements are reviewed beside FinScope 2024 only where an approved relationship "
+        "exists. National trend suggestions are not the district anomaly detector.",
     )
-    error = nbr_error
+    error = assessment_error or nbr_error
     findings = []
+    report = None
+    national_points = []
+    shown_ids = []
     if error is None:
+        if assessment_snapshot is not None:
+            national_points, report = assessment_snapshot
+        else:
+            try:
+                national_points, report = _load_national_combined_assessment()
+            except (
+                FileNotFoundError,
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                PyMongoError,
+            ) as caught:
+                error = caught
+    if error is None and report is not None:
         try:
-            national_points, _ = load_combined_national_evidence()
-            baselines = load_finscope_baselines(
-                Path(__file__).resolve().parents[2] / "data" / "processed"
-            )
-            report = build_national_contextualization_report(national_points, baselines)
-            shown_ids = []
-            for entry in headline_entries.values():
-                latest = latest_point(entry.get("points", []))
-                if latest and latest.get("source_record_id"):
-                    shown_ids.append(str(latest["source_record_id"]))
-            findings = select_national_contextualization_findings(
+            findings, shown_ids = _approved_national_findings(
                 report,
-                limit=4,
-                excluded_indicator_variables=("k1",),
-                excluded_source_record_ids=shown_ids,
+                headline_entries,
             )
-        except (
-            FileNotFoundError,
-            OSError,
-            ValueError,
-            KeyError,
-            TypeError,
-            RuntimeError,
-            PyMongoError,
-        ) as caught:
+        except (ValueError, KeyError, TypeError) as caught:
             error = caught
     if error is not None:
         st.warning(
-            "The national evidence assessment is unavailable; no findings were substituted."
+            "The national trend assessment could not be completed; no findings were substituted."
         )
-        st.caption("FinScope content on this page is unaffected.")
+        st.caption(
+            "FinScope results are unaffected. Check the source read and assessment inputs."
+        )
+        st.caption(str(error))
         return
-    if not findings:
-        st.info(
-            "No national findings currently meet the assessment's evidence and "
-            "change-selection criteria. Absence of a finding is not evidence of no change."
+    if report is None:
+        st.info("No national NBR assessment output is available.")
+        return
+
+    source = report.get("source_data", {})
+    dates = source.get("reporting_dates", [])
+    st.caption(
+        f"Assessment source: {source.get('eligible_national_nbr_observation_count', 0):,} "
+        f"eligible national KPI observations across {len(dates)} reporting dates"
+        + (f" ({', '.join(map(str, dates))})." if dates else ".")
+    )
+    st.caption(
+        "National suggestions summarize direction across observed dates; at least three "
+        "independent reporting dates are needed for a directional summary, and five are "
+        "needed for the report's sufficient-directional-evidence label. That label is not "
+        "statistical confidence or detector accuracy."
+    )
+
+    all_national = [
+        item
+        for item in report.get("suggestions", [])
+        if item.get("analytical_level") == "national"
+        and str(item.get("geography", "")).casefold() == "rwanda"
+    ]
+    unresolved_count = sum(
+        1 for item in all_national
+        if item.get("mapping_status") not in {"relevant", "conditional"}
+        and item.get("supporting_evidence")
+    )
+    diagnostics = _national_signal_diagnostics(report, findings, shown_ids)
+    if findings:
+        st.caption(
+            f"{len(findings)} approved national trend suggestion(s) met the selection rules. "
+            f"{unresolved_count} additional supported suggestions retain unresolved/non-approved "
+            "relationships and are not presented as cross-source findings."
         )
+    else:
+        source_count = source.get("eligible_national_nbr_observation_count", 0)
+        if not source_count:
+            reason = "No eligible national NBR observations were available to assess."
+        elif diagnostics["no_observation_count"]:
+            reason = (
+                f"{diagnostics['no_observation_count']} national suggestion(s) had no "
+                "eligible scope-matched observations."
+            )
+        elif diagnostics["insufficient_history_count"]:
+            reason = (
+                f"{diagnostics['insufficient_history_count']} suggestion(s) had fewer "
+                "than three independent reporting dates."
+            )
+        elif diagnostics["evaluated_count"]:
+            reason = (
+                "National trends were assessed, but none survived the approved-relationship, "
+                "direction, headline de-duplication, and selection rules."
+            )
+        else:
+            reason = "No national suggestion was eligible for selection."
+        st.info(
+            "No national findings currently meet the approved selection rules. "
+            "No qualifying national trend finding is shown. "
+            + reason
+            + " Absence of a finding is not evidence of no change."
+        )
+    if diagnostics["evaluated_not_selected_count"]:
+        st.caption(
+            f"{diagnostics['evaluated_not_selected_count']} other scope-matched "
+            "trend suggestion(s) were evaluated but not selected for this compact view."
+        )
+    if not findings:
         return
     for index, finding in enumerate(findings):
         _render_combined_contextual_finding(index, finding)
@@ -943,6 +1219,211 @@ def _render_channel_context(nat):
         render_html(state_summary_html(unmatched))
 
 
+def _valid_response_count(validation, variable):
+    if (
+        validation is None
+        or not isinstance(validation, pd.DataFrame)
+        or not {"Variable", "Valid responses"} <= set(validation.columns)
+    ):
+        return None
+    rows = validation.loc[validation["Variable"].astype(str).eq(variable)]
+    if rows.empty:
+        return None
+    value = pd.to_numeric(rows.iloc[0]["Valid responses"], errors="coerce")
+    return int(value) if pd.notna(value) and value >= 0 else None
+
+
+def _relationship_label(relationship):
+    return {
+        "contextual_indicator": "Relevant",
+        "conditional_contextual_indicator": "Conditional",
+        "proxy_with_unresolved_definition": "Unresolved",
+        "unsuitable": "Unsuitable",
+    }.get(str(relationship), "Unclassified")
+
+
+def _render_unshown_relationships(mapping):
+    relationships = mapping.get("nbr_relationships", [])
+    unshown = [
+        item
+        for item in relationships
+        if item.get("suppressed")
+        or item.get("relationship") not in DISPLAYABLE_RELATIONSHIPS
+    ]
+    if not unshown:
+        return
+    with st.expander("Relationships not used as approved comparisons"):
+        for relationship in unshown:
+            label = _relationship_label(relationship.get("relationship"))
+            if relationship.get("suppressed"):
+                label = "Suppressed"
+            st.markdown(f"**{label} · {relationship.get('page', 'NBR series')}**")
+            detail = (
+                relationship.get("suppression_reason")
+                or relationship.get("limitations")
+                or "This relationship is not eligible for analytical context."
+            )
+            st.caption(str(detail))
+
+
+def _render_combined_indicator_explorer(
+    national,
+    nbr_error=None,
+    *,
+    national_points=None,
+    assessment_error=None,
+):
+    national_labels = set(national["Indicator"].astype(str))
+    options = {
+        item["short"]: item
+        for item in REGISTRY
+        if item["national"] in national_labels
+    }
+    if not options:
+        st.info("No registered FinScope indicators are available in the national estimates.")
+        return
+
+    section_title(
+        "Explore a FinScope indicator",
+        "Choose an indicator to see its 2024 survey estimate and any eligible NBR administrative context.",
+    )
+    with st.container(key="card_combined_indicator_explorer"):
+        survey_column, context_column = st.columns([1, 1.15], gap="large")
+        with survey_column:
+            picked = st.selectbox(
+                "FinScope indicator",
+                list(options),
+                key="combined_indicator_selectbox",
+            )
+            item = options[picked]
+            row = national.loc[national["Indicator"].eq(item["national"])]
+            estimate = (
+                pd.to_numeric(row.iloc[0]["Estimate (%)"], errors="coerce")
+                if not row.empty
+                else None
+            )
+            card_title("FinScope Rwanda 2024", item["label"])
+            if pd.notna(estimate):
+                st.metric("Weighted survey estimate", f"{float(estimate):.1f}%")
+            else:
+                st.info("The FinScope estimate is not available for this indicator.")
+
+            mapping = MAPPING_BY_VARIABLE.get(item["variable"], {})
+            population = mapping.get(
+                "survey_population", "Rwanda residents aged 16 years and older"
+            )
+            weight = mapping.get("survey_weight", "pop_wt")
+            reference = mapping.get("survey_reference_period", "FinScope Rwanda 2024")
+            st.caption(f"{reference} · {population} · survey weight: {weight}")
+            st.markdown("**What this indicator measures**")
+            st.write(item.get("description") or item["label"])
+            denominator = mapping.get("survey_denominator")
+            if denominator:
+                st.caption(f"Estimate denominator: {denominator}")
+
+            try:
+                denominator_data = data.load_denominators()
+            except (OSError, ValueError, KeyError) as error:
+                denominator_data = None
+                st.warning("The valid-response count could not be loaded.")
+                st.caption(str(error))
+            valid_responses = _valid_response_count(
+                denominator_data, item["variable"]
+            )
+            st.caption(
+                f"Valid responses: {valid_responses:,}"
+                if valid_responses is not None
+                else "Valid-response count unavailable; no count is inferred."
+            )
+            route_note = routed_note(item["variable"])
+            if route_note:
+                st.warning(route_note)
+
+        with context_column:
+            card_title(
+                "NBR administrative context",
+                "Separate administrative observations, shown only for eligible relationships and their exact source scope.",
+            )
+            mapping = MAPPING_BY_VARIABLE.get(item["variable"], {})
+            configured = mapping.get("nbr_relationships", [])
+            candidates = [
+                relationship
+                for relationship in configured
+                if not relationship.get("suppressed")
+                and relationship.get("relationship") in DISPLAYABLE_RELATIONSHIPS
+            ]
+            conditional = [
+                relationship
+                for relationship in candidates
+                if relationship.get("relationship")
+                == "conditional_contextual_indicator"
+            ]
+            if conditional:
+                for relationship in conditional:
+                    limitation = (
+                        relationship.get("limitations")
+                        or relationship.get("conditions")
+                        or "This relationship has documented limitations."
+                    )
+                    st.warning(f"Conditional relationship. {limitation}")
+
+            if nbr_error is not None:
+                st.warning(
+                    "NBR context could not be loaded. FinScope results are unchanged."
+                )
+                st.caption(str(nbr_error))
+            else:
+                entries, version, state = load_context(
+                    item["variable"], level="national"
+                )
+                state = eligible_state(state, entries)
+                if entries and state.available:
+                    relationship_types = sorted(
+                        {
+                            _relationship_label(entry.get("relationship"))
+                            for entry in entries
+                        }
+                    )
+                    st.caption(
+                        "Relationship class: " + ", ".join(relationship_types)
+                    )
+                    st.caption(
+                        "NBR values are administrative context, not survey estimates "
+                        "and do not explain or alter the FinScope result."
+                    )
+                    from src.pages.nbr_dashboard import render_combined_context
+
+                    render_combined_context(
+                        item["variable"],
+                        entries=entries,
+                        source_version=version,
+                        expanded=True,
+                    )
+                else:
+                    render_html(context_state_html(state, label=item["short"]))
+
+            if assessment_error is not None and any(
+                rel.get("relationship") == "proxy_with_unresolved_definition"
+                for rel in configured
+            ):
+                st.warning(
+                    "Descriptive NBR observations could not be loaded; this does not "
+                    "change the unresolved relationship classification."
+                )
+            elif national_points is not None:
+                _render_descriptive_nbr_context(national_points, item)
+
+            _render_unshown_relationships(mapping)
+            st.button(
+                "Explore this indicator by district",
+                key=f"combined_to_district_{item['variable']}",
+                on_click=_open_indicator_district_explorer,
+                args=(item["short"],),
+                use_container_width=True,
+                icon=":material/map:",
+            )
+
+
 def _render_district_supply_context(variable, district_name, heading):
     from src.pages.nbr_dashboard import context_strip_html
 
@@ -977,7 +1458,7 @@ def render_national_overview():
 
     try:
         national = data.load_national()
-        district = data.load_district()
+        district = data.load_district().copy()
         urban_rural = data.load_urban_rural()
     except (FileNotFoundError, ValueError, KeyError) as error:
         st.error(
@@ -990,12 +1471,27 @@ def render_national_overview():
 
     headline_strips, headline_entries, headline_states = {}, {}, {}
     nbr_error = None
+    assessment_snapshot = None
+    assessment_error = None
     if combined:
         inject_combined_styles()
         try:
             headline_strips, headline_entries, headline_states = _combined_headline()
         except (RuntimeError, ValueError, OSError, PyMongoError) as error:
             nbr_error = error
+        if nbr_error is None:
+            try:
+                assessment_snapshot = _load_national_combined_assessment()
+            except (
+                FileNotFoundError,
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                PyMongoError,
+            ) as error:
+                assessment_error = error
 
     # ---- Hero + headline indicators ----------------------------------------
     page_header(
@@ -1025,6 +1521,14 @@ def render_national_overview():
             )
         else:
             st.caption(_headline_coverage_caption(headline_states))
+        _render_combined_indicator_explorer(
+            national,
+            nbr_error,
+            national_points=(
+                assessment_snapshot[0] if assessment_snapshot is not None else None
+            ),
+            assessment_error=assessment_error,
+        )
     st.markdown("")
 
     # ---- What stands out ---------------------------------------------------
@@ -1042,7 +1546,12 @@ def render_national_overview():
 
     # ---- Combined: administrative signals paired with the survey --------------
     if combined:
-        _render_combined_findings(headline_entries, nbr_error)
+        _render_combined_findings(
+            headline_entries,
+            nbr_error,
+            assessment_snapshot=assessment_snapshot,
+            assessment_error=assessment_error,
+        )
         st.markdown("")
 
     # ---- Saving landscape ---------------------------------------------------
@@ -1292,18 +1801,31 @@ def render_national_overview():
     )
     options = {it["short"]: it for it in REGISTRY if it["column"] in district.columns}
     with st.container(key="card_district_snapshot"):
+        default_indicator = next(iter(options))
         picked = (
             st.pills(
                 "Indicator",
                 list(options.keys()),
                 selection_mode="single",
-                default=list(options.keys())[0],
+                default=st.session_state.get("overview_district_indicator", default_indicator),
                 key="overview_district_indicator",
             )
-            or list(options.keys())[0]
+            or st.session_state.get("overview_district_indicator", default_indicator)
         )
+        if picked not in options:
+            picked = default_indicator
         item = options[picked]
         metric = item["column"]
+        denominator = item["valid_count_column"]
+        if denominator not in district.columns:
+            st.error(
+                "The district dataset is missing indicator-specific respondent "
+                f"counts for {item['label']}."
+            )
+            return
+        district["Valid respondents"] = pd.to_numeric(
+            district[denominator], errors="coerce"
+        )
         national_est = nat.get(item["national"])
 
         # NBR district context is looked up from the *current* indicator on every

@@ -24,6 +24,8 @@ PAGES = [
 def _app(module, func):
     script = (
         f"import sys; sys.path.insert(0, r'{ROOT}')\n"
+        "import streamlit as st\n"
+        "st.session_state['global_dashboard_mode'] = 'FinScope'\n"
         f"from src.styles import apply_global_styles\n"
         f"from src.pages.{module} import {func}\n"
         f"apply_global_styles()\n{func}()\n"
@@ -82,7 +84,15 @@ def test_priority_explorer_interactions():
 def test_full_app_navigation():
     source = (ROOT / "app.py").read_text()
     source = source.replace("from src.auth import render_access_gate", "render_access_gate = lambda: True")
-    script = f"import sys; sys.path.insert(0, r'{ROOT}')\n" + source
+    script = (
+        f"import sys; sys.path.insert(0, r'{ROOT}')\n"
+        "import src.pages.nbr_dashboard as dashboard\n"
+        "dashboard.load_nbr_dashboard_data = lambda version, pages=None, scope_keys=None: "
+        "([], {'eligible_source_point_count': 0}, [], 'synthetic-empty')\n"
+        "dashboard.load_combined_national_evidence = lambda: ([], [])\n"
+        "dashboard.load_nbr_page_catalog = lambda version, page: ([], 'synthetic-empty', {})\n"
+        + source
+    )
     at = AppTest.from_string(script, default_timeout=90).run()
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state["global_dashboard_mode"] == "Combined"
@@ -143,6 +153,7 @@ def test_national_kpis_match_source():
 
 def test_combined_national_overview_uses_two_source_specific_headlines():
     script = (
+        f"import sys; sys.path.insert(0, r'{ROOT}')\n"
         "import json\n"
         "import streamlit as st\n"
         "import src.pages.nbr_dashboard as dashboard\n"
@@ -170,37 +181,25 @@ def test_combined_national_overview_uses_two_source_specific_headlines():
         + " ".join(item.value for item in at.caption)
         + " ".join(item.value for item in at.info)
     )
-    assert "Financial inclusion in Rwanda: people and the financial system" in rendered
-    assert rendered.split('<div class="sec">', 1)[0].count('class="kpi"') == 2
-    assert "People reporting bank-account ownership" in rendered
+    assert "Financial inclusion across Rwanda" in rendered
+    assert rendered.split('<div class="sec">', 1)[0].count('class="kpi"') == 4
+    assert "Owns a bank account" in rendered
     assert "20.2" in rendered
     assert "FinScope Rwanda 2024" in rendered
-    assert "Weighted percentage of valid responses" in rendered
-    assert "Rwanda residents aged 16+" in rendered
-    assert "weight pop_wt" in rendered
-    assert "13,994 valid responses" in rendered
-    assert "Recorded active bank branches" in rendered
+    assert "Total Branches" in rendered
+    assert "Total Agents" in rendered
     assert "152" in rendered
     assert "999" not in rendered
     assert "2026-10-24" in rendered
-    assert "Institution Type: Banks · Branch Status: Active · Location: All" in rendered
-    assert rendered.count('class="kpi"') == 2
-    assert 'class="kpi-value" style="color:#1A8A7D">66.6<small>%</small>' in rendered
-    assert "13,994 valid responses" in rendered
+    assert "Branch Status: Active · Institution Type: Banks · Location: All" in rendered
+    assert "Institution Type: E-money Issuers" in rendered
+    assert rendered.count('class="kpi"') == 4
     assert "What the financial system is recording" in rendered
-    assert "Total Agents" in rendered
-    assert "FinScope · f5" in rendered
-    assert rendered.count("FinScope · f5") == 1
-    assert "FinScope · qf4_06" in rendered
-    assert "FinScope · g3a_11" not in rendered
-    assert "What this may suggest" in rendered
-    assert "Mapping: uncertain" in rendered
-    assert "NBR unit: count" in rendered
+    assert "No national findings currently meet" in rendered
+    assert "NBR values are administrative counts in their own units" in rendered
     assert "NBR confirms FinScope" not in rendered
     assert "caused" not in rendered.lower()
     assert "financial inclusion has improved" not in rendered.lower()
-    assert "FinScope · Saving and resilience" not in rendered
-    assert "FinScope · Reasons for not having a bank account" not in rendered
     assert "Explore further" not in rendered
     assert not {
         "combined_nav_district",
@@ -217,37 +216,12 @@ def test_combined_national_overview_uses_two_source_specific_headlines():
         for chart in at.get("plotly_chart")
         if chart.key.startswith("ov_combined_finding_")
     ]
-    assert contextual_charts
-    assert all(
-        json.loads(chart.proto.spec)["layout"]["height"] == 390
-        for chart in contextual_charts
+    assert not contextual_charts
+    requested_pages = at.session_state["requested_pages"]
+    requested_page_union = set().union(
+        *(set(pages or ()) for pages in requested_pages)
     )
-    from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
-
-    expected_pages = tuple(sorted({
-        relationship["page"]
-        for mapping in MAPPING_BY_VARIABLE.values()
-        for relationship in mapping["nbr_relationships"]
-        if "national" in relationship["available_levels"]
-        and relationship["relationship"] != "unsuitable"
-    }))
-    assert at.session_state["requested_pages"] == [expected_pages]
-    provenance = [
-        frame.value
-        for frame in at.dataframe
-        if "Source URL" in frame.value.columns
-    ]
-    assert provenance
-    agent_provenance = next(
-        frame for frame in provenance
-        if frame.iloc[-1]["Source URL"] == "fixture://nbr/agents"
-    )
-    assert agent_provenance.iloc[-1]["Filters"] == (
-        "Agent Status: Active · Gender: All · "
-        "Institution Type: E-money Issuers · Location: All"
-    )
-
-
+    assert {"agents", "branches"} <= requested_page_union
 def _combined_nbr_points():
     filters = {
         "Institution Type": "Banks",
@@ -348,9 +322,11 @@ def _combined_evidence_points():
 
 
 def test_combined_evidence_series_requires_exact_national_metric_scope():
-    from src.pages.national_overview import (
-        _combined_nbr_observations,
-    )
+    from importlib import import_module
+
+    _combined_nbr_observations = import_module(
+        "src.pages.combine-view.national_overview"
+    )._combined_nbr_observations
 
     filters = {
         "Gender": "All",
@@ -410,6 +386,7 @@ def test_combined_evidence_series_requires_exact_national_metric_scope():
 
 def test_combined_national_overview_keeps_unavailable_nbr_value_explicit():
     script = (
+        f"import sys; sys.path.insert(0, r'{ROOT}')\n"
         "import streamlit as st\n"
         "import src.pages.nbr_dashboard as dashboard\n"
         "st.session_state['global_dashboard_mode'] = 'Combined'\n"
@@ -429,19 +406,30 @@ def test_combined_national_overview_keeps_unavailable_nbr_value_explicit():
     at = AppTest.from_string(script, default_timeout=45).run()
 
     assert not at.exception, [error.value for error in at.exception]
-    rendered = _html(at) + " ".join(item.value for item in at.info)
-    assert rendered.split('<div class="sec">', 1)[0].count('class="kpi"') == 2
-    assert "Recorded active bank branches" in rendered
-    assert "Unavailable" in rendered
-    assert "No eligible observation for the approved active-bank series." in rendered
+    rendered = (
+        _html(at)
+        + " ".join(item.value for item in at.caption)
+        + " ".join(item.value for item in at.info)
+    )
+    assert rendered.split('<div class="sec">', 1)[0].count('class="kpi"') == 4
+    assert "supported, no matching observation" in rendered.casefold()
     assert "0 branches" not in rendered
     assert "No national findings currently meet" in rendered
     assert at.session_state["requested_pages"]
-    assert len(at.session_state["requested_pages"]) == 1
+    requested_pages = at.session_state["requested_pages"]
+    assert requested_pages
+    requested_page_union = set().union(
+        *(set(pages or ()) for pages in requested_pages)
+    )
+    assert {"agents", "branches"} <= requested_page_union
 
 
 def test_combined_chart_labels_missing_nbr_units_instead_of_implying_a_count():
-    from src.pages.national_overview import _combined_nbr_figure
+    from importlib import import_module
+
+    _combined_nbr_figure = import_module(
+        "src.pages.combine-view.national_overview"
+    )._combined_nbr_figure
 
     chart = _combined_nbr_figure(
         [{"reporting_date": "2026-10-24", "value": 42}],
@@ -479,7 +467,29 @@ def test_district_hero_matches_source():
 
 def test_population_hero_matches_source():
     groups = pd.read_csv(DATA / "population_group_indicators.csv")
-    at = _app("population_groups", "render_population_groups").run()
+    population_data = DATA / "population_group_indicators.csv"
+    script = (
+        f"import sys; sys.path.insert(0, r'{ROOT}')\n"
+        "from types import SimpleNamespace\n"
+        "import pandas as pd\n"
+        "import streamlit as st\n"
+        "st.session_state['global_dashboard_mode'] = 'FinScope'\n"
+        "import src.pages.population_groups as page\n"
+        "_original_loader = page.load_population_group_results\n"
+        f"page.load_population_group_results = lambda: SimpleNamespace(observations=pd.read_csv(r'{population_data}'))\n"
+        "page.load_group_data.clear()\n"
+        "try:\n"
+        "    page.render_population_groups()\n"
+        "finally:\n"
+        "    page.load_population_group_results = _original_loader\n"
+        "    page.load_group_data.clear()\n"
+    )
+    at = AppTest.from_string(script, default_timeout=90).run()
+    at.session_state["population_groups_type"] = "Gender"
+    at.session_state["population_groups_indicator"] = "Bank account"
+    at.run()
+    assert at.session_state["population_groups_indicator"] == "Bank account"
+    assert at.session_state["population_groups_type"] == "Gender"
     gender = groups[groups["Group type"] == "Gender"]["Owns a bank account (%)"]
     values = [float(v) for v in re.findall(r'kpi-value">([\d.]+)<small>', _html(at))]
     assert abs(values[0] - round(gender.max(), 1)) < 0.051   # highest group

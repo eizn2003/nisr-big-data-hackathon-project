@@ -161,9 +161,11 @@ class MongoDistrictExplorerTests(unittest.TestCase):
                 "agents",
                 "credit",
                 "savings",
+                "insurance",
+                "mobile_banking",
             },
         )
-        self.assertEqual(len(SELECTIONS), 11)
+        self.assertEqual(len(SELECTIONS), 13)
         self.assertEqual(REPORTING_DATES, (
             "2025-02-20",
             "2025-11-20",
@@ -172,7 +174,7 @@ class MongoDistrictExplorerTests(unittest.TestCase):
         ))
         self.assertFalse(
             {selection.page_id for selection in SELECTIONS}
-            & {"pos", "insurance", "mobile_banking", "merchants", "cards"}
+            & {"pos", "merchants", "cards"}
         )
         by_key = {
             (selection.page_id, selection.filters.get("Institution Type", "")): selection
@@ -214,6 +216,27 @@ class MongoDistrictExplorerTests(unittest.TestCase):
             },
         )
         self.assertEqual(
+            by_key[("mobile_banking", "All")].filters,
+            {
+                "Gender": "All",
+                "Age Segment": "All",
+                "Institution Type": "All",
+                "Account Status": "Active",
+                "Account Type": "All",
+                "Location": "All",
+            },
+        )
+        self.assertEqual(
+            by_key[("insurance", "")].filters,
+            {
+                "Gender": "All",
+                "Age Segment": "All",
+                "Insurance Type": "All",
+                "Policy Status": "Active",
+                "Location": "All",
+            },
+        )
+        self.assertEqual(
             by_key[("branches", "Banks")].kpi_labels,
             ("Total Branches",),
         )
@@ -231,7 +254,11 @@ class MongoDistrictExplorerTests(unittest.TestCase):
         variables = {mapping.indicator_variable for mapping in APPROVED_MAPPINGS}
         self.assertEqual(
             variables | set(NO_RELEVANT_NBR_DATA),
-            {"k1", "f5", "h2_1", "g3a_17", "e9b", "g3a_11", "qf4_06", "qf4_10"},
+            {
+                "k1", "f5", "h2_1", "g3a_17", "e9b", "g3a_11", "qf4_06",
+                "qf4_10", "qf4_05", "qf5_05_6", "h3_09", "i5a_1", "qf1_06",
+                "qf1_10",
+            },
         )
         actual_mappings = {
             (
@@ -249,7 +276,13 @@ class MongoDistrictExplorerTests(unittest.TestCase):
                 ("k1", "transactional", "All"): (("Have Transactional Accounts",), ("Customers",), "uncertain"),
                 ("k1", "depositors", "All"): (("Are Depositors",), ("Customers",), "uncertain"),
                 ("f5", "inclusion", "E-money issuers"): (("Subscribers", "Total Customers"), ("Customers",), "uncertain"),
-                ("f5", "agents", "E-money Issuers"): (("Total Agents",), ("Agents",), "uncertain"),
+                ("f5", "agents", "E-money Issuers"): (("Total Agents",), ("Agents",), "relevant"),
+                ("qf4_05", "agents", "E-money Issuers"): (("Total Agents",), ("Agents",), "relevant"),
+                ("qf4_05", "inclusion", "E-money issuers"): (("Subscribers",), ("Customers",), "uncertain"),
+                ("qf5_05_6", "mobile_banking", "All"): (("Use Mobile Banking",), ("Customers",), "conditional"),
+                ("h3_09", "credit", "All"): (("Total Customers",), ("Customers",), "relevant"),
+                ("i5a_1", "insurance", "All"): (("Total Policy Holders",), ("Policy Holders",), "relevant"),
+                ("qf1_06", "branches", "Sacco"): (("Total Branches",), ("Branches",), "relevant"),
                 ("h2_1", "credit", "All"): (("Borrowed",), ("Customers",), "uncertain"),
                 ("g3a_17", "savings", "All"): (("Saved",), ("Customers",), "uncertain"),
                 ("g3a_17", "depositors", "All"): (("Are Depositors",), ("Customers",), "uncertain"),
@@ -266,14 +299,16 @@ class MongoDistrictExplorerTests(unittest.TestCase):
             {
                 "e9b": "No relevant data identified from the NBR data currently available to this project.",
                 "qf4_10": "No relevant data identified from the NBR data currently available to this project.",
+                "qf1_10": (
+                    "NBR branch and regulated-provider counts do not represent use of informal "
+                    "savings groups such as VSLAs, tontines, or ikibina."
+                ),
             },
         )
         self.assertTrue(
             all(mapping.page_id != "pos" for mapping in APPROVED_MAPPINGS)
         )
-        self.assertTrue(
-            all(mapping.page_id != "mobile_banking" for mapping in APPROVED_MAPPINGS)
-        )
+        self.assertTrue(any(mapping.page_id == "mobile_banking" for mapping in APPROVED_MAPPINGS))
         sacco_agent_mappings = [
             mapping for mapping in APPROVED_MAPPINGS
             if mapping.page_id == "agents"
@@ -293,7 +328,7 @@ class MongoDistrictExplorerTests(unittest.TestCase):
             and mapping.filters.get("Institution Type") == "E-money Issuers"
         )
         self.assertIn(
-            "district sums exceed the national kpi",
+            "district sum exceeds the national kpi",
             e_money_agents.limitations.casefold(),
         )
         self.assertEqual(

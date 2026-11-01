@@ -48,6 +48,7 @@ INDICATORS = {
         "interpretation": item["interpretation"],
         "polarity": item["polarity"],
         "variable": item["variable"],
+        "valid_count_column": item["valid_count_column"],
     }
     for item in REGISTRY
 }
@@ -492,12 +493,6 @@ def _filtered_combined_entries(entries, indicator_variable):
     for entry in entries or []:
         if not entry or not entry.get("points"):
             continue
-        page = str(entry.get("page") or entry.get("source_page") or "").casefold()
-        filters = entry.get("filters") or {}
-        if indicator_variable == "g3a_11" and page == "branches":
-            continue
-        if indicator_variable == "g3a_11" and str(filters.get("Institution Type", "")).casefold() == "sacco":
-            continue
         filtered.append(entry)
     return filtered
 
@@ -827,6 +822,17 @@ def render_district_explorer():
 
     try:
         district = data.load_district()
+        missing_denominators = [
+            item["valid_count_column"]
+            for item in REGISTRY
+            if item["column"] in district.columns
+            and item["valid_count_column"] not in district.columns
+        ]
+        if missing_denominators:
+            raise ValueError(
+                "The district dataset is missing indicator-specific respondent "
+                "counts: " + ", ".join(missing_denominators)
+            )
         national = data.load_national()
         geojson = data.load_geojson()
         centers, center = data.geo_summary(geojson)
@@ -863,6 +869,10 @@ def render_district_explorer():
         indicator_name = list(present.keys())[0]
     cfg = present[indicator_name]
     metric = cfg["column"]
+    district = district.copy()
+    district["Valid respondents"] = pd.to_numeric(
+        district[cfg["valid_count_column"]], errors="coerce"
+    )
     selected_district = st.session_state["dx_district"]
     combined_entries = []
     combined_version = None

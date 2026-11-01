@@ -25,6 +25,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from src.models.nbr_intelligence.indicator_mapping import DISPLAYABLE_RELATIONSHIPS
+
 # ---------------------------------------------------------------------------
 # Evidence states
 # ---------------------------------------------------------------------------
@@ -40,12 +42,12 @@ STATE_SUPPRESSED = "suppressed"
 STATE_TITLES = {
     STATE_AVAILABLE: "NBR context available",
     STATE_NO_COUNTERPART: "No NBR counterpart",
-    STATE_NOT_APPROVED: "NBR series not approved",
-    STATE_LEVEL_UNSUPPORTED: "NBR does not cover this level",
-    STATE_SCOPE_UNSUPPORTED: "NBR does not cover this dimension",
-    STATE_NO_OBSERVATION: "No NBR observation",
-    STATE_LOAD_ERROR: "NBR context unavailable",
-    STATE_SUPPRESSED: "NBR series intentionally not shown",
+    STATE_NOT_APPROVED: "Uncertain or unapproved relationship",
+    STATE_LEVEL_UNSUPPORTED: "Unsupported dimension or level",
+    STATE_SCOPE_UNSUPPORTED: "Unsupported dimension or level",
+    STATE_NO_OBSERVATION: "Supported, no matching observation",
+    STATE_LOAD_ERROR: "Data-loading failure; NBR context unavailable",
+    STATE_SUPPRESSED: "Intentionally suppressed; intentionally not shown",
 }
 
 LEVEL_LABELS = {"national": "national", "district": "district"}
@@ -84,7 +86,7 @@ def classify_mapping(
     relationships = list(mapping.get("nbr_relationships") or [])
     contextual = [
         item for item in relationships
-        if item.get("relationship") == "contextual_indicator"
+        if item.get("relationship") in DISPLAYABLE_RELATIONSHIPS
         and not item.get("suppressed")
     ]
     if not contextual:
@@ -165,11 +167,6 @@ def classify_context(
 
 #: Population dimensions the survey reports that the NBR source cannot match.
 SCOPE_LIMITS = {
-    "Age group": (
-        STATE_SCOPE_UNSUPPORTED,
-        "NBR reports Youth and Non-Youth only. Those categories are not "
-        "crosswalked to FinScope age groups, so no NBR context is shown here.",
-    ),
     "Education": (
         STATE_SCOPE_UNSUPPORTED,
         "NBR has no education breakdown, so this comparison uses FinScope alone.",
@@ -182,12 +179,12 @@ SCOPE_LIMITS = {
 
 
 def scope_state(group_type: str) -> ContextState | None:
-    """State for a population dimension NBR does not cover (None for Gender)."""
+    """State for population dimensions the NBR source cannot match."""
     limit = SCOPE_LIMITS.get(group_type)
     return ContextState(*limit) if limit else None
 
 
-_NBR_PAGES_PATH = Path(__file__).resolve().parents[2] / "nbr_pages.json"
+_NBR_PAGES_PATH = Path(__file__).resolve().parents[2] / "config" / "nbr_pages.json"
 _UNSET: Any = object()
 
 
@@ -228,27 +225,46 @@ def classify_subgroup_scope(
     subgroup_type: str,
     page_filters: Mapping[str, Mapping[str, str]] | None,
 ) -> ContextState | None:
-    """Gender support for the exact pages behind an indicator (None = not ruled out).
+    """Demographic-filter support for the exact pages behind an indicator.
 
-    A page can only hold gender-specific observations if it exposes a dynamic Gender
-    filter. When every contextual page for the indicator lacks one, the absence is a
-    scope limit of the source, not a missing observation. If the configuration is
-    unreadable or does not list a page, support is unknown and nothing is claimed.
+    Gender and NBR Youth/Non-Youth slices are allowed only when the exact mapped page
+    exposes the corresponding dynamic filter. NBR age categories remain separate from
+    FinScope age groups. Unknown page configuration is not treated as unsupported.
     """
-    if subgroup_type != "Gender" or page_filters is None or not mapping:
+    if subgroup_type not in {"Gender", "Age group"} or page_filters is None or not mapping:
         return None
+    filter_name = "Gender" if subgroup_type == "Gender" else "Age Segment"
     pages = sorted({
         str(item.get("page"))
         for item in mapping.get("nbr_relationships") or []
-        if item.get("relationship") == "contextual_indicator"
+        if item.get("relationship") in DISPLAYABLE_RELATIONSHIPS
         and not item.get("suppressed")
         and level in (item.get("available_levels") or [])
     })
     if not pages or any(page not in page_filters for page in pages):
         return None
-    if any(page_filters[page].get("Gender") == "dynamic" for page in pages):
+    if any(page_filters[page].get(filter_name) == "dynamic" for page in pages):
+        if subgroup_type in {"Gender", "Age group"} and any(
+            item.get("relationship") == "conditional_contextual_indicator"
+            and level in (item.get("available_levels") or [])
+            for item in mapping.get("nbr_relationships") or []
+        ):
+            dimension = "Gender" if subgroup_type == "Gender" else "Age Segment"
+            return ContextState(
+                STATE_SCOPE_UNSUPPORTED,
+                "The conditional NBR relationship is approved only for its configured "
+                f"all-demographic filters; it does not permit a {dimension}-specific "
+                "slice.",
+            )
         return None
     names = ", ".join(page.replace("_", " ").title() for page in pages)
+    if subgroup_type == "Age group":
+        return ContextState(
+            STATE_SCOPE_UNSUPPORTED,
+            f"The NBR page behind this indicator ({names}) has no dynamic Age Segment "
+            "filter, so separate NBR Youth/Non-Youth context is unavailable. NBR age "
+            "categories are never crosswalked to FinScope age groups.",
+        )
     return ContextState(
         STATE_SCOPE_UNSUPPORTED,
         f"The NBR page behind this indicator ({names}) has no Gender breakdown, so NBR "
@@ -315,6 +331,14 @@ def missing_indicator_note(registry: Iterable[Mapping[str, Any]], frame: Any, ta
 #: Survey questions that follow routing. The existing calculation is unchanged; this
 #: wording tells readers what the figure does and does not establish.
 ROUTED_INDICATOR_NOTES = {
+    "qf4_05": (
+        "This question is routed to mobile-money ever-users. The estimate and margin "
+        "use only the valid answers; skipped respondents are excluded, not counted as No."
+    ),
+    "qf5_05_6": (
+        "This transaction question is routed to mobile-money ever-users. The estimate "
+        "and margin use only the valid answers; skipped respondents are excluded, not counted as No."
+    ),
     "qf4_06": (
         "Many respondents have no recorded answer to this question because it follows "
         "survey routing. The existing calculation counts them as non-users, so this is "
@@ -919,7 +943,7 @@ def load_context(
     configuration = classify_mapping(mapping, level)
     if configuration is not None:
         return [], None, configuration
-    if subgroup_type == "Gender" and subgroup:
+    if subgroup_type in {"Gender", "Age group"} and subgroup:
         filters = load_nbr_page_filters() if page_filters is _UNSET else page_filters
         scope_limit = classify_subgroup_scope(mapping, level, subgroup_type, filters)
         if scope_limit is not None:
@@ -936,7 +960,10 @@ def load_context(
     entries = [entry for entry in entries or [] if entry.get("points")]
     if level == "district" and geography:
         entries = entries_for_geography(entries, geography)
-    scope = f"Gender: {subgroup}" if subgroup_type == "Gender" and subgroup else ""
+    scope = (
+        f"{'NBR age segment' if subgroup_type == 'Age group' else 'Gender'}: {subgroup}"
+        if subgroup_type and subgroup else ""
+    )
     return entries, version, classify_context(
         mapping, level, entries, geography=geography, scope_label=scope,
     )
@@ -963,6 +990,7 @@ def mapping_summary(
 
 RELATIONSHIP_LABELS = {
     "contextual_indicator": "Contextual indicator (shown)",
+    "conditional_contextual_indicator": "Conditional context (shown only for exact filters)",
     "contextual_suppressed": "Contextual, intentionally suppressed (not shown)",
     "proxy_with_unresolved_definition": "Proxy, definition unresolved (not shown)",
     "unsuitable": "Unsuitable (not shown)",
@@ -1005,7 +1033,7 @@ def mapping_rows(
             if rel.get("district_table_labels"):
                 metrics.append("District: " + ", ".join(rel["district_table_labels"]))
             suppressed = bool(rel.get("suppressed"))
-            shown = rel.get("relationship") == "contextual_indicator" and not suppressed
+            shown = rel.get("relationship") in DISPLAYABLE_RELATIONSHIPS and not suppressed
             code = "contextual_suppressed" if suppressed else str(rel.get("relationship"))
             rows.append({
                 **base,
@@ -1021,6 +1049,7 @@ def mapping_rows(
                     f"{k}: {v}" for k, v in sorted((rel.get("filter_scope") or {}).items())
                 ) or "None",
                 "Limitations / reason": " ".join(filter(None, (
+                    str(rel.get("conditions") or ""),
                     str(rel.get("suppression_reason") or ""),
                     str(rel.get("limitations") or ""),
                 ))),
@@ -1033,7 +1062,8 @@ def contextual_variables(mapping_lookup: Mapping[str, Mapping[str, Any]]) -> lis
     return [
         variable for variable, mapping in mapping_lookup.items()
         if any(
-            rel.get("relationship") == "contextual_indicator" and not rel.get("suppressed")
+            rel.get("relationship") in DISPLAYABLE_RELATIONSHIPS
+            and not rel.get("suppressed")
             for rel in mapping.get("nbr_relationships") or []
         )
     ]

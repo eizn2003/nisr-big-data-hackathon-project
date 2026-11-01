@@ -59,12 +59,28 @@ class ApprovedNBRMapping:
     status: str
     relevance: str
     limitations: str
+    conditions: str = ""
 
 
 _INCLUSION_FILTERS = {
     "Gender": "All",
     "Age Segment": "All",
     "Account/Policy Status": "Active",
+    "Location": "All",
+}
+_INSURANCE_FILTERS = {
+    "Gender": "All",
+    "Age Segment": "All",
+    "Insurance Type": "All",
+    "Policy Status": "Active",
+    "Location": "All",
+}
+_MOBILE_BANKING_FILTERS = {
+    "Gender": "All",
+    "Age Segment": "All",
+    "Institution Type": "All",
+    "Account Status": "Active",
+    "Account Type": "All",
     "Location": "All",
 }
 
@@ -105,6 +121,7 @@ def _mapping(
     status: str,
     relevance: str,
     limitations: str,
+    conditions: str = "",
 ) -> ApprovedNBRMapping:
     return ApprovedNBRMapping(
         indicator_variable=indicator_variable,
@@ -116,6 +133,7 @@ def _mapping(
         status=status,
         relevance=relevance,
         limitations=limitations,
+        conditions=conditions,
     )
 
 
@@ -160,9 +178,69 @@ APPROVED_MAPPINGS = (
             "Agent Status": "Active",
             "Location": "All",
         },
-        ("Total Agents",), ("Agents",), "uncertain",
-        "Potential active e-money service-channel activity.",
-        "District sums exceed the national KPI on all four stored dates.",
+        ("Total Agents",), ("Agents",), "relevant",
+        "Active e-money service-channel infrastructure alongside survey-reported mobile-money registration.",
+        "Agent counts describe a service channel, not registered users or individual access. "
+        "The district sum exceeds the national KPI in all four stored snapshots; preserve this "
+        "reconciliation warning and do not infer coverage or inclusion progress.",
+    ),
+    _mapping(
+        "qf4_05", "Current mobile-money operator use among ever-users", "agents",
+        {
+            "Gender": "All",
+            "Institution Type": "E-money Issuers",
+            "Agent Status": "Active",
+            "Location": "All",
+        },
+        ("Total Agents",), ("Agents",), "relevant",
+        "Active e-money service-channel infrastructure alongside current use among survey ever-users.",
+        "Agent counts do not measure user ownership, availability to individuals, or transactions. "
+        "The district sum exceeds the national KPI in all four stored snapshots; preserve the "
+        "reconciliation warning and do not infer coverage or inclusion progress.",
+    ),
+    _mapping(
+        "qf4_05", "Current mobile-money operator use among ever-users", "inclusion",
+        _inclusion_filters("E-money issuers"),
+        ("Subscribers",), ("Customers",), "uncertain",
+        "Potential e-money subscriber context.",
+        "The NBR subscriber definition and denominator are undocumented. The survey rate is "
+        "among respondents routed from mobile-money ever-use, while district Customers are "
+        "administrative counts; neither is directly comparable.",
+    ),
+    _mapping(
+        "qf5_05_6", "Mobile-money transfer activity among ever-users", "mobile_banking",
+        _MOBILE_BANKING_FILTERS,
+        ("Use Mobile Banking",), ("Customers",), "conditional",
+        "A distinct bank digital-channel signal alongside survey-reported mobile-money transfers.",
+        "Mobile banking is not mobile money, and administrative Customers are not transaction "
+        "counts. The national KPI unit/denominator is not documented; retain the source value, "
+        "reporting date, and filters without comparing levels or inferring substitution.",
+        "Show only the exact active-account, all-institution, all-demographic scope recorded "
+        "by NBR; preserve the NBR metric label and unit as captured.",
+    ),
+    _mapping(
+        "h3_09", "Informal-group borrowing in the past 12 months", "credit",
+        _CREDIT_FILTERS,
+        ("Total Customers",), ("Customers",), "relevant",
+        "Regulated-credit customer activity as context alongside informal-group borrowing.",
+        "NBR customers are an administrative count and are not the same people or borrowing "
+        "sources as the FinScope group-loan measure. This does not measure formal credit "
+        "availability to group borrowers or imply a relationship between the series.",
+    ),
+    _mapping(
+        "i5a_1", "Medical-insurance coverage", "insurance",
+        _INSURANCE_FILTERS,
+        ("Total Policy Holders",), ("Policy Holders",), "relevant",
+        "Active insurance-policy-holder counts as sector context alongside survey-reported medical coverage.",
+        "The NBR count includes the page's unfiltered insurance types and is not a medical "
+        "insurance prevalence estimate, unique-person count, or survey-equivalent measure.",
+    ),
+    _mapping(
+        "qf1_06", "Ever used Umurenge SACCO", "branches",
+        {"Institution Type": "Sacco", "Branch Status": "Active", "Location": "All"},
+        ("Total Branches",), ("Branches",), "relevant",
+        "Active SACCO infrastructure context for survey-reported ever-use.",
+        "Branches describe cooperative infrastructure, not membership or individual use.",
     ),
     _mapping(
         "h2_1", "Borrowing in the past 12 months", "credit",
@@ -237,6 +315,10 @@ APPROVED_MAPPINGS = (
 NO_RELEVANT_NBR_DATA = {
     "e9b": "No relevant data identified from the NBR data currently available to this project.",
     "qf4_10": "No relevant data identified from the NBR data currently available to this project.",
+    "qf1_10": (
+        "NBR branch and regulated-provider counts do not represent use of informal "
+        "savings groups such as VSLAs, tontines, or ikibina."
+    ),
 }
 
 

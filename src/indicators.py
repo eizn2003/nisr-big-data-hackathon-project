@@ -113,6 +113,116 @@ _RAW = [
         interpretation="Compare with 'Saves with a group', which comes from a different question "
                        "and gives a somewhat higher national figure.",
     ),
+    dict(
+        column="Currently uses mobile-money operator (%)",
+        short="Mobile-money use",
+        label="Current mobile-money use among ever-users",
+        kpi_label="Currently uses a mobile-money operator",
+        national="Currently uses mobile-money operator",
+        variable="qf4_05",
+        role="supporting",
+        family="Digital financial services",
+        polarity="positive",
+        hue="blue",
+        priority_candidate=False,
+        priority_default=False,
+        description="Percentage of respondents who currently use a mobile-money "
+                    "operator among those with a valid response to the routed "
+                    "current-use question.",
+        interpretation="The question is routed to mobile-money ever-users. "
+                       "Skipped respondents are excluded, not counted as non-users; "
+                       "the denominator is therefore not the full adult population.",
+    ),
+    dict(
+        column="Sent or received money via mobile money (%)",
+        short="Mobile-money transfers",
+        label="Sent or received money via mobile money",
+        kpi_label="Sent or received money via mobile money",
+        national="Sent or received money via mobile money",
+        variable="qf5_05_6",
+        role="supporting",
+        family="Digital financial services",
+        polarity="neutral",
+        hue="violet",
+        priority_candidate=False,
+        priority_default=False,
+        description="Percentage of respondents reporting a mobile-money transfer "
+                    "among those with a valid response to the routed transaction question.",
+        interpretation="This is transaction activity among mobile-money ever-users, "
+                       "not ownership, registration, or activity by all adults. "
+                       "Skipped respondents are excluded.",
+    ),
+    dict(
+        column="Borrowed from an informal group (%)",
+        short="Informal-group borrowing",
+        label="Borrowed from a group in the past 12 months",
+        kpi_label="Borrowed from an informal group",
+        national="Borrowed from an informal group",
+        variable="h3_09",
+        role="supporting",
+        family="Credit",
+        polarity="neutral",
+        hue="amber",
+        priority_candidate=False,
+        priority_default=False,
+        description="Percentage reporting a loan from a group such as a cooperative, "
+                    "VSLA, tontine, or ikibina in the past 12 months.",
+        interpretation="This is informal group borrowing, distinct from borrowing "
+                       "from a formal financial institution and from all-source borrowing.",
+    ),
+    dict(
+        column="Has medical insurance (%)",
+        short="Medical insurance",
+        label="Medical insurance coverage",
+        kpi_label="Has medical insurance",
+        national="Has medical insurance",
+        variable="i5a_1",
+        role="supporting",
+        family="Insurance",
+        polarity="positive",
+        hue="green",
+        priority_candidate=False,
+        priority_default=False,
+        description="Percentage reporting medical insurance, including RAMA, MMI, "
+                    "or Mediplan.",
+        interpretation="A survey-reported medical-insurance measure; it does not "
+                       "represent all insurance types or the count of active policies.",
+    ),
+    dict(
+        column="Ever used Umurenge SACCO (%)",
+        short="Ever used SACCO",
+        label="Ever used Umurenge SACCO",
+        kpi_label="Ever used Umurenge SACCO",
+        national="Ever used Umurenge SACCO",
+        variable="qf1_06",
+        role="supporting",
+        family="Formal financial institutions",
+        polarity="positive",
+        hue="rose",
+        priority_candidate=False,
+        priority_default=False,
+        description="Percentage of respondents who report ever using an Umurenge SACCO.",
+        interpretation="Ever-use is broader than current use and uses the full adult "
+                       "population as its denominator.",
+    ),
+    dict(
+        column="Ever used a savings group (%)",
+        short="Ever used savings group",
+        label="Ever used a savings group",
+        kpi_label="Ever used a savings group",
+        national="Ever used a savings group",
+        variable="qf1_10",
+        role="supporting",
+        family="Saving & resilience",
+        polarity="positive",
+        hue="olive",
+        priority_candidate=False,
+        priority_default=False,
+        description="Percentage of respondents who report ever using a savings "
+                    "group they save with or borrow from.",
+        interpretation="Ever-use is broader than current use and is not equivalent "
+                       "to reporting that the respondent saves with a group.",
+    ),
 ]
 
 
@@ -124,6 +234,7 @@ def _build():
         item["accent"] = accent
         item["text_accent"] = text_accent
         item["scale"] = SCALES[item["hue"]]
+        item["valid_count_column"] = f"Valid responses ({item['short']})"
         registry.append(item)
     return registry
 

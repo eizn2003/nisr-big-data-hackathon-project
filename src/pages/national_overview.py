@@ -25,7 +25,10 @@ from src.models.nbr_intelligence.contextualization import (
     prepare_source_points,
 )
 from src.models.nbr_intelligence.experiment import load_mongodb_history
-from src.models.nbr_intelligence.indicator_mapping import MAPPING_BY_VARIABLE
+from src.models.nbr_intelligence.indicator_mapping import (
+    DISPLAYABLE_RELATIONSHIPS,
+    MAPPING_BY_VARIABLE,
+)
 from src.styles import (
     PALETTE,
     card_title,
@@ -1560,6 +1563,22 @@ def _filters_key(filters: Mapping[str, Any]) -> str:
     return json.dumps(filters, sort_keys=True, ensure_ascii=False, default=str)
 
 
+def _filters_match_exact(
+    actual: Mapping[str, Any] | None,
+    expected: Mapping[str, Any],
+) -> bool:
+    if not isinstance(actual, Mapping):
+        return False
+
+    def normalize(values: Mapping[str, Any]) -> dict[str, str]:
+        return {
+            str(key).strip().casefold(): str(value).strip().casefold()
+            for key, value in values.items()
+        }
+
+    return normalize(actual) == normalize(expected)
+
+
 def _filter_label(filters: Mapping[str, Any]) -> str:
     if not filters:
         return "Filters not recorded"
@@ -1774,7 +1793,7 @@ def _mapped_series(
     relationships: set[str] | None = None,
     include_suppressed: bool = False,
 ) -> list[dict[str, Any]]:
-    if subgroup_type and subgroup_type not in {"Gender"}:
+    if subgroup_type and subgroup_type not in {"Gender", "Age group"}:
         return []
     mapping = MAPPING_BY_VARIABLE.get(indicator_variable)
     if not mapping:
@@ -1783,6 +1802,10 @@ def _mapped_series(
     for relationship in mapping["nbr_relationships"]:
         if (
             relationship["relationship"] == "unsuitable"
+            or (
+                subgroup_type
+                and relationship["relationship"] == "conditional_contextual_indicator"
+            )
             or (relationship.get("suppressed") and not include_suppressed)
             or (
                 relationships is not None
@@ -1799,8 +1822,9 @@ def _mapped_series(
         if subgroup_type == "Gender" and subgroup:
             expected_filters["Gender"] = subgroup
         elif subgroup_type == "Age group":
-            # NBR Youth/Non-Youth is deliberately not crosswalked to FinScope age bins.
-            continue
+            if subgroup not in {"Youth", "Non-Youth"}:
+                continue
+            expected_filters["Age Segment"] = subgroup
         for point in points:
             filters = point.get("filters")
             if (
@@ -1808,7 +1832,7 @@ def _mapped_series(
                 or point.get("metric_label") not in labels
                 or point.get("geography_level") != geography_level
                 or not isinstance(filters, Mapping)
-                or not _filters_match(filters, expected_filters)
+                or not _filters_match_exact(filters, expected_filters)
                 or (geography is not None and point.get("geography") != geography)
             ):
                 continue
@@ -1861,9 +1885,8 @@ def load_combined_context_data(
         return [], None
     relationships = [
         item for item in mapping["nbr_relationships"]
-        if item["relationship"] == "contextual_indicator"
+        if item["relationship"] in DISPLAYABLE_RELATIONSHIPS
         and geography_level in item["available_levels"]
-        # Declared in indicator_mapping.SUPPRESSED_RELATIONSHIPS (single source of truth).
         and not item.get("suppressed")
     ]
     pages = tuple(sorted({str(item["page"]) for item in relationships}))
@@ -1880,7 +1903,7 @@ def load_combined_context_data(
         geography=geography,
         subgroup_type=subgroup_type,
         subgroup=subgroup,
-        relationships={"contextual_indicator"},
+        relationships=DISPLAYABLE_RELATIONSHIPS,
     )
     return entries, source_version
 
@@ -1916,7 +1939,7 @@ def load_combined_national_evidence(
         "k1",
         geography_level="national",
         geography=None,
-        relationships={"contextual_indicator"},
+        relationships=DISPLAYABLE_RELATIONSHIPS,
     )
     return national_kpis, bank_account_entries
 
@@ -4055,7 +4078,7 @@ def _render_combined_context(
         geography= district,
         subgroup_type=subgroup_type,
         subgroup=subgroup,
-        relationships={"contextual_indicator"},
+        relationships=DISPLAYABLE_RELATIONSHIPS,
     )
     if not entries:
         if district and intelligence:
