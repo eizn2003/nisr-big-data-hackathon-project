@@ -2,6 +2,8 @@
 
 import html as _html
 
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 # --------------------------------------------------------------------------
@@ -784,7 +786,7 @@ div[data-baseweb="select"] > div:hover{border-color:var(--teal);}
 
 def apply_global_styles():
     """Apply the shared design system across all dashboard pages."""
-    render_html(f"<style>{_CSS}</style>")
+    render_html(f"<style>{_CSS}{_CSS_PRESENTATION}{_layout_css()}</style>")
 
 
 # --------------------------------------------------------------------------
@@ -1007,3 +1009,511 @@ def show_district_table(df, sort_by, key, file_name, height=430):
         key=key,
         icon=":material/download:",
     )
+
+
+# ==========================================================================
+# Presentation components
+# Shared by every page (FinScope, Combined and the standalone views) so the
+# new sections look and behave identically everywhere.
+# ==========================================================================
+_CSS_PRESENTATION = """
+/* ---------- heat-map legend ---------- */
+.x-legend{display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin:2px 0 10px;}
+.x-legend .x-ramp{width:190px; height:9px; border-radius:99px; background:linear-gradient(90deg,#DB6A4E 0%,#F4EEE8 50%,#1A8A7D 100%);}
+.x-legend b{color:var(--ink); font-weight:700;}
+
+/* ---------- head-to-head districts ---------- */
+.x-duel{margin-top:6px;}
+.x-duel-head{display:grid; grid-template-columns:1fr 190px 1fr; gap:14px; align-items:center; margin-bottom:10px;}
+.x-duel-name{font-family:'Fraunces',Georgia,serif; font-size:22px; font-weight:600; color:var(--ink); line-height:1.15;}
+.x-duel-name small{display:block; font-family:'Plus Jakarta Sans',Arial,sans-serif; font-size:11px; font-weight:700;
+  letter-spacing:.1em; text-transform:uppercase; margin-bottom:3px;}
+.x-duel-name.a{text-align:right;} .x-duel-name.a small{color:#B07C16;}
+.x-duel-name.b small{color:var(--blue);}
+.x-duel-mid{text-align:center; font-size:11px; font-weight:800; letter-spacing:.12em; color:var(--muted); text-transform:uppercase;}
+.x-duel-row{display:grid; grid-template-columns:1fr 190px 1fr; gap:14px; align-items:center; padding:9px 0; border-top:1px solid var(--line);}
+.x-duel-side{display:flex; align-items:center; gap:10px;}
+.x-duel-side.a{flex-direction:row-reverse;}
+.x-duel-side b{font-family:'Fraunces',Georgia,serif; font-size:21px; font-weight:600; color:var(--ink); min-width:62px;}
+.x-duel-side.a b{text-align:left;}
+.x-duel-track{position:relative; flex:1; height:12px; border-radius:99px; background:#EDF2F4; overflow:hidden;}
+.x-duel-fill{position:absolute; top:0; bottom:0; border-radius:99px;}
+.x-duel-side.a .x-duel-fill{right:0; background:linear-gradient(270deg,#F2B84B,#F6CD7E);}
+.x-duel-side.b .x-duel-fill{left:0; background:linear-gradient(90deg,#2F6DB5,#5B91CC);}
+.x-duel-side.lead .x-duel-fill{box-shadow:0 0 0 2px rgba(14,42,53,.14);}
+.x-duel-lab{text-align:center; line-height:1.3;}
+.x-duel-lab span{display:block; font-weight:700; font-size:13px; color:var(--ink);}
+.x-duel-lab em{display:inline-block; font-style:normal; margin-top:4px; padding:2px 9px; border-radius:99px; font-size:11px; font-weight:700;}
+.x-duel-lab em.a{background:#FFF3D6; color:#7A5410; border:1px solid #F5DDA0;}
+.x-duel-lab em.b{background:#E3EEF8; color:#245A99; border:1px solid #C9DDF0;}
+.x-duel-lab em.tie{background:#EEF2F4; color:#4C606A; border:1px solid #DCE4E8;}
+.x-duel-lab small{display:block; font-size:10.5px; color:var(--muted); margin-top:3px;}
+.x-duel-sum{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:2px 0 16px;}
+.x-duel-sum div{border-radius:14px; padding:12px 14px; background:#F3F7F8; border:1px solid var(--line);}
+.x-duel-sum b{display:block; font-family:'Fraunces',Georgia,serif; font-size:24px; color:var(--ink); line-height:1.15;}
+.x-duel-sum span{font-size:12px; color:var(--muted); font-weight:600;}
+
+/* ---------- priority shortlist ---------- */
+.x-podium{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:4px 0 6px;}
+.x-pod{position:relative; overflow:hidden; border-radius:20px; padding:22px 22px 18px; color:#fff;
+  background:radial-gradient(260px 160px at 100% 0%,rgba(242,184,75,.22),transparent 70%),linear-gradient(150deg,#163D4B 0%,#0E2A35 100%);
+  box-shadow:0 18px 34px -22px rgba(14,42,53,.8);}
+.x-pod.r2{background:radial-gradient(260px 160px at 100% 0%,rgba(95,184,171,.2),transparent 70%),linear-gradient(150deg,#1B4E5A 0%,#102F3A 100%);}
+.x-pod.r3{background:radial-gradient(260px 160px at 100% 0%,rgba(143,176,194,.2),transparent 70%),linear-gradient(150deg,#245563 0%,#14323E 100%);}
+.x-pod-rank{position:absolute; top:14px; right:18px; font-family:'Fraunces',Georgia,serif; font-size:56px; font-weight:600;
+  line-height:1; color:rgba(255,255,255,.14);}
+.x-pod-k{font-size:10.5px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:#F2B84B;}
+.x-pod-name{font-family:'Fraunces',Georgia,serif; font-size:28px; font-weight:600; line-height:1.15; margin:6px 0 2px; color:#fff;}
+.x-pod-score{font-family:'Fraunces',Georgia,serif; font-size:40px; font-weight:600; line-height:1.1; color:#fff;}
+.x-pod-score small{font-family:'Plus Jakarta Sans',Arial,sans-serif; font-size:12px; font-weight:600; color:#B9C9D0; margin-left:6px;}
+.x-pod-bar{height:6px; border-radius:99px; background:rgba(255,255,255,.14); margin:12px 0 12px; overflow:hidden;}
+.x-pod-bar i{display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#F2B84B,#F6CD7E);}
+.x-pod-row{display:flex; justify-content:space-between; gap:10px; font-size:12.5px; color:#C9D9DE; padding:3px 0;}
+.x-pod-row b{color:#fff; font-weight:700; text-align:right;}
+.x-pod-tag{display:inline-block; margin-top:10px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:99px;
+  background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); color:#E8F0F2;}
+
+/* ---------- guided next steps ---------- */
+.x-next{border-radius:16px; padding:16px 18px 14px; background:linear-gradient(160deg,#FFFFFF 0%,#F4F8F8 100%);
+  border:1px solid var(--line); min-height:132px; position:relative;}
+.x-next-n{display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; background:var(--ink); color:#fff;
+  font-size:12px; font-weight:800; margin-bottom:8px;}
+.x-next-t{font-family:'Fraunces',Georgia,serif; font-size:19px; font-weight:600; color:var(--ink); line-height:1.2;}
+.x-next-p{font-size:12.8px; line-height:1.55; color:#4E626B; margin:6px 0 0;}
+
+/* ---------- coverage matrix ---------- */
+.x-cov-wrap{overflow-x:auto;}
+.x-cov-table{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+.x-cov-table th{font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+  text-align:center; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap;}
+.x-cov-table th:first-child{text-align:left;}
+.x-cov-table td{padding:9px 10px; border-bottom:1px solid #EEF2F4; text-align:center; color:var(--text);}
+.x-cov-table td:first-child{text-align:left; font-weight:700; color:var(--ink);}
+.x-cov-table td:first-child i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:9px; background:var(--accent,#1A8A7D);}
+.x-dot{display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; font-size:12px; font-weight:800;}
+.x-dot.yes{background:#DCF0EC; color:#0F5A52;}
+.x-dot.no{background:#F1F4F5; color:#9AAAB2;}
+.x-dot.part{background:#FFF3D6; color:#7A5410;}
+.x-cov-sum{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:0 0 14px;}
+.x-cov-sum div{border-radius:14px; padding:12px 14px; background:#F3F7F8; border:1px solid var(--line);}
+.x-cov-sum b{display:block; font-family:'Fraunces',Georgia,serif; font-size:26px; color:var(--ink); line-height:1.1;}
+.x-cov-sum span{font-size:12px; color:var(--muted); font-weight:600;}
+
+@media (max-width:900px){
+  .x-podium{grid-template-columns:1fr;}
+  .x-duel-head,.x-duel-row{grid-template-columns:1fr;}
+  .x-duel-name.a{text-align:left;}
+  .x-duel-side.a{flex-direction:row;}
+  .x-duel-sum{grid-template-columns:1fr;}
+}
+"""
+
+HEAT_DIVERGING = [[0.0, "#DB6A4E"], [0.5, "#F4EEE8"], [1.0, "#1A8A7D"]]
+
+
+def _polarity_sign(polarity):
+    """+1 when a higher value is favourable, -1 when lower is, 0 when neither."""
+    return {"positive": 1, "negative": -1}.get(polarity, 0)
+
+
+def district_heatmap_figure(district, items, nat, sort_by=None):
+    """District x indicator matrix coloured by distance from the national estimate.
+
+    Colour is polarity-aware (teal = more favourable than national, coral = less) and
+    scaled *within each column*, so no indicator dominates and no overall score is
+    implied. Descriptive indicators with no favourable direction are left out.
+    Returns (figure, shown_items).
+    """
+    shown = [
+        it for it in items
+        if it["column"] in district.columns
+        and it.get("national") in nat
+        and _polarity_sign(it.get("polarity")) != 0
+    ]
+    if not shown or district.empty:
+        return None, []
+
+    frame = district[["District"] + [it["column"] for it in shown]].copy()
+    sort_item = next((it for it in shown if it["short"] == sort_by), None)
+    if sort_item is not None:
+        frame = frame.sort_values(sort_item["column"], ascending=False)
+    else:
+        frame = frame.sort_values("District")
+    frame = frame.reset_index(drop=True)
+
+    values, diffs, norm = [], [], []
+    for it in shown:
+        col = pd.to_numeric(frame[it["column"]], errors="coerce")
+        national = float(nat[it["national"]])
+        diff = col - national
+        adj = diff * _polarity_sign(it["polarity"])
+        peak = float(adj.abs().max()) if adj.notna().any() else 0.0
+        values.append(col.to_numpy(dtype=float))
+        diffs.append(diff.to_numpy(dtype=float))
+        norm.append((adj / peak).to_numpy(dtype=float) if peak > 0 else adj.fillna(0).to_numpy(dtype=float))
+
+    z = pd.DataFrame(norm).T.to_numpy()
+    text = pd.DataFrame(values).T.to_numpy()
+    custom = [
+        [[diffs[j][i], float(nat[shown[j]["national"]])] for j in range(len(shown))]
+        for i in range(len(frame))
+    ]
+    fig = go.Figure(
+        go.Heatmap(
+            z=z,
+            x=[it["short"] for it in shown],
+            y=frame["District"].tolist(),
+            text=text,
+            texttemplate="%{text:.0f}%",
+            textfont=dict(size=11),
+            colorscale=HEAT_DIVERGING,
+            zmin=-1,
+            zmax=1,
+            showscale=False,
+            xgap=3,
+            ygap=3,
+            customdata=custom,
+            hovertemplate=(
+                "<b>%{y}</b><br>%{x}: %{text:.1f}%<br>"
+                "National: %{customdata[1]:.1f}% (%{customdata[0]:+.1f} pp)<extra></extra>"
+            ),
+        )
+    )
+    fig.update_xaxes(side="top", title=None, showgrid=False, tickfont=dict(size=12))
+    fig.update_yaxes(title=None, autorange="reversed", showgrid=False, automargin=True, tickfont=dict(size=11))
+    style_chart(fig, max(420, 25 * len(frame) + 90), margin=dict(l=4, r=8, t=8, b=4))
+    return fig, shown
+
+
+def heatmap_legend_html(left="Weaker than national", right="Stronger than national"):
+    return (
+        '<div class="x-legend"><span>' + esc(left) + '</span><span class="x-ramp"></span><span>'
+        + esc(right) + "</span><span>Shading is scaled within each column · numbers are district "
+        "estimates · no overall score is implied</span></div>"
+    )
+
+
+def build_duel_rows(district, items, nat, a, b, moe_fn=None):
+    """Rows comparing two districts on every indicator in the district table."""
+    rows = []
+    frame = district.set_index("District")
+    if a not in frame.index or b not in frame.index:
+        return rows
+    for it in items:
+        col = it["column"]
+        if col not in frame.columns:
+            continue
+        va, vb = frame.at[a, col], frame.at[b, col]
+        if pd.isna(va) or pd.isna(vb):
+            continue
+        margin = None
+        count_col = it.get("valid_count_column")
+        if moe_fn is not None and count_col in frame.columns:
+            na, nb = frame.at[a, count_col], frame.at[b, count_col]
+            if not (pd.isna(na) or pd.isna(nb)):
+                margin = float((moe_fn(float(va), float(na)) ** 2 + moe_fn(float(vb), float(nb)) ** 2) ** 0.5)
+        rows.append(
+            dict(
+                label=it["short"],
+                polarity=it.get("polarity", "neutral"),
+                a=float(va),
+                b=float(vb),
+                national=nat.get(it.get("national")),
+                margin=margin,
+            )
+        )
+    return rows
+
+
+def district_duel_html(a, b, rows):
+    """Butterfly comparison of two districts. Returns '' when there is nothing to compare."""
+    if not rows:
+        return ""
+    top = max(max(r["a"], r["b"]) for r in rows) or 1.0
+    ahead_a = ahead_b = 0
+    body = []
+    for r in rows:
+        sign = _polarity_sign(r["polarity"])
+        diff = r["a"] - r["b"]
+        within = r["margin"] is not None and abs(diff) <= r["margin"]
+        if abs(diff) < 0.05:
+            cls, text = "tie", "Level"
+        elif sign == 0:
+            cls = "a" if diff > 0 else "b"
+            text = f"{a if diff > 0 else b} higher by {abs(diff):.1f} pp"
+        else:
+            a_leads = diff * sign > 0
+            cls = "a" if a_leads else "b"
+            text = f"{a if a_leads else b} ahead by {abs(diff):.1f} pp"
+            if not within:
+                ahead_a += int(a_leads)
+                ahead_b += int(not a_leads)
+        if sign == 0 and cls == "tie":
+            pass
+        note_line = (
+            f'<small>National {r["national"]:.1f}%</small>' if r["national"] is not None else ""
+        )
+        if within and cls != "tie":
+            note_line = "<small>Gap within illustrative margin · " + (
+                f'National {r["national"]:.1f}%' if r["national"] is not None else "no national value"
+            ) + "</small>"
+        lead_a = " lead" if cls == "a" and sign != 0 else ""
+        lead_b = " lead" if cls == "b" and sign != 0 else ""
+        body.append(
+            f'<div class="x-duel-row">'
+            f'<div class="x-duel-side a{lead_a}"><b>{r["a"]:.1f}%</b>'
+            f'<div class="x-duel-track"><div class="x-duel-fill" style="width:{r["a"] / top * 100:.1f}%"></div></div></div>'
+            f'<div class="x-duel-lab"><span>{esc(r["label"])}</span><em class="{cls}">{esc(text)}</em>{note_line}</div>'
+            f'<div class="x-duel-side b{lead_b}"><b>{r["b"]:.1f}%</b>'
+            f'<div class="x-duel-track"><div class="x-duel-fill" style="width:{r["b"] / top * 100:.1f}%"></div></div></div>'
+            f"</div>"
+        )
+    directional = sum(1 for r in rows if _polarity_sign(r["polarity"]) != 0)
+    summary = (
+        f'<div class="x-duel-sum">'
+        f"<div><b>{ahead_a}</b><span>{esc(a)} clearly ahead on</span></div>"
+        f"<div><b>{directional - ahead_a - ahead_b}</b><span>of {directional} directional indicators level or within margin</span></div>"
+        f"<div><b>{ahead_b}</b><span>{esc(b)} clearly ahead on</span></div>"
+        f"</div>"
+    )
+    head = (
+        f'<div class="x-duel-head"><div class="x-duel-name a"><small>Selected district</small>{esc(a)}</div>'
+        f'<div class="x-duel-mid">vs</div>'
+        f'<div class="x-duel-name b"><small>Compared with</small>{esc(b)}</div></div>'
+    )
+    return f'{summary}<div class="x-duel">{head}{"".join(body)}</div>'
+
+
+def priority_shortlist_html(rows, top_score=None):
+    """Top-three shortlist cards. Each row: rank, district, score, driver, driver_share, stability, baseline_rank."""
+    if not rows:
+        return ""
+    peak = top_score or max(r["score"] for r in rows) or 1.0
+    cards = []
+    for r in rows[:3]:
+        share = f'{r["driver_share"]:.0f}% of score' if r.get("driver_share") is not None else ""
+        cards.append(
+            f'<div class="x-pod r{min(int(r["rank"]), 3)}">'
+            f'<div class="x-pod-rank">{int(r["rank"])}</div>'
+            f'<div class="x-pod-k">Screening rank {int(r["rank"])}</div>'
+            f'<div class="x-pod-name">{esc(r["district"])}</div>'
+            f'<div class="x-pod-score">{r["score"]:.1f}<small>relative points</small></div>'
+            f'<div class="x-pod-bar"><i style="width:{max(4.0, min(100.0, r["score"] / peak * 100)):.1f}%"></i></div>'
+            f'<div class="x-pod-row"><span>Largest driver</span><b>{esc(r["driver"])}'
+            + (f" · {esc(share)}" if share else "")
+            + "</b></div>"
+            + (
+                f'<div class="x-pod-row"><span>Fixed baseline rank</span><b>#{int(r["baseline_rank"])}</b></div>'
+                if r.get("baseline_rank") is not None else ""
+            )
+            + f'<span class="x-pod-tag">{esc(r["stability"])}</span></div>'
+        )
+    return f'<div class="x-podium">{"".join(cards)}</div>'
+
+
+def group_divide_figure(rows):
+    """Bar chart of how wide the gap is for each kind of group (gender, age, education, area)."""
+    if not rows:
+        return None
+    ordered = sorted(rows, key=lambda r: r["spread"])
+    fig = go.Figure(
+        go.Bar(
+            x=[r["spread"] for r in ordered],
+            y=[r["type"] for r in ordered],
+            orientation="h",
+            marker=dict(color=[PALETTE["sun"] if r is ordered[-1] else "#8FB0C2" for r in ordered]),
+            text=[f'{r["spread"]:.1f} pp · {r["low"]} → {r["high"]}' for r in ordered],
+            textposition="outside",
+            textfont=dict(size=12, color=PALETTE["ink"]),
+            cliponaxis=False,
+            customdata=[[r["low"], r["low_v"], r["high"], r["high_v"]] for r in ordered],
+            hovertemplate=(
+                "<b>%{y}</b><br>Lowest: %{customdata[0]} (%{customdata[1]:.1f}%)"
+                "<br>Highest: %{customdata[2]} (%{customdata[3]:.1f}%)<extra></extra>"
+            ),
+        )
+    )
+    fig.update_layout(bargap=0.38)
+    fig.update_xaxes(
+        title=None, ticksuffix=" pp", gridcolor=PALETTE["grid"], zeroline=False,
+        range=[0, max(r["spread"] for r in ordered) * 2.1],
+    )
+    fig.update_yaxes(title=None, showgrid=False, automargin=True, tickfont=dict(size=13))
+    return style_chart(fig, max(220, 58 * len(ordered) + 48), margin=dict(l=4, r=24, t=8, b=4))
+
+
+def coverage_matrix_html(rows, columns, summary=None):
+    """What data exists for each indicator. rows: (label, accent, {column: True|False|'part'})."""
+    if not rows:
+        return ""
+    head = "".join(f"<th>{esc(c)}</th>" for c in columns)
+    body = []
+    for label, accent, cells in rows:
+        tds = []
+        for c in columns:
+            state = cells.get(c)
+            if state == "part":
+                tds.append('<td><span class="x-dot part" title="Partial">◐</span></td>')
+            elif state:
+                tds.append('<td><span class="x-dot yes" title="Available">✓</span></td>')
+            else:
+                tds.append('<td><span class="x-dot no" title="Not available">–</span></td>')
+        body.append(f'<tr><td style="--accent:{accent}"><i></i>{esc(label)}</td>{"".join(tds)}</tr>')
+    sum_html = ""
+    if summary:
+        sum_html = (
+            '<div class="x-cov-sum">'
+            + "".join(f"<div><b>{esc(v)}</b><span>{esc(k)}</span></div>" for k, v in summary)
+            + "</div>"
+        )
+    return (
+        f'{sum_html}<div class="x-cov-wrap"><table class="x-cov-table"><thead><tr><th>Indicator</th>{head}</tr></thead>'
+        f'<tbody>{"".join(body)}</tbody></table></div>'
+    )
+
+
+NEXT_STEP_COPY = {
+    "National overview": "The headline picture: access, saving, barriers and a district map.",
+    "District explorer": "Click through all 30 districts, compare them with the national level and download a profile.",
+    "Population groups": "See how gender, age, education and area change each indicator.",
+    "Priority explorer": "Screen districts for follow-up and test how sensitive the ranking is.",
+    "Policy alignment": "Connect the evidence to national strategy, and see who can act on it.",
+    "Methodology & sources": "Definitions, weights, margins and the data checks behind every number.",
+}
+NEXT_STEP_FLOW = {
+    "National overview": ["District explorer", "Population groups", "Priority explorer"],
+    "District explorer": ["Priority explorer", "Population groups", "Policy alignment"],
+    "Population groups": ["District explorer", "Priority explorer", "Policy alignment"],
+    "Priority explorer": ["District explorer", "Policy alignment", "Methodology & sources"],
+    "Policy alignment": ["National overview", "Priority explorer", "Methodology & sources"],
+    "Methodology & sources": ["National overview", "District explorer", "Policy alignment"],
+}
+NEXT_STEP_ICONS = {
+    "National overview": ":material/dashboard:",
+    "District explorer": ":material/map:",
+    "Population groups": ":material/groups:",
+    "Priority explorer": ":material/flag:",
+    "Policy alignment": ":material/account_balance:",
+    "Methodology & sources": ":material/menu_book:",
+}
+
+
+def _goto_page(page):
+    st.session_state["selected_page"] = page
+
+
+def render_next_steps(current, title="Keep exploring", subtitle=None):
+    """Three guided cards that move the audience to the next most useful page."""
+    targets = NEXT_STEP_FLOW.get(current, [])
+    if not targets:
+        return
+    section_title(title, subtitle or "Each page answers a different question about the same evidence.")
+    cols = st.columns(len(targets), gap="medium")
+    slug = current.lower().replace(" ", "_").replace("&", "and")
+    for number, (col, page) in enumerate(zip(cols, targets), start=1):
+        with col:
+            render_html(
+                f'<div class="x-next"><div class="x-next-n">{number}</div>'
+                f'<div class="x-next-t">{esc(page)}</div>'
+                f'<p class="x-next-p">{esc(NEXT_STEP_COPY.get(page, ""))}</p></div>'
+            )
+            st.button(
+                f"Open {page}",
+                key=f"next_{slug}_{number}",
+                icon=NEXT_STEP_ICONS.get(page),
+                on_click=_goto_page,
+                args=(page,),
+                use_container_width=True,
+            )
+
+
+# ==========================================================================
+# Balanced side-by-side layouts
+# --------------------------------------------------------------------------
+# Streamlit stretches both columns of a row to the taller one, but a card only
+# grows to its own content, so the shorter card leaves a blank gap beside a long
+# one (a map next to a long inspector, a chart next to a long list...).
+#
+# Two layout-only behaviours fix this. Neither moves or hides any content:
+#   FOLLOW  the shorter card stays in view while you scroll past the long one
+#           (position: sticky). On screens shorter than 640px high, or narrower
+#           than 900px, it simply keeps its natural height, as before.
+#   FILL    the card stretches to the height of its row so bottoms line up
+#           (screens 900px wide or more; narrower windows keep natural heights).
+#
+# To change which cards behave this way, edit the lists below. Keys are the
+# `key=` names of st.container(...) cards. A card is only made to follow when it
+# is the only element in its column, so it can never overlap a card stacked
+# under it. Use a `follow_<tier>_<name>` container key to wrap content that is
+# not a card (for example a map inside another card).
+# ==========================================================================
+# tier -> (tallest card in the tier in px, cards that follow). On a screen shorter than
+# the card, it is pinned by its bottom edge so most of it stays in view.
+FOLLOW_TIERS = {
+    "s": (520, ("card_landscape", "card_urban_rural")),
+    "m": (800, ("card_map", "card_priority_drivers")),
+    "l": (830, ()),
+}
+# Cards that always stretch to match the row they sit in.
+FILL_CARDS = (
+    "card_landscape_read", "card_urban_rural_gap",
+    "card_group_compare", "card_group_sizes", "card_group_matrix", "card_group_gaps",
+    "card_group_divides", "card_group_divides_read",
+    "card_ranking", "card_distribution",
+    "card_priority_ranking", "card_priority_top",
+    "card_depth", "card_depth_read",
+)
+_COLUMNS = ('[data-testid="stColumn"]', '[data-testid="column"]')
+
+
+def _in_column(selector_inside_has, tail=""):
+    """Selector for the direct child of a column that contains the given element."""
+    return ", ".join(
+        f'{col} > [data-testid="stVerticalBlock"] > *:has({selector_inside_has}){tail}'
+        for col in _COLUMNS
+    )
+
+
+def _layout_css():
+    fill_keys = [f".st-key-{k}" for k in FILL_CARDS]
+    follow_keys = []
+    for tier, (_, cards) in FOLLOW_TIERS.items():
+        follow_keys += [f".st-key-{k}" for k in cards]
+        follow_keys.append(f'[class*="st-key-follow_{tier}_"]')
+    has_all = ", ".join(fill_keys + follow_keys)
+
+    css = []
+    # Columns that hold one of these cards become flex columns, so a card can grow
+    # (FILL) or be pinned inside the column's full height (FOLLOW).
+    css.append(
+        ", ".join(f"{col}:has({has_all})" for col in _COLUMNS)
+        + "{display:flex; flex-direction:column;}"
+    )
+    css.append(
+        ", ".join(
+            f'{col}:has({has_all}) > [data-testid="stVerticalBlock"]' for col in _COLUMNS
+        )
+        + "{flex:1 1 auto;}"
+    )
+    # FILL: the last element in the column grows to the row height. Wide screens only;
+    # on narrow windows every card keeps its natural height. FOLLOW cards never grow.
+    css.append(
+        "@media (min-width:900px){"
+        + _in_column(", ".join(fill_keys), ":last-child")
+        + "{flex:1 1 auto; display:flex; flex-direction:column;}"
+        + ", ".join(fill_keys)
+        + "{flex:1 1 auto;}}"
+    )
+    # FOLLOW: pinned while the long neighbour scrolls past. The card's bottom edge is
+    # pinned on screens shorter than the card, so most of it stays visible.
+    for tier, (tallest, cards) in FOLLOW_TIERS.items():
+        sel = [f".st-key-{k}" for k in cards] + [f'[class*="st-key-follow_{tier}_"]']
+        css.append(
+            "@media (min-width:900px) and (min-height:640px){"
+            + _in_column(", ".join(sel), ":only-child")
+            + f"{{position:sticky; top:min(4.5rem, calc(100vh - {tallest}px - 1rem)); align-self:flex-start; flex:0 0 auto; width:100%; z-index:2;}}"
+            + ", ".join(sel)
+            + "{flex:0 0 auto;}"
+            + "}"
+        )
+    return "\n".join(css)

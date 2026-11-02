@@ -48,7 +48,8 @@ SOURCES = [
 
 
 def _go(page):
-    st.session_state["main_nav"] = page
+    # app.py reads "selected_page"; the old "main_nav" key never changed the page.
+    st.session_state["selected_page"] = page
 
 
 def _link(label, url):

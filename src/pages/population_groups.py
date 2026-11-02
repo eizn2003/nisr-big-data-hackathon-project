@@ -19,6 +19,8 @@ from src.styles import (
     render_html,
     section_title,
     style_chart,
+    group_divide_figure,
+    render_next_steps,
 )
 
 GROUP_TYPES = ["Gender", "Age group", "Education", "Area"]
@@ -27,6 +29,7 @@ HEAT_SCALE = ["#EAF6F3", "#9FD3CB", "#3AA597", "#17746A", "#0E2A35"]
 KEY_GROUP, KEY_IND = "population_groups_type", "population_groups_indicator"
 
 
+@st.cache_data
 def load_group_data():
     frame = load_population_group_results().observations
     needed = {"Group type", "Group", "Valid respondents"}
@@ -329,6 +332,57 @@ def render_population_groups():
                             config={"displayModeBar": False})
     st.markdown("")
 
+    # ---- Which divide matters most? -------------------------------------------------------
+    divides = []
+    for _gt in GROUP_TYPES:
+        _sub = frame.loc[frame["Group type"].astype(str).eq(_gt)].dropna(subset=["Group", metric])
+        _sub = _sub.drop_duplicates("Group")
+        if len(_sub) < 2:
+            continue
+        _lo, _hi = _sub.loc[_sub[metric].idxmin()], _sub.loc[_sub[metric].idxmax()]
+        divides.append(dict(
+            type=_gt, spread=float(_hi[metric] - _lo[metric]),
+            low=str(_lo["Group"]), low_v=float(_lo[metric]),
+            high=str(_hi["Group"]), high_v=float(_hi[metric]),
+        ))
+    if len(divides) >= 2:
+        _divide_fig = group_divide_figure(divides)
+        _widest = max(divides, key=lambda r: r["spread"])
+        _narrow = min(divides, key=lambda r: r["spread"])
+        div_left, div_right = st.columns([1.55, 1], gap="medium")
+        with div_left:
+            with st.container(key="card_group_divides"):
+                card_title(
+                    f"Which divide matters most for {item['label'].lower()}?",
+                    "Gap between the highest and lowest group within each kind of group, on the same indicator.",
+                )
+                st.plotly_chart(_divide_fig, use_container_width=True, key="population_groups_divides",
+                                config={"displayModeBar": False})
+        with div_right:
+            with st.container(key="card_group_divides_read"):
+                card_title("Reading the comparison")
+                render_html(
+                    f'<p class="mc-p" style="font-size:14.5px"><b>{esc(_widest["type"])}</b> shows the widest '
+                    f'spread: <b>{esc(_widest["high"])}</b> ({_widest["high_v"]:.1f}%) against '
+                    f'<b>{esc(_widest["low"])}</b> ({_widest["low_v"]:.1f}%), a gap of '
+                    f'<b>{_widest["spread"]:.1f} pp</b>. The narrowest is <b>{esc(_narrow["type"])}</b> at '
+                    f'{_narrow["spread"]:.1f} pp.</p>'
+                )
+                render_html(
+                    "".join(
+                        f'<div class="gap" style="margin-bottom:8px"><span>{esc(r["type"])} · '
+                        f'{esc(r["low"])} → {esc(r["high"])}</span>'
+                        f'<b>{r["low_v"]:.1f}% → {r["high_v"]:.1f}%</b></div>'
+                        for r in sorted(divides, key=lambda r: -r["spread"])
+                    )
+                )
+                render_html(
+                    '<div class="micro">Group kinds have different numbers of categories, so a wider spread '
+                    "is partly a product of more groups. Each kind is a separate breakdown of the same adults, "
+                    "not a combined profile; the survey cannot say how these overlap here.</div>"
+                )
+        st.markdown("")
+
     # ---- Table -----------------------------------------------------------------------------
     with st.container(key="card_group_table"):
         card_title("Detailed results",
@@ -384,3 +438,6 @@ def render_population_groups():
                 "respondent counts are unweighted valid sample sizes. Margins are indicative (simple random "
                 "sampling) and understate design-based uncertainty. NBR context is not combined with these estimates; "
                 "Education is FinScope-only. Differences alone do not establish causation.</div>")
+
+    st.markdown("")
+    render_next_steps("Population groups")

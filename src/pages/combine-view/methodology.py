@@ -18,6 +18,8 @@ from src.styles import (
     note,
     page_header,
     render_html,
+    coverage_matrix_html,
+    render_next_steps,
 )
 
 SECTIONS = [
@@ -32,6 +34,57 @@ SECTIONS = [
     ("sec-limits", "Limitations"),
     ("sec-sources", "Sources"),
 ]
+
+
+def _coverage_card():
+    """Matrix of which indicators have estimates at which level, read from the loaded data."""
+    try:
+        national = data.load_national()
+        district = data.load_district()
+    except (FileNotFoundError, ValueError, KeyError):
+        return
+    try:
+        urban = data.load_urban_rural()
+    except (FileNotFoundError, ValueError, KeyError, AttributeError):
+        urban = None
+    try:
+        from src.pages.population_groups import load_group_data
+
+        groups = load_group_data()
+    except Exception:
+        groups = None
+
+    def level(frame, column):
+        if frame is None or column not in frame.columns:
+            return False
+        share = pd.to_numeric(frame[column], errors="coerce").notna().mean()
+        return True if share >= 0.999 else ("part" if share > 0 else False)
+
+    columns = ["National", "Urban / rural", "30 districts", "Population groups"]
+    rows, full = [], 0
+    nat_names = set(national["Indicator"]) if "Indicator" in national.columns else set()
+    for item in REGISTRY:
+        cells = {
+            "National": item["national"] in nat_names,
+            "Urban / rural": level(urban, item["column"]),
+            "30 districts": level(district, item["column"]),
+            "Population groups": level(groups, item["column"]),
+        }
+        full += all(v is True for v in cells.values())
+        rows.append((item["label"], item["accent"], cells))
+    summary = [
+        ("Districts in the data", f"{district['District'].nunique()}"),
+        ("Indicators documented", f"{len(REGISTRY)}"),
+        ("With estimates at every level", f"{full}"),
+        ("Group breakdowns", f"{groups['Group type'].nunique() if groups is not None else 0}"),
+    ]
+    with st.container(key="card_method_coverage"):
+        card_title(
+            "Data coverage at a glance",
+            "What each indicator has estimates for in the data loaded now. A dash means no estimate "
+            "is available at that level, not that the value is zero.",
+        )
+        render_html(coverage_matrix_html(rows, columns, summary))
 
 
 @st.cache_data
@@ -346,6 +399,9 @@ def render_methodology():
             <b>NBR administrative observations</b> as a separate, labelled source. They are never merged into the
             survey estimates described below.</p>''')
 
+    _coverage_card()
+    st.markdown("")
+
     if combined:
         _section("sec-combined", number["sec-combined"], "Using both sources",
                  "What each source measures, which relationships are approved, and where evidence is unavailable.")
@@ -603,3 +659,6 @@ def render_methodology():
                  '<div class="file"><span class="file-ic nb">NB</span><span class="file-n">Exploratory analysis and '
                  "indicator-analysis notebooks (02, 03, 04)</span></div>")
         render_html(f'<div class="mgrid">{rows}</div>')
+
+    st.markdown("")
+    render_next_steps("Methodology & sources")

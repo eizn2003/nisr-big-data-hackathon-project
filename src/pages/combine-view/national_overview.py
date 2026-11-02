@@ -45,6 +45,10 @@ from src.styles import (
     section_title,
     show_district_table,
     style_chart,
+    coverage_html,
+    district_heatmap_figure,
+    heatmap_legend_html,
+    render_next_steps,
 )
 
 _combined_district_explorer = import_module("src.pages.combine-view.district_explorer")
@@ -1531,6 +1535,25 @@ def render_national_overview():
         )
     st.markdown("")
 
+    # ---- Data coverage strip -------------------------------------------------
+    _count_col = REGISTRY[0]["valid_count_column"] if REGISTRY else None
+    _chips = [
+        ("fs", f"{district['District'].nunique()} districts mapped"),
+        ("fs", f"{len([it for it in REGISTRY if it['column'] in district.columns])} indicators at national and district level"),
+    ]
+    if _count_col in district.columns:
+        _chips.append(
+            ("fs", f"{int(pd.to_numeric(district[_count_col], errors='coerce').sum()):,} survey respondents")
+        )
+    if combined:
+        _chips.append(
+            ("none", "NBR context unavailable right now")
+            if nbr_error is not None
+            else ("nbr", "NBR administrative context shown separately, never merged")
+        )
+    render_html(coverage_html(_chips))
+    st.markdown("")
+
     # ---- What stands out ---------------------------------------------------
     section_title(
         "What stands out",
@@ -1941,39 +1964,40 @@ def render_national_overview():
         if map_ok:
             map_col, list_col = st.columns([1.35, 1], gap="large")
             with map_col:
-                card_title(
-                    "District pattern",
-                    "FinScope survey estimates shown by the shaded map."
-                    + (
-                        " NBR markers use a separate scale: larger means a larger recorded value."
-                        if overlay_points
-                        else ""
-                    ),
-                )
-                if overlay_points:
-                    unit = nbr_entry.get("unit") or "unit not specified"
-                    render_html(
-                        '<div class="chips" style="margin:0 0 6px"><span class="chip"><i style="background:'
-                        f'{PALETTE["ink2"]};border-color:#fff"></i>NBR · {esc(nbr_entry["metric_label"])} · '
-                        f"{esc(unit)} · {esc(overlay_date)} · {esc(_filters_text(nbr_entry))}</span></div>"
+                with st.container(key="follow_l_overview_map"):
+                    card_title(
+                        "District pattern",
+                        "FinScope survey estimates shown by the shaded map."
+                        + (
+                            " NBR markers use a separate scale: larger means a larger recorded value."
+                            if overlay_points
+                            else ""
+                        ),
                     )
-                st.plotly_chart(
-                    _map_figure(
-                        district,
-                        geojson,
-                        centers,
-                        center,
-                        metric,
-                        item,
-                        float(nat[item["national"]]),
-                        supply_points=overlay_points,
-                    ),
-                    use_container_width=True,
-                    key="ov_district_map",
-                    config={"displayModeBar": False, "scrollZoom": True},
-                )
-                if combined and nbr_state is not None and not nbr_state.available:
-                    render_html(context_state_html(nbr_state, label=item["short"]))
+                    if overlay_points:
+                        unit = nbr_entry.get("unit") or "unit not specified"
+                        render_html(
+                            '<div class="chips" style="margin:0 0 6px"><span class="chip"><i style="background:'
+                            f'{PALETTE["ink2"]};border-color:#fff"></i>NBR · {esc(nbr_entry["metric_label"])} · '
+                            f"{esc(unit)} · {esc(overlay_date)} · {esc(_filters_text(nbr_entry))}</span></div>"
+                        )
+                    st.plotly_chart(
+                        _map_figure(
+                            district,
+                            geojson,
+                            centers,
+                            center,
+                            metric,
+                            item,
+                            float(nat[item["national"]]),
+                            supply_points=overlay_points,
+                        ),
+                        use_container_width=True,
+                        key="ov_district_map",
+                        config={"displayModeBar": False, "scrollZoom": True},
+                    )
+                    if combined and nbr_state is not None and not nbr_state.available:
+                        render_html(context_state_html(nbr_state, label=item["short"]))
             with list_col:
                 render_html(_ranking_html(district, metric, item))
                 if recommendations:
@@ -2020,6 +2044,51 @@ def render_national_overview():
                     height=320,
                 )
 
+    # ---- All districts at a glance ------------------------------------------------
+    section_title(
+        "Every district, every indicator",
+        "One matrix for the whole country. Find strong and weak spots at a glance, then open the District explorer.",
+    )
+    with st.container(key="card_district_matrix"):
+        _sort_options = ["District name"] + [
+            it["short"] for it in REGISTRY if it["column"] in district.columns
+        ]
+        _sort_choice = st.selectbox(
+            "Order districts by", _sort_options, key="overview_matrix_sort"
+        )
+        _matrix, _shown = district_heatmap_figure(
+            district, REGISTRY, nat,
+            sort_by=None if _sort_choice == "District name" else _sort_choice,
+        )
+        if _matrix is None:
+            st.info("The district matrix needs district estimates with national references.")
+        else:
+            card_title(
+                "How each district compares with the national estimate",
+                "Teal marks a more favourable position than national, coral a weaker one, within each indicator.",
+            )
+            render_html(heatmap_legend_html())
+            st.plotly_chart(
+                _matrix,
+                use_container_width=True,
+                key="ov_district_matrix",
+                config={"displayModeBar": False},
+            )
+            _left_out = [
+                it["short"] for it in REGISTRY
+                if it["column"] in district.columns and it not in _shown
+            ]
+            render_html(
+                '<div class="micro">Colour shows the distance from the national estimate, scaled within each '
+                "column so every indicator uses the full range; it is not a rank and not an overall score. "
+                + (
+                    f"Left out because neither direction is favourable: {esc(', '.join(_left_out))}. "
+                    if _left_out else ""
+                )
+                + "District estimates carry sampling margins; small differences should not be over-read.</div>"
+            )
+    st.markdown("")
+
     st.markdown("")
     note(
         "How to interpret these figures",
@@ -2044,3 +2113,6 @@ def render_national_overview():
         + ". See Methodology &amp; sources for "
         "indicator definitions, data checks and limitations.</div>"
     )
+
+    st.markdown("")
+    render_next_steps("National overview")

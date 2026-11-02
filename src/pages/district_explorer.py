@@ -31,6 +31,9 @@ from src.styles import (
     render_html,
     show_district_table,
     style_chart,
+    build_duel_rows,
+    district_duel_html,
+    render_next_steps,
 )
 
 FEATURE_KEY = "properties.shapeName"
@@ -1280,6 +1283,54 @@ def render_district_explorer():
 
     st.markdown("")
 
+    # ---- Compare two districts ---------------------------------------------
+    with st.container(key="card_compare"):
+        card_title(
+            "Compare two districts",
+            "Every indicator side by side, from the same survey and definitions. Bars share one scale; "
+            "arrows of advantage follow each indicator's direction.",
+        )
+        others = [d for d in names if d != selected_district]
+        compare_key = "dx_compare_with"
+        if st.session_state.get(compare_key) not in others:
+            distance = (df[metric] - est).abs().where(df["District"].ne(selected_district))
+            st.session_state[compare_key] = (
+                str(df.loc[distance.idxmax(), "District"]) if distance.notna().any() else others[0]
+            )
+        pick_col, jump_col = st.columns([2.2, 1], gap="medium", vertical_alignment="bottom")
+        with pick_col:
+            compare_with = st.selectbox(
+                f"Compare {selected_district} with", others, key=compare_key
+            )
+        with jump_col:
+            st.button(
+                f"Inspect {compare_with} on the map",
+                key="dx_compare_jump",
+                on_click=_jump_to,
+                args=(compare_with,),
+                use_container_width=True,
+                icon=":material/my_location:",
+            )
+        _nat_map = dict(zip(national["Indicator"], national["Estimate (%)"].astype(float)))
+        duel = build_duel_rows(
+            df,
+            [it for it in REGISTRY if it["column"] in df.columns],
+            _nat_map,
+            selected_district,
+            compare_with,
+            data.moe_pp,
+        )
+        render_html(district_duel_html(selected_district, compare_with, duel))
+        render_html(
+            '<div class="micro">A clear lead means the gap is larger than the combined illustrative '
+            "margin of the two district estimates (simple-random-sample approximation; the survey design "
+            "is unavailable, so this is not a significance test). Descriptive indicators such as borrowing "
+            "have no favourable direction and are not counted as leads. Differences describe patterns, "
+            "not causes.</div>"
+        )
+
+    st.markdown("")
+
     # ---- Table ------------------------------------------------------------
     with st.container(key="card_table"):
         card_title(
@@ -1300,3 +1351,6 @@ def render_district_explorer():
         "weighted survey results, not live measurements. Differences alone "
         "do not establish statistical significance or explain their causes.</div>"
     )
+
+    st.markdown("")
+    render_next_steps("District explorer")

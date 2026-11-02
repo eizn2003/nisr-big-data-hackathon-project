@@ -33,6 +33,9 @@ from src.styles import (
     page_header,
     render_html,
     style_chart,
+    priority_shortlist_html,
+    render_next_steps,
+    section_title,
 )
 
 _combined_district_explorer = import_module("src.pages.combine-view.district_explorer")
@@ -385,6 +388,30 @@ def render_priority_explorer():
              tone="info")
     st.markdown("")
 
+    # ---- Shortlist ---------------------------------------------------------------------
+    section_title("The shortlist",
+                  "The three districts with the largest relative gaps under the current scenario. "
+                  "A starting point for investigation, not an allocation.")
+    _short_rows = []
+    for _, _r in ranked.head(3).iterrows():
+        _c = {s: float(_r[f"contrib::{CANDIDATES[s]['column']}"]) for s in components}
+        _top = max(_c, key=_c.get)
+        _tot = float(_r["Priority score"])
+        _short_rows.append(dict(
+            rank=int(_r["Rank"]), district=str(_r["District"]), score=_tot, driver=_top,
+            driver_share=(_c[_top] / _tot * 100) if _tot > 0 else None,
+            stability=f"Top 10 in {int(_r['Top-10 combos'])} of {combos} indicator sets",
+            baseline_rank=int(_r["Baseline rank"]) if not pd.isna(_r["Baseline rank"]) else None,
+        ))
+    render_html(priority_shortlist_html(_short_rows))
+    _cols = st.columns(len(_short_rows), gap="medium")
+    for _col, _row in zip(_cols, _short_rows):
+        with _col:
+            st.button(f"Inspect {_row['district']}", key=f"pe_short_{_row['district']}",
+                      on_click=_jump_to, args=(_row["district"],), use_container_width=True,
+                      icon=":material/search:")
+    st.markdown("")
+
     # ---- Evidence + composition ---------------------------------------------------------
     left, right = st.columns([1.45, 1], gap="medium")
     with left:
@@ -542,7 +569,7 @@ def render_priority_explorer():
         need = fam.get("No need or too little income", 0.0)
         other = fam.drop(labels=["No need or too little income", "Other"], errors="ignore").sort_values(ascending=False)
         with st.container(key="card_priority_barriers"):
-            b1, b2 = st.columns([1.1, 1], gap="large")
+            b1, b2 = st.columns([1.1, 1], gap="large", vertical_alignment="center")
             with b1:
                 card_title(f"What people without an account say in {selected_district}",
                            f"Reasons given by {base:,} respondents without a bank account (weighted shares).")
@@ -674,3 +701,6 @@ def render_priority_explorer():
                 "the survey design is unavailable, so these do not test the district-versus-national difference or "
                 "support formal significance claims. Validate current population reach, costs, service availability, "
                 "and local context before investment decisions.</div>")
+
+    st.markdown("")
+    render_next_steps("Priority explorer")
